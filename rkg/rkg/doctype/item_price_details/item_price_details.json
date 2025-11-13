@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-11-13 14:08:26.885489",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_a6wh",
+  "item_code",
+  "insurance_amount",
+  "registration_field",
+  "road_tax",
+  "column_break_vini",
+  "other_taxes",
+  "on_road_price",
+  "valid_from",
+  "branch",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_a6wh",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "insurance_amount",
+   "fieldtype": "Currency",
+   "label": "Insurance Amount"
+  },
+  {
+   "fieldname": "registration_field",
+   "fieldtype": "Currency",
+   "label": "Registration Field"
+  },
+  {
+   "fieldname": "road_tax",
+   "fieldtype": "Currency",
+   "label": "Road Tax"
+  },
+  {
+   "fieldname": "column_break_vini",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "other_taxes",
+   "fieldtype": "Currency",
+   "label": "Other Taxes"
+  },
+  {
+   "fieldname": "on_road_price",
+   "fieldtype": "Currency",
+   "label": "On Road Price"
+  },
+  {
+   "fieldname": "valid_from",
+   "fieldtype": "Date",
+   "label": "Valid From"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Territory"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Item Price Details",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-11-13 14:50:09.072915",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Item Price Details",
+ "owner": "rishab.rath@clapgrow.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
