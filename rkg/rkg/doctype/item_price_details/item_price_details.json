@@ -10,6 +10,10 @@
   "insurance_amount",
   "registration_field",
   "road_tax",
+  "ex_showroom_price",
+  "purchase_price",
+  "purchase_tax",
+  "purchase_final_price",
   "column_break_vini",
   "other_taxes",
   "on_road_price",
@@ -77,13 +81,33 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "ex_showroom_price",
+   "fieldtype": "Currency",
+   "label": "Ex Showroom Price"
+  },
+  {
+   "fieldname": "purchase_price",
+   "fieldtype": "Currency",
+   "label": "Purchase Price"
+  },
+  {
+   "fieldname": "purchase_tax",
+   "fieldtype": "Currency",
+   "label": "Purchase Tax"
+  },
+  {
+   "fieldname": "purchase_final_price",
+   "fieldtype": "Currency",
+   "label": "Purchase Final Price"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-13 14:50:09.072915",
+ "modified": "2025-11-18 12:56:57.965749",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Item Price Details",
