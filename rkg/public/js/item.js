@@ -64,12 +64,19 @@ function update_item_name(frm) {
 		serial_part = model_serial_number;
 	}
 	
-	// Combine Model Variant + ( Serial Number (up to ID) )
-	let item_name = model_variant + '( ' + serial_part + ' )';
+	// Combine Model Variant + (Serial Number up to ID)
+	let item_name = model_variant + '(' + serial_part + ')';
 	
-	// Update the item_name field if it's different
+	// Update the item_name and item_code fields if needed
+	let updates = {};
 	if (frm.doc.item_name !== item_name) {
-		frm.set_value('item_name', item_name);
+		updates.item_name = item_name;
+	}
+	if (frm.doc.item_code !== item_name) {
+		updates.item_code = item_name;
+	}
+	if (Object.keys(updates).length) {
+		frm.set_value(updates);
 	}
 }
 
