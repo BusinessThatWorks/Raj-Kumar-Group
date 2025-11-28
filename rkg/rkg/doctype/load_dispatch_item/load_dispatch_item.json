@@ -1,0 +1,348 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-11-28 15:42:45.434651",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_z2a1",
+  "load_reference_no",
+  "invoice_no",
+  "invoice_date",
+  "model_category",
+  "model_name",
+  "model_variant",
+  "color_code",
+  "column_break_anog",
+  "mtoc",
+  "frame_no",
+  "engnie_no_motor_no",
+  "physical_status",
+  "chassis_status",
+  "location",
+  "key_no",
+  "load_type",
+  "amended_from",
+  "column_break_emyv",
+  "transporter_name",
+  "shipment_truck",
+  "dispatch_date",
+  "planned_arrival_date",
+  "gr_date",
+  "gr_no",
+  "plant_code",
+  "payment_amount",
+  "dealer_code",
+  "section_break_wlpf",
+  "manufacturing_date",
+  "reference_number",
+  "invoice_price",
+  "sap_sales_order_no",
+  "booking_reference",
+  "vehicle_tracking_info",
+  "dealer_purchase_order_no",
+  "type",
+  "column_break_sdof",
+  "capacity",
+  "option_code",
+  "transporter_code",
+  "ev_battery_number",
+  "model_code",
+  "net_dealer_price",
+  "credit_of_gst",
+  "dealer_billing_price",
+  "cgst_amount",
+  "column_break_eufk",
+  "sgst_amount",
+  "igst_amount",
+  "ex_showroom_price",
+  "gstin"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_z2a1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "model_category",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Category"
+  },
+  {
+   "fieldname": "model_variant",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Variant"
+  },
+  {
+   "fieldname": "load_reference_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Load Reference No",
+   "options": "Load Plan",
+   "reqd": 1
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "invoice No."
+  },
+  {
+   "fieldname": "invoice_date",
+   "fieldtype": "Date",
+   "label": "Invoice Date"
+  },
+  {
+   "fieldname": "model_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Name"
+  },
+  {
+   "fieldname": "color_code",
+   "fieldtype": "Data",
+   "label": "Color Code"
+  },
+  {
+   "fieldname": "column_break_anog",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mtoc",
+   "fieldtype": "Data",
+   "label": "MTOC"
+  },
+  {
+   "fieldname": "frame_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "FRAME#"
+  },
+  {
+   "fieldname": "engnie_no_motor_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Engine No/Motor No"
+  },
+  {
+   "fieldname": "physical_status",
+   "fieldtype": "Data",
+   "label": "Physical Status"
+  },
+  {
+   "fieldname": "chassis_status",
+   "fieldtype": "Data",
+   "label": "Chassis Status"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location"
+  },
+  {
+   "fieldname": "key_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Key No"
+  },
+  {
+   "fieldname": "load_type",
+   "fieldtype": "Data",
+   "label": "Load Type"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Load Dispatch Item",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_emyv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "transporter_name",
+   "fieldtype": "Data",
+   "label": "Transporter Name"
+  },
+  {
+   "fieldname": "shipment_truck",
+   "fieldtype": "Data",
+   "label": "Shipment Truck#"
+  },
+  {
+   "fieldname": "dispatch_date",
+   "fieldtype": "Date",
+   "label": "Dispatch Date"
+  },
+  {
+   "fieldname": "planned_arrival_date",
+   "fieldtype": "Datetime",
+   "label": "Planned Arrival Date"
+  },
+  {
+   "fieldname": "gr_date",
+   "fieldtype": "Datetime",
+   "label": "GR Date"
+  },
+  {
+   "fieldname": "gr_no",
+   "fieldtype": "Int",
+   "label": "GR No"
+  },
+  {
+   "fieldname": "plant_code",
+   "fieldtype": "Data",
+   "label": "Plant Code"
+  },
+  {
+   "fieldname": "payment_amount",
+   "fieldtype": "Currency",
+   "label": "Payment Amount"
+  },
+  {
+   "fieldname": "dealer_code",
+   "fieldtype": "Data",
+   "label": "Dealer Code"
+  },
+  {
+   "fieldname": "section_break_wlpf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "manufacturing_date",
+   "fieldtype": "Date",
+   "label": "Manufacturing Date"
+  },
+  {
+   "fieldname": "reference_number",
+   "fieldtype": "Data",
+   "label": "Reference Number"
+  },
+  {
+   "fieldname": "invoice_price",
+   "fieldtype": "Data",
+   "label": "Invoice Price"
+  },
+  {
+   "fieldname": "sap_sales_order_no",
+   "fieldtype": "Data",
+   "label": "SAP Sales Order No"
+  },
+  {
+   "fieldname": "booking_reference",
+   "fieldtype": "Data",
+   "label": "Booking Reference#"
+  },
+  {
+   "fieldname": "vehicle_tracking_info",
+   "fieldtype": "Data",
+   "label": "Vehicle Tracking Info"
+  },
+  {
+   "fieldname": "dealer_purchase_order_no",
+   "fieldtype": "Data",
+   "label": "Dealer Purchase Order No"
+  },
+  {
+   "fieldname": "type",
+   "fieldtype": "Data",
+   "label": "Type"
+  },
+  {
+   "fieldname": "column_break_sdof",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "capacity",
+   "fieldtype": "Data",
+   "label": "Capacity"
+  },
+  {
+   "fieldname": "option_code",
+   "fieldtype": "Data",
+   "label": "Option Code"
+  },
+  {
+   "fieldname": "transporter_code",
+   "fieldtype": "Data",
+   "label": "Transporter Code"
+  },
+  {
+   "fieldname": "ev_battery_number",
+   "fieldtype": "Data",
+   "label": "EV Battery Number"
+  },
+  {
+   "fieldname": "model_code",
+   "fieldtype": "Data",
+   "label": "Model Code"
+  },
+  {
+   "fieldname": "net_dealer_price",
+   "fieldtype": "Currency",
+   "label": "Net Dealer Price"
+  },
+  {
+   "fieldname": "credit_of_gst",
+   "fieldtype": "Currency",
+   "label": "Credit of GST"
+  },
+  {
+   "fieldname": "dealer_billing_price",
+   "fieldtype": "Currency",
+   "label": "Dealer Billing Price"
+  },
+  {
+   "fieldname": "cgst_amount",
+   "fieldtype": "Currency",
+   "label": "CGST Amount"
+  },
+  {
+   "fieldname": "column_break_eufk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sgst_amount",
+   "fieldtype": "Currency",
+   "label": "SGST Amount"
+  },
+  {
+   "fieldname": "igst_amount",
+   "fieldtype": "Currency",
+   "label": "IGST Amount"
+  },
+  {
+   "fieldname": "ex_showroom_price",
+   "fieldtype": "Currency",
+   "label": "EX-showroom Price"
+  },
+  {
+   "fieldname": "gstin",
+   "fieldtype": "Data",
+   "label": "GSTIN"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-11-28 16:20:18.133243",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Load Dispatch Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

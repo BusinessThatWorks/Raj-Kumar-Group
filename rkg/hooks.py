@@ -43,7 +43,7 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {"Item" : "public/js/item.js"}
+doctype_js = {}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -137,12 +137,7 @@ doctype_js = {"Item" : "public/js/item.js"}
 # ---------------
 # Hook on document methods and events
 
-doc_events = {
-	"Serial No": {
-		"after_insert": "rkg.serial_number.update_item_frame_number",
-		"on_update": "rkg.serial_number.update_item_frame_number",
-	}
-}
+doc_events = {}
 
 # Scheduled Tasks
 # ---------------

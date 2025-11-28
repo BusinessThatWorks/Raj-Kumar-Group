@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-11-28 15:35:05.647977",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "model",
+  "model_name",
+  "model_type",
+  "model_variant",
+  "column_break_xved",
+  "model_color",
+  "group_color",
+  "option",
+  "quantity"
+ ],
+ "fields": [
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model"
+  },
+  {
+   "fieldname": "model_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Name"
+  },
+  {
+   "fieldname": "model_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Type"
+  },
+  {
+   "fieldname": "model_variant",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Variant"
+  },
+  {
+   "fieldname": "column_break_xved",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "model_color",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Color"
+  },
+  {
+   "fieldname": "group_color",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Group Color"
+  },
+  {
+   "fieldname": "option",
+   "fieldtype": "Data",
+   "label": "Option"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Quantity"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-11-28 15:39:24.488948",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Load Plan Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
