@@ -5,10 +5,28 @@ import frappe
 import csv
 import os
 from frappe.model.document import Document
+from frappe import _
 
 
 class LoadDispatch(Document):
-	pass
+	def validate(self):
+		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
+		if self.load_reference_no:
+			# Check if Load Plan with given Load Reference No exists
+			if not frappe.db.exists("Load Plan", self.load_reference_no):
+				frappe.throw(
+					_(
+						"Load Plan with Load Reference No {0} does not exist."
+					).format(self.load_reference_no)
+				)
+
+			load_plan = frappe.get_doc("Load Plan", self.load_reference_no)
+			if load_plan.docstatus != 1:
+				frappe.throw(
+					_(
+						"Please submit Load Plan against this Load Reference No before creating Load Dispatch."
+					)
+				)
 
 
 @frappe.whitelist()
