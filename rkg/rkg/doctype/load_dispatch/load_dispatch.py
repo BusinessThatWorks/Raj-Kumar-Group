@@ -9,8 +9,75 @@ from frappe import _
 
 
 class LoadDispatch(Document):
+	def on_submit(self):
+		self.add_dispatch_quanity_to_load_plan(docstatus=1)
+	
+	def on_cancel(self):
+		self.add_dispatch_quanity_to_load_plan(docstatus=2)
+	
+	def add_dispatch_quanity_to_load_plan(self, docstatus):
+		"""
+		Update load_dispatch_quantity in Load Plan when Load Dispatch is submitted or cancelled.
+		
+		Args:
+			docstatus: 1 for submit (add quantity), 2 for cancel (subtract quantity)
+		"""
+		if not self.load_reference_no:
+			return
+		
+		# Ensure total_dispatch_quantity is calculated
+		if not self.total_dispatch_quantity:
+			self.calculate_total_dispatch_quantity()
+		
+		# Get current load_dispatch_quantity from database (works for submitted documents)
+		current_quantity = frappe.db.get_value("Load Plan", self.load_reference_no, "load_dispatch_quantity") or 0
+		
+		# Calculate new quantity based on docstatus
+		if docstatus == 1:  # Submit - add quantity
+			new_quantity = current_quantity + (self.total_dispatch_quantity or 0)
+		elif docstatus == 2:  # Cancel - subtract quantity
+			new_quantity = max(0, current_quantity - (self.total_dispatch_quantity or 0))
+		else:
+			return
+		
+		# Update directly in database using db_set (works for submitted documents)
+		frappe.db.set_value("Load Plan", self.load_reference_no, "load_dispatch_quantity", new_quantity, update_modified=False)
+	
 	def validate(self):
 		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
+		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
+		has_imported_items = False
+		if self.items:
+			for item in self.items:
+				if item.frame_no and str(item.frame_no).strip():
+					has_imported_items = True
+					break
+		
+		# Check if load_reference_no is being changed
+		if has_imported_items:
+			if self.is_new():
+				# For new documents with imported items, check if load_reference_no was set from CSV
+				# We track this via a custom property set during CSV import
+				if hasattr(self, '_load_reference_no_from_csv') and self._load_reference_no_from_csv:
+					if self.load_reference_no != self._load_reference_no_from_csv:
+						frappe.throw(
+							_(
+								"Cannot change Load Reference Number from '{0}' to '{1}' because items are already imported from CSV. The CSV data belongs to Load Reference Number '{0}'. Please clear all items first or use a CSV file that matches the desired Load Reference Number."
+							).format(self._load_reference_no_from_csv, self.load_reference_no)
+						)
+				# If no flag is set but items exist, it means items were imported
+				# In this case, we need to prevent changes - but we can't know the original value
+				# So we'll rely on client-side validation for new documents
+			else:
+				# For existing documents, check if value changed
+				if self.has_value_changed("load_reference_no"):
+					old_value = self.get_doc_before_save().get("load_reference_no") if self.get_doc_before_save() else None
+					frappe.throw(
+						_(
+							"Cannot change Load Reference Number from '{0}' to '{1}' because items are already imported. Please clear all items first or create a new Load Dispatch document."
+						).format(old_value or "None", self.load_reference_no)
+					)
+		
 		if self.load_reference_no:
 			# Check if Load Plan with given Load Reference No exists
 			if not frappe.db.exists("Load Plan", self.load_reference_no):
@@ -27,13 +94,30 @@ class LoadDispatch(Document):
 						"Please submit Load Plan against this Load Reference No before creating Load Dispatch."
 					)
 				)
+		
+		# Calculate total dispatch quantity from child table
+		self.calculate_total_dispatch_quantity()
+	
+	def calculate_total_dispatch_quantity(self):
+		"""Count the number of rows with non-empty frame_no in Load Dispatch Item child table."""
+		total_dispatch_quantity = 0
+		if self.items:
+			for item in self.items:
+				# Count rows that have a non-empty frame_no
+				if item.frame_no and str(item.frame_no).strip():
+					total_dispatch_quantity += 1
+		self.total_dispatch_quantity = total_dispatch_quantity
 
 
 @frappe.whitelist()
-def process_csv_file(file_url):
+def process_csv_file(file_url, selected_load_reference_no=None):
 	"""
 	Process CSV file and extract data for child table
 	Maps CSV columns to Load Dispatch Item fields
+	
+	Args:
+		file_url: Path to the CSV file
+		selected_load_reference_no: The manually selected Load Reference No to validate against
 	"""
 	try:
 		# Get file path from file_url
@@ -128,6 +212,7 @@ def process_csv_file(file_url):
 			}
 			
 			rows = []
+			csv_load_reference_nos = set()  # Track all load_reference_no values from CSV
 			
 			for csv_row in reader:
 				# Skip empty rows
@@ -170,9 +255,24 @@ def process_csv_file(file_url):
 								row_data[fieldname] = 0.0
 						else:
 							row_data[fieldname] = value
+					
+					# Track load_reference_no from CSV
+					if fieldname == "load_reference_no" and value:
+						csv_load_reference_nos.add(value)
 				
 				if row_data:
 					rows.append(row_data)
+			
+			# Validate load_reference_no match if manually selected
+			if selected_load_reference_no:
+				if len(csv_load_reference_nos) == 0:
+					frappe.throw(_("CSV file does not contain any Load Reference Number. Please ensure the CSV has 'HMSI/InterDealer Load Reference No' or 'HMSI Load Reference No' column."))
+				elif len(csv_load_reference_nos) > 1:
+					frappe.throw(_("CSV file contains multiple different Load Reference Numbers: {0}. All rows must have the same Load Reference Number.").format(", ".join(sorted(csv_load_reference_nos))))
+				else:
+					csv_load_ref = list(csv_load_reference_nos)[0]
+					if csv_load_ref != selected_load_reference_no:
+						frappe.throw(_("Load Reference Number mismatch! You have selected '{0}', but the CSV file contains '{1}'. Please ensure the CSV file matches the selected Load Reference Number.").format(selected_load_reference_no, csv_load_ref))
 			
 			return rows
 		finally:

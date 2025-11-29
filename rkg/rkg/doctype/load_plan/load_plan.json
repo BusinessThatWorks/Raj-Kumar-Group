@@ -14,7 +14,11 @@
   "column_break_drgo",
   "payment_plan_date",
   "items",
-  "table_tezh"
+  "table_tezh",
+  "section_break_jxkq",
+  "total_quantity",
+  "column_break_pbmp",
+  "load_dispatch_quantity"
  ],
  "fields": [
   {
@@ -69,13 +73,39 @@
   {
    "fieldname": "column_break_drgo",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_jxkq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "total_quantity",
+   "fieldtype": "Int",
+   "label": "Total Quantity",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_pbmp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "load_dispatch_quantity",
+   "fieldtype": "Int",
+   "label": "Load Dispatch Quantity",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-28 15:41:16.165873",
+ "modified": "2025-11-29 11:29:13.835985",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Plan",

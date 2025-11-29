@@ -2,22 +2,25 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:dispatch_no",
+ "autoname": "format: LD-{load_reference_no}",
  "creation": "2025-11-28 16:14:35.505427",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_885c",
   "dispatch_no",
+  "invoice_no",
   "amended_from",
   "load_dispatch_file_attach",
   "column_break_jxwc",
-  "dispatch_date",
+  "load_reference_no",
   "import_data_from_file",
   "section_break_bhgj",
   "items",
-  "load_reference_no",
-  "invoice_no"
+  "section_break_ugzt",
+  "total_dispatch_quantity",
+  "column_break_sdhz",
+  "total_load_quantity"
  ],
  "fields": [
   {
@@ -39,11 +42,6 @@
    "fieldtype": "Data",
    "label": "Dispatch No",
    "unique": 1
-  },
-  {
-   "fieldname": "dispatch_date",
-   "fieldtype": "Date",
-   "label": "Dispatch Date"
   },
   {
    "fieldname": "column_break_jxwc",
@@ -82,6 +80,33 @@
    "fieldname": "invoice_no",
    "fieldtype": "Data",
    "label": "Invoice No."
+  },
+  {
+   "fieldname": "section_break_ugzt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "total_dispatch_quantity",
+   "fieldtype": "Int",
+   "label": "Total Dispatch Quantity",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_sdhz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "fetch_from": "load_reference_no.total_quantity",
+   "fieldname": "total_load_quantity",
+   "fieldtype": "Int",
+   "label": "Total Load Quantity",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -89,11 +114,11 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 1,
- "modified": "2025-11-29 10:16:52.958789",
+ "modified": "2025-11-29 11:33:42.302805",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch",
- "naming_rule": "By fieldname",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
