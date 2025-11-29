@@ -15,7 +15,9 @@
   "dispatch_date",
   "import_data_from_file",
   "section_break_bhgj",
-  "items"
+  "items",
+  "load_reference_no",
+  "invoice_no"
  ],
  "fields": [
   {
@@ -68,6 +70,18 @@
    "fieldname": "import_data_from_file",
    "fieldtype": "Button",
    "label": "Import Data From File"
+  },
+  {
+   "fieldname": "load_reference_no",
+   "fieldtype": "Link",
+   "label": "Load Reference No",
+   "options": "Load Plan",
+   "reqd": 1
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "label": "Invoice No."
   }
  ],
  "grid_page_length": 50,
@@ -75,7 +89,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 1,
- "modified": "2025-11-28 16:22:30.085672",
+ "modified": "2025-11-29 10:16:52.958789",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch",

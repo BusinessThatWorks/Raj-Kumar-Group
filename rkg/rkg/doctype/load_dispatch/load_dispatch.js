@@ -37,6 +37,15 @@ frappe.ui.form.on("Load Dispatch", {
 							
 							frm.refresh_field("items");
 							
+							// Map values from first imported row to parent fields
+							const first_row = r.message[0] || {};
+							if (first_row.load_reference_no) {
+								frm.set_value("load_reference_no", first_row.load_reference_no);
+							}
+							if (first_row.invoice_no) {
+								frm.set_value("invoice_no", first_row.invoice_no);
+							}
+							
 							frappe.show_alert({
 								message: __("Successfully imported {0} rows from CSV", [r.message.length]),
 								indicator: "green"

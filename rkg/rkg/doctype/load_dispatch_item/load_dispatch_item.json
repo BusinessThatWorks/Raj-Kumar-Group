@@ -6,8 +6,6 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_z2a1",
-  "load_reference_no",
-  "invoice_no",
   "invoice_date",
   "model_category",
   "model_name",
@@ -74,20 +72,6 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Model Variant"
-  },
-  {
-   "fieldname": "load_reference_no",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Load Reference No",
-   "options": "Load Plan",
-   "reqd": 1
-  },
-  {
-   "fieldname": "invoice_no",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "invoice No."
   },
   {
    "fieldname": "invoice_date",
@@ -334,7 +318,7 @@
  "is_submittable": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-28 16:20:18.133243",
+ "modified": "2025-11-29 10:23:40.842144",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch Item",
