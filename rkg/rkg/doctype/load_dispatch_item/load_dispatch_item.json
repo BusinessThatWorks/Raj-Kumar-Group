@@ -13,6 +13,7 @@
   "color_code",
   "column_break_anog",
   "mtoc",
+  "item_code",
   "frame_no",
   "engnie_no_motor_no",
   "physical_status",
@@ -97,6 +98,11 @@
    "fieldname": "mtoc",
    "fieldtype": "Data",
    "label": "MTOC"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "label": "Item Code"
   },
   {
    "fieldname": "frame_no",
@@ -318,7 +324,7 @@
  "is_submittable": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-29 10:23:40.842144",
+ "modified": "2025-11-29 16:49:12.054957",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch Item",

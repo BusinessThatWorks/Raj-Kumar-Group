@@ -9,6 +9,12 @@ frappe.ui.form.on("Load Dispatch", {
 		if (frm.doc.load_reference_no && !frm._load_reference_no_from_csv) {
 			frm._original_load_reference_no = frm.doc.load_reference_no;
 		}
+		
+		// Show item_code field - it will be populated on save
+		if (frm.fields_dict.items && frm.fields_dict.items.grid) {
+			// Always show the field (it will be populated from mtoc on save)
+			frm.fields_dict.items.grid.update_docfield_property("item_code", "hidden", false);
+		}
 	},
 
 	load_reference_no(frm) {
@@ -62,6 +68,7 @@ frappe.ui.form.on("Load Dispatch", {
 								Object.keys(row).forEach(function(key) {
 									child_row[key] = row[key];
 								});
+								// Note: item_code will be populated from mtoc on save
 							});
 							
 							frm.refresh_field("items");
@@ -111,7 +118,8 @@ frappe.ui.form.on("Load Dispatch", {
 		
 		// Trigger the same logic as file attachment
 		frm.trigger("load_dispatch_file_attach");
-	}
+	},
+
 });
 
 // Calculate total dispatch quantity by counting rows with frame_no

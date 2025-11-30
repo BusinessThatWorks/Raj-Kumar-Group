@@ -9,6 +9,77 @@ from frappe import _
 
 
 class LoadDispatch(Document):
+	def before_save(self):
+		"""Populate item_code from mtoc before saving."""
+		# Populate item_code from mtoc for all items on save
+		if self.items:
+			for item in self.items:
+				if item.mtoc:
+					# Always set item_code from mtoc on save
+					item.item_code = str(item.mtoc).strip()
+	
+	def validate(self):
+		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
+		# Also populate item_code in validate as backup
+		if self.items:
+			for item in self.items:
+				if item.mtoc and not item.item_code:
+					# Set item_code from mtoc if not already set
+					item.item_code = str(item.mtoc).strip()
+		
+		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
+		has_imported_items = False
+		if self.items:
+			for item in self.items:
+				if item.frame_no and str(item.frame_no).strip():
+					has_imported_items = True
+					break
+		
+		# Check if load_reference_no is being changed
+		if has_imported_items:
+			if self.is_new():
+				# For new documents with imported items, check if load_reference_no was set from CSV
+				# We track this via a custom property set during CSV import
+				if hasattr(self, '_load_reference_no_from_csv') and self._load_reference_no_from_csv:
+					if self.load_reference_no != self._load_reference_no_from_csv:
+						frappe.throw(
+							_(
+								"Cannot change Load Reference Number from '{0}' to '{1}' because items are already imported from CSV. The CSV data belongs to Load Reference Number '{0}'. Please clear all items first or use a CSV file that matches the desired Load Reference Number."
+							).format(self._load_reference_no_from_csv, self.load_reference_no)
+						)
+				# If no flag is set but items exist, it means items were imported
+				# In this case, we need to prevent changes - but we can't know the original value
+				# So we'll rely on client-side validation for new documents
+			else:
+				# For existing documents, check if value changed
+				if self.has_value_changed("load_reference_no"):
+					old_value = self.get_doc_before_save().get("load_reference_no") if self.get_doc_before_save() else None
+					frappe.throw(
+						_(
+							"Cannot change Load Reference Number from '{0}' to '{1}' because items are already imported. Please clear all items first or create a new Load Dispatch document."
+						).format(old_value or "None", self.load_reference_no)
+					)
+		
+		if self.load_reference_no:
+			# Check if Load Plan with given Load Reference No exists
+			if not frappe.db.exists("Load Plan", self.load_reference_no):
+				frappe.throw(
+					_(
+						"Load Plan with Load Reference No {0} does not exist."
+					).format(self.load_reference_no)
+				)
+
+			load_plan = frappe.get_doc("Load Plan", self.load_reference_no)
+			if load_plan.docstatus != 1:
+				frappe.throw(
+					_(
+						"Please submit Load Plan against this Load Reference No before creating Load Dispatch."
+					)
+				)
+		
+		# Calculate total dispatch quantity from child table
+		self.calculate_total_dispatch_quantity()
+	
 	def on_submit(self):
 		self.add_dispatch_quanity_to_load_plan(docstatus=1)
 	
