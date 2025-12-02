@@ -10,22 +10,24 @@ from frappe import _
 
 class LoadDispatch(Document):
 	def before_save(self):
-		"""Populate item_code from mtoc before saving."""
+		"""Populate item_code from mtoc before saving and create Items if needed."""
 		# Populate item_code from mtoc for all items on save
 		if self.items:
-			for item in self.items:
-				if item.mtoc:
-					# Always set item_code from mtoc on save
-					item.item_code = str(item.mtoc).strip()
-	
+			self.set_item_code()
+			self.create_serial_nos()
+			self.set_fields_value()
+			self.set_item_group()
+			self.set_supplier()
+			self.validate_vehicle_model_variant()
 	def validate(self):
 		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
 		# Also populate item_code in validate as backup
 		if self.items:
-			for item in self.items:
-				if item.mtoc and not item.item_code:
-					# Set item_code from mtoc if not already set
-					item.item_code = str(item.mtoc).strip()
+			self.set_item_code()
+			self.create_serial_nos()
+			self.set_fields_value()
+			self.set_item_group()
+			self.validate_vehicle_model_variant()
 		
 		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
 		has_imported_items = False
@@ -80,6 +82,140 @@ class LoadDispatch(Document):
 		# Calculate total dispatch quantity from child table
 		self.calculate_total_dispatch_quantity()
 	
+	def create_serial_nos(self):
+		"""Create serial nos for all items on save."""
+		if self.items:
+			for item in self.items:
+				if item.item_code and str(item.item_code).strip() and item.frame_no and str(item.frame_no).strip():
+					serial_no_name = str(item.frame_no).strip()
+
+					# Check if Serial No already exists
+					if not frappe.db.exists("Serial No", serial_no_name):
+						try:
+							serial_no = frappe.get_doc({
+								"doctype": "Serial No",
+								"item_code": item.item_code,
+								"serial_no": serial_no_name,
+							})
+
+							# Map Engine No / Motor No from Load Dispatch Item to Serial No custom field
+							# Assumes Serial No has a custom field named `custom_engine_number`
+							if getattr(item, "engnie_no_motor_no", None):
+								setattr(serial_no, "custom_engine_number", item.engnie_no_motor_no)
+
+							serial_no.insert(ignore_permissions=True)
+						except Exception as e:
+							frappe.log_error(f"Error creating Serial No {serial_no_name}: {str(e)}", "Serial No Creation Error")
+					else:
+						# If Serial No already exists, update the custom engine number if provided
+						if getattr(item, "engnie_no_motor_no", None):
+							try:
+								frappe.db.set_value(
+									"Serial No",
+									serial_no_name,
+									"custom_engine_number",
+									item.engnie_no_motor_no,
+								)
+							except Exception as e:
+								frappe.log_error(
+									f"Error updating custom_engine_number for Serial No {serial_no_name}: {str(e)}",
+									"Serial No Update Error",
+								)
+	
+	def set_item_code(self):
+		if self.items:
+			for item in self.items:
+				if item.mtoc and str(item.mtoc).strip():
+					if frappe.db.exists("Item", str(item.mtoc).strip()):
+						item_doc = frappe.get_doc("Item", str(item.mtoc).strip())
+						item.item_code = item_doc.item_code
+					else:
+						self.create_items_from_dispatch_items()
+	
+	def set_fields_value(self):
+		"""Set default values from RKG Settings if not already set."""
+		if not self.items:
+			return
+		
+		try:
+			rkg_settings = frappe.get_single("RKG Settings")
+		except frappe.DoesNotExistError:
+			# RKG Settings not found, skip setting default values
+			return
+		
+		# Set default values if not already set
+		for item in self.items:
+			# You can add more field mappings here if needed
+			pass
+	
+	def set_item_group(self):
+		"""Set item_group for Load Dispatch Items based on model_name or default."""
+		if not self.items:
+			return
+		
+		for item in self.items:
+			if not item.item_group and item.model_name:
+				# Check if model_name exists as an Item Group
+				if frappe.db.exists("Item Group", item.model_name):
+					item.item_group = item.model_name
+				else:
+					# Fall back to "Two Wheeler Vehicle" if model_name not found
+					if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
+						item.item_group = "Two Wheeler Vehicle"
+	
+	def set_supplier(self):
+		"""Set supplier for items from RKG Settings."""
+		if not self.items:
+			return
+		
+		try:
+			rkg_settings = frappe.get_single("RKG Settings")
+			default_supplier = rkg_settings.get("default_supplier")
+			
+			if default_supplier:
+				# Set supplier on items if needed
+				# Note: This depends on whether Load Dispatch Item has a supplier field
+				# If not, supplier is set on the Item doctype itself
+				pass
+		except frappe.DoesNotExistError:
+			# RKG Settings not found, skip setting supplier
+			pass
+
+	def validate_vehicle_model_variant(self):
+		"""Ensure vehicle_model_variant matches mtoc for every item.
+
+		Business rule:
+		- Vehicle Model Variant value must always be the same as MTOC.
+		- If VMV is empty and MTOC is present -> auto-set VMV = MTOC.
+		- If VMV is present and differs from MTOC -> throw a validation error.
+		"""
+		if not self.items:
+			return
+
+		for item in self.items:
+			mtoc_value = (item.mtoc or "").strip()
+			vmv_value = (item.vehicle_model_variant or "").strip()
+
+			# If there is no MTOC, we don't enforce anything
+			if not mtoc_value:
+				continue
+
+			# Auto-set VMV when blank
+			if not vmv_value:
+				item.vehicle_model_variant = mtoc_value
+			# If both exist and differ, raise error
+			elif vmv_value != mtoc_value:
+				frappe.throw(
+					_(
+						"Vehicle Model Variant '{0}' does not match MTOC '{1}' "
+						"for row {2}. Please correct the value so they are the same."
+					).format(
+						vmv_value,
+						mtoc_value,
+						getattr(item, "idx", "?"),
+					)
+				)
+
 	def on_submit(self):
 		self.add_dispatch_quanity_to_load_plan(docstatus=1)
 	
@@ -112,62 +248,10 @@ class LoadDispatch(Document):
 			return
 		
 		# Update directly in database using db_set (works for submitted documents)
+		status = 'In-Transit' if flt(new_quantity) > 0 else 'Submitted'
+		
 		frappe.db.set_value("Load Plan", self.load_reference_no, "load_dispatch_quantity", new_quantity, update_modified=False)
-	
-	def validate(self):
-		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
-		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
-		has_imported_items = False
-		if self.items:
-			for item in self.items:
-				if item.frame_no and str(item.frame_no).strip():
-					has_imported_items = True
-					break
-		
-		# Check if load_reference_no is being changed
-		if has_imported_items:
-			if self.is_new():
-				# For new documents with imported items, check if load_reference_no was set from CSV
-				# We track this via a custom property set during CSV import
-				if hasattr(self, '_load_reference_no_from_csv') and self._load_reference_no_from_csv:
-					if self.load_reference_no != self._load_reference_no_from_csv:
-						frappe.throw(
-							_(
-								"Cannot change Load Reference Number from '{0}' to '{1}' because items are already imported from CSV. The CSV data belongs to Load Reference Number '{0}'. Please clear all items first or use a CSV file that matches the desired Load Reference Number."
-							).format(self._load_reference_no_from_csv, self.load_reference_no)
-						)
-				# If no flag is set but items exist, it means items were imported
-				# In this case, we need to prevent changes - but we can't know the original value
-				# So we'll rely on client-side validation for new documents
-			else:
-				# For existing documents, check if value changed
-				if self.has_value_changed("load_reference_no"):
-					old_value = self.get_doc_before_save().get("load_reference_no") if self.get_doc_before_save() else None
-					frappe.throw(
-						_(
-							"Cannot change Load Reference Number from '{0}' to '{1}' because items are already imported. Please clear all items first or create a new Load Dispatch document."
-						).format(old_value or "None", self.load_reference_no)
-					)
-		
-		if self.load_reference_no:
-			# Check if Load Plan with given Load Reference No exists
-			if not frappe.db.exists("Load Plan", self.load_reference_no):
-				frappe.throw(
-					_(
-						"Load Plan with Load Reference No {0} does not exist."
-					).format(self.load_reference_no)
-				)
-
-			load_plan = frappe.get_doc("Load Plan", self.load_reference_no)
-			if load_plan.docstatus != 1:
-				frappe.throw(
-					_(
-						"Please submit Load Plan against this Load Reference No before creating Load Dispatch."
-					)
-				)
-		
-		# Calculate total dispatch quantity from child table
-		self.calculate_total_dispatch_quantity()
+		frappe.db.set_value("Load Plan", self.load_reference_no, "status", status, update_modified=False)
 	
 	def calculate_total_dispatch_quantity(self):
 		"""Count the number of rows with non-empty frame_no in Load Dispatch Item child table."""
@@ -178,6 +262,127 @@ class LoadDispatch(Document):
 				if item.frame_no and str(item.frame_no).strip():
 					total_dispatch_quantity += 1
 		self.total_dispatch_quantity = total_dispatch_quantity
+	
+	def create_items_from_dispatch_items(self):
+		"""
+		Create Items in Item doctype for all load_dispatch_items that have item_code.
+		Populates Supplier and HSN Code from RKG Settings.
+		"""
+		if not self.items:
+			return
+		
+		# Fetch RKG Settings data (single doctype)
+		try:
+			rkg_settings = frappe.get_single("RKG Settings")
+		except frappe.DoesNotExistError:
+			frappe.throw(_("RKG Settings not found. Please create RKG Settings first before submitting Load Dispatch."))
+		
+		created_items = []
+		skipped_items = []
+		
+		for item in self.items:
+			# Prefer explicit item_code, else fall back to mtoc as the item code
+			item_code = None
+			if item.item_code and str(item.item_code).strip():
+				item_code = str(item.item_code).strip()
+			elif item.mtoc and str(item.mtoc).strip():
+				item_code = str(item.mtoc).strip()
+			
+			# Nothing to create if we still don't have a code
+			if not item_code:
+				continue
+
+			# Ensure the child row reflects the chosen item_code
+			item.item_code = item_code
+			
+			# Check if Item already exists
+			if frappe.db.exists("Item", item_code):
+				skipped_items.append(item_code)
+				continue
+			
+			try:
+				# Determine item_group - try model_name first, then fall back to parent group
+				item_group = None
+				if item.model_name:
+					# Check if model_name exists as an Item Group
+					if frappe.db.exists("Item Group", item.model_name):
+						item_group = item.model_name
+				
+				# Fall back to parent group "Two Wheeler Vehicle" if model_name not found
+				if not item_group:
+					if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
+						item_group = "Two Wheeler Vehicle"
+					else:
+						# Last resort: get the first available item group
+						first_group = frappe.db.get_value("Item Group", {"is_group": 0}, "name", order_by="name")
+						if first_group:
+							item_group = first_group
+						else:
+							frappe.throw(_("No Item Group found. Please create an Item Group first."))
+				
+				# Create new Item
+				item_doc = frappe.get_doc({
+					"doctype": "Item",
+					"item_code": item_code,
+					"item_name": item.model_variant or item_code,
+					"item_group": item_group,
+					"stock_uom": "Nos",  # Adjust as needed
+					"is_stock_item": 1,
+					"has_serial_no": 1,
+
+				})
+				
+				# Populate Supplier from RKG Settings (uses default_supplier on the single doctype)
+				if rkg_settings.get("default_supplier"):
+					# Item uses Item Supplier child table
+					if hasattr(item_doc, "supplier_items"):
+						item_doc.append("supplier_items", {
+							"supplier": rkg_settings.default_supplier,
+							"is_default": 1
+						})
+					# Fallback: if Item has direct supplier field
+					elif hasattr(item_doc, "supplier"):
+						item_doc.supplier = rkg_settings.default_supplier
+				
+				# Populate HSN Code from RKG Settings (uses default_hsn_code on the single doctype)
+				if rkg_settings.get("default_hsn_code"):
+					# Try common field names for HSN Code
+					if hasattr(item_doc, "gst_hsn_code"):
+						item_doc.gst_hsn_code = rkg_settings.default_hsn_code
+					elif hasattr(item_doc, "custom_gst_hsn_code"):
+						item_doc.custom_gst_hsn_code = rkg_settings.default_hsn_code
+				
+				# Save the Item
+				item_doc.insert(ignore_permissions=True)
+				created_items.append(item_code)
+				
+			except Exception as e:
+				frappe.log_error(
+					f"Error creating Item {item_code}: {str(e)}", 
+					"Item Creation Error"
+				)
+				frappe.throw(_("Error creating Item '{0}': {1}").format(item_code, str(e)))
+		
+		# Show summary message
+		if created_items:
+			frappe.msgprint(
+				_("Created {0} Item(s): {1}").format(
+					len(created_items), 
+					", ".join(created_items[:10]) + ("..." if len(created_items) > 10 else "")
+				),
+				indicator="green",
+				alert=True
+			)
+		
+		if skipped_items:
+			frappe.msgprint(
+				_("Skipped {0} Item(s) (already exist): {1}").format(
+					len(skipped_items),
+					", ".join(skipped_items[:10]) + ("..." if len(skipped_items) > 10 else "")
+				),
+				indicator="orange",
+				alert=True
+			)
 
 
 @frappe.whitelist()
@@ -353,3 +558,251 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 	except Exception as e:
 		frappe.log_error(f"Error processing CSV file: {str(e)}", "CSV Import Error")
 		frappe.throw(f"Error processing CSV file: {str(e)}")
+@frappe.whitelist()
+def create_purchase_order(source_name, target_doc=None):
+	"""Create Purchase Order from Load Dispatch"""
+	from frappe.model.mapper import get_mapped_doc
+	
+	def set_missing_values(source, target):
+		target.flags.ignore_permissions = True
+		# Set load_reference_no from source
+		target.custom_load_reference_no = source.load_reference_no
+		
+		# Set supplier and gst_hsn_code from RKG Settings on parent document
+		try:
+			rkg_settings = frappe.get_single("RKG Settings")
+			if rkg_settings.get("default_supplier"):
+				target.supplier = rkg_settings.default_supplier
+			
+			# Set gst_hsn_code from RKG Settings on parent document
+			if rkg_settings.get("default_hsn_code"):
+				# Set gst_hsn_code on Purchase Order
+				if hasattr(target, "gst_hsn_code"):
+					target.gst_hsn_code = rkg_settings.default_hsn_code
+				elif hasattr(target, "custom_gst_hsn_code"):
+					target.custom_gst_hsn_code = rkg_settings.default_hsn_code
+		except frappe.DoesNotExistError:
+			# RKG Settings not found, skip setting supplier and gst_hsn_code
+			pass
+	
+	def update_item(source, target, source_parent):
+		# Map item_code from Load Dispatch Item to Purchase Order Item
+		target.item_code = source.item_code
+		# Set quantity to 1
+		target.qty = 1
+		
+		# Ensure UOM matches the Item's stock UOM
+		if target.item_code:
+			stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
+			if stock_uom:
+				if hasattr(target, "uom"):
+					target.uom = stock_uom
+				if hasattr(target, "stock_uom"):
+					target.stock_uom = stock_uom
+		
+		# Set item_group from source if available, otherwise get from Item
+		if source.item_group:
+			# If Purchase Order Item has item_group field, set it
+			if hasattr(target, "item_group"):
+				target.item_group = source.item_group
+		elif target.item_code:
+			# Get item_group from Item doctype
+			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
+			if item_group and hasattr(target, "item_group"):
+				target.item_group = item_group
+
+	doc = get_mapped_doc(
+		"Load Dispatch",  # Source doctype
+		source_name,
+		{
+			"Load Dispatch": {
+				"doctype": "Purchase Order",
+				"validation": {
+					"docstatus": ["=", 1],
+				},
+				"field_map": {
+					"load_reference_no": "load_reference_no"
+				}
+			},
+			"Load Dispatch Item": {
+				"doctype": "Purchase Order Item",
+				"field_map": {
+					"item_code": "item_code",
+					"model_variant": "item_name",
+					"frame_no": "serial_no",
+					"item_group": "item_group",
+				},
+				"postprocess": update_item
+			},
+		},
+		target_doc,
+		set_missing_values
+	)
+	
+	return doc
+
+@frappe.whitelist()
+def create_purchase_receipt(source_name, target_doc=None):
+	"""Create Purchase Receipt from Load Dispatch"""
+	from frappe.model.mapper import get_mapped_doc
+	
+	def set_missing_values(source, target):
+		target.flags.ignore_permissions = True
+		# Set load_reference_no from source
+		target.custom_load_reference_no = source.load_reference_no
+		
+		# Set supplier and gst_hsn_code from RKG Settings on parent document
+		try:
+			rkg_settings = frappe.get_single("RKG Settings")
+			if rkg_settings.get("default_supplier"):
+				target.supplier = rkg_settings.default_supplier
+			
+			# Set gst_hsn_code from RKG Settings on parent document
+			if rkg_settings.get("default_hsn_code"):
+				# Set gst_hsn_code on Purchase Receipt
+				if hasattr(target, "gst_hsn_code"):
+					target.gst_hsn_code = rkg_settings.default_hsn_code
+				elif hasattr(target, "custom_gst_hsn_code"):
+					target.custom_gst_hsn_code = rkg_settings.default_hsn_code
+		except frappe.DoesNotExistError:
+			# RKG Settings not found, skip setting supplier and gst_hsn_code
+			pass
+	
+	def update_item(source, target, source_parent):
+		# Map item_code from Load Dispatch Item to Purchase Receipt Item
+		target.item_code = source.item_code
+		# Set quantity to 1
+		target.qty = 1
+		
+		# Ensure UOM matches the Item's stock UOM
+		if target.item_code:
+			stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
+			if stock_uom:
+				if hasattr(target, "uom"):
+					target.uom = stock_uom
+				if hasattr(target, "stock_uom"):
+					target.stock_uom = stock_uom
+		
+		# Set item_group from source if available, otherwise get from Item
+		if source.item_group:
+			# If Purchase Receipt Item has item_group field, set it
+			if hasattr(target, "item_group"):
+				target.item_group = source.item_group
+		elif target.item_code:
+			# Get item_group from Item doctype
+			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
+			if item_group and hasattr(target, "item_group"):
+				target.item_group = item_group
+
+	doc = get_mapped_doc(
+		"Load Dispatch",  # Source doctype
+		source_name,
+		{
+			"Load Dispatch": {
+				"doctype": "Purchase Receipt",
+				"validation": {
+					"docstatus": ["=", 1],
+				},
+				"field_map": {
+					"load_reference_no": "load_reference_no"
+				}
+			},
+			"Load Dispatch Item": {
+				"doctype": "Purchase Receipt Item",
+				"field_map": {
+					"item_code": "item_code",
+					"model_variant": "item_name",
+					"frame_no": "serial_no",
+					"item_group": "item_group",
+				},
+				"postprocess": update_item
+			},
+		},
+		target_doc,
+		set_missing_values
+	)
+	
+	return doc
+
+@frappe.whitelist()
+def create_purchase_invoice(source_name, target_doc=None):
+	"""Create Purchase Invoice from Load Dispatch"""
+	from frappe.model.mapper import get_mapped_doc
+	
+	def set_missing_values(source, target):
+		target.flags.ignore_permissions = True
+		# Set load_reference_no from source
+		target.custom_load_reference_no = source.load_reference_no
+		
+		# Set supplier and gst_hsn_code from RKG Settings on parent document
+		try:
+			rkg_settings = frappe.get_single("RKG Settings")
+			if rkg_settings.get("default_supplier"):
+				target.supplier = rkg_settings.default_supplier
+			
+			# Set gst_hsn_code from RKG Settings on parent document
+			if rkg_settings.get("default_hsn_code"):
+				# Set gst_hsn_code on Purchase Invoice
+				if hasattr(target, "gst_hsn_code"):
+					target.gst_hsn_code = rkg_settings.default_hsn_code
+				elif hasattr(target, "custom_gst_hsn_code"):
+					target.custom_gst_hsn_code = rkg_settings.default_hsn_code
+		except frappe.DoesNotExistError:
+			# RKG Settings not found, skip setting supplier and gst_hsn_code
+			pass
+	
+	def update_item(source, target, source_parent):
+		# Map item_code from Load Dispatch Item to Purchase Invoice Item
+		target.item_code = source.item_code
+		# Set quantity to 1
+		target.qty = 1
+		
+		# Ensure UOM matches the Item's stock UOM
+		if target.item_code:
+			stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
+			if stock_uom:
+				if hasattr(target, "uom"):
+					target.uom = stock_uom
+				if hasattr(target, "stock_uom"):
+					target.stock_uom = stock_uom
+		
+		# Set item_group from source if available, otherwise get from Item
+		if source.item_group:
+			# If Purchase Invoice Item has item_group field, set it
+			if hasattr(target, "item_group"):
+				target.item_group = source.item_group
+		elif target.item_code:
+			# Get item_group from Item doctype
+			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
+			if item_group and hasattr(target, "item_group"):
+				target.item_group = item_group
+
+	doc = get_mapped_doc(
+		"Load Dispatch",  # Source doctype
+		source_name,
+		{
+			"Load Dispatch": {
+				"doctype": "Purchase Invoice",
+				"validation": {
+					"docstatus": ["=", 1],
+				},
+				"field_map": {
+					"load_reference_no": "load_reference_no"
+				}
+			},
+			"Load Dispatch Item": {
+				"doctype": "Purchase Invoice Item",
+				"field_map": {
+					"item_code": "item_code",
+					"model_variant": "item_name",
+					"frame_no": "serial_no",
+					"item_group": "item_group",
+				},
+				"postprocess": update_item
+			},
+		},
+		target_doc,
+		set_missing_values
+	)
+	
+	return doc	

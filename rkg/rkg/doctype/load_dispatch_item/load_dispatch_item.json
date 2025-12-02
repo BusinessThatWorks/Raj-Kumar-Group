@@ -11,6 +11,8 @@
   "model_name",
   "model_variant",
   "color_code",
+  "item_group",
+  "vehicle_model_variant",
   "column_break_anog",
   "mtoc",
   "item_code",
@@ -101,8 +103,9 @@
   },
   {
    "fieldname": "item_code",
-   "fieldtype": "Data",
-   "label": "Item Code"
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item"
   },
   {
    "fieldname": "frame_no",
@@ -317,6 +320,17 @@
    "fieldname": "gstin",
    "fieldtype": "Data",
    "label": "GSTIN"
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Data",
+   "label": "Item Group"
+  },
+  {
+   "fieldname": "vehicle_model_variant",
+   "fieldtype": "Link",
+   "label": "Vehicle Model Variant ",
+   "options": "Vehicle Model Variant"
   }
  ],
  "grid_page_length": 50,
@@ -324,7 +338,7 @@
  "is_submittable": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-29 16:49:12.054957",
+ "modified": "2025-12-01 14:43:52.273421",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch Item",

@@ -15,12 +15,15 @@
   "column_break_jxwc",
   "load_reference_no",
   "import_data_from_file",
+  "status",
   "section_break_bhgj",
   "items",
   "section_break_ugzt",
   "total_dispatch_quantity",
+  "total_load_quantity",
   "column_break_sdhz",
-  "total_load_quantity"
+  "total_received_quantity",
+  "total_billed_quantity"
  ],
  "fields": [
   {
@@ -107,6 +110,31 @@
    "no_copy": 1,
    "non_negative": 1,
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "no_copy": 1,
+   "options": "In-Transit\nReceived",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_received_quantity",
+   "fieldtype": "Int",
+   "label": "Total Received Quantity",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_billed_quantity",
+   "fieldtype": "Int",
+   "label": "Total Billed Quantity",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -114,7 +142,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 1,
- "modified": "2025-11-29 11:33:42.302805",
+ "modified": "2025-12-01 17:38:14.973818",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch",

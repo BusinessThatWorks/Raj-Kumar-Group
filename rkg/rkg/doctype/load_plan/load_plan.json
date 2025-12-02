@@ -11,6 +11,7 @@
   "amended_from",
   "column_break_tnfw",
   "dispatch_plan_date",
+  "status",
   "column_break_drgo",
   "payment_plan_date",
   "items",
@@ -99,13 +100,22 @@
    "no_copy": 1,
    "non_negative": 1,
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "no_copy": 1,
+   "options": "Submitted\nIn-Transit\nDispatched\nPartial Dispatched",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-29 11:29:13.835985",
+ "modified": "2025-12-01 17:37:01.266999",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Plan",

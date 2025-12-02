@@ -15,6 +15,14 @@ frappe.ui.form.on("Load Dispatch", {
 			// Always show the field (it will be populated from mtoc on save)
 			frm.fields_dict.items.grid.update_docfield_property("item_code", "hidden", false);
 		}
+		if(frm.doc.docstatus==1){
+			frm.add_custom_button(__("Purchase Order"),frm.cscript["Create Purchase Order"], __("Create"));
+			frm.page.set_inner_btn_group_as_primary(__("Create"));
+			frm.add_custom_button(__("Purchase Receipt"),frm.cscript["Create Purchase Receipt"], __("Create"));
+			frm.page.set_inner_btn_group_as_primary(__("Create"));
+			frm.add_custom_button(__("Purchase Invoice"),frm.cscript["Create Purchase Invoice"], __("Create"));
+			frm.page.set_inner_btn_group_as_primary(__("Create"));						
+		}
 	},
 
 	load_reference_no(frm) {
@@ -151,3 +159,23 @@ frappe.ui.form.on("Load Dispatch Item", {
 		}
 	}
 });
+cur_frm.cscript["Create Purchase Order"] = function(){
+	frappe.model.open_mapped_doc({
+		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_order",
+		frm: cur_frm
+	});
+}
+
+cur_frm.cscript["Create Purchase Receipt"] = function(){
+	frappe.model.open_mapped_doc({
+		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_receipt",
+		frm: cur_frm
+	});
+}
+
+cur_frm.cscript["Create Purchase Invoice"] = function(){
+	frappe.model.open_mapped_doc({
+		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_invoice",
+		frm: cur_frm
+	});
+}

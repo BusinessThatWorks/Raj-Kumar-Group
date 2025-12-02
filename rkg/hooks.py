@@ -137,7 +137,14 @@ doctype_js = {}
 # ---------------
 # Hook on document methods and events
 
-doc_events = {}
+doc_events = {
+    "Purchase Receipt": {
+        "on_submit": "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document"
+    },
+    "Purchase Invoice": {
+        "on_submit": "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document"
+    }    
+}
 
 # Scheduled Tasks
 # ---------------
