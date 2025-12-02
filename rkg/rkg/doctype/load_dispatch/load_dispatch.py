@@ -87,16 +87,22 @@ class LoadDispatch(Document):
 		"""Create serial nos for all items on save."""
 		if self.items:
 			for item in self.items:
-				if item.item_code and str(item.item_code).strip() and item.frame_no and str(item.frame_no).strip():
+				if item.item_code and item.frame_no:
 					serial_no_name = str(item.frame_no).strip()
 
 					# Check if Serial No already exists
 					if not frappe.db.exists("Serial No", serial_no_name):
+						print(serial_no_name)
 						try:
+							# IMPORTANT:
+							# - Serial No doctype still has a mandatory standard field `serial_no`
+							# - Your DB table currently does NOT have a `serial_no` column
+							#   so you MUST fix the schema (see explanation in assistant message)
+							#   so this insert works without SQL errors.
 							serial_no = frappe.get_doc({
 								"doctype": "Serial No",
 								"item_code": item.item_code,
-								"serial_no": serial_no_name,
+								"serial_no": serial_no_name,  # Frame Number -> Serial No field
 							})
 
 							# Map Engine No / Motor No from Load Dispatch Item to Serial No custom field
@@ -105,6 +111,7 @@ class LoadDispatch(Document):
 								setattr(serial_no, "custom_engine_number", item.engnie_no_motor_no)
 
 							serial_no.insert(ignore_permissions=True)
+							print(serial_no)
 						except Exception as e:
 							frappe.log_error(f"Error creating Serial No {serial_no_name}: {str(e)}", "Serial No Creation Error")
 					else:
@@ -812,23 +819,10 @@ def create_purchase_invoice(source_name, target_doc=None):
 def update_load_dispatch_totals_from_document(doc, method=None):
 	"""
 	Update Load Dispatch totals (total_received_quantity and total_billed_quantity)
-	when Purchase Receipt or Purchase Invoice is submitted.
+	when Purchase Receipt or Purchase Invoice is submitted or cancelled.
 	
-	Case 1 - Purchase Receipt:
-	- Get custom_load_dispatch field value from Purchase Receipt (this is Load Dispatch document name/ID)
-	- Verify Load Dispatch document exists with that name/ID
-	- Find all submitted Purchase Receipts where custom_load_dispatch = that Load Dispatch name
-	- Sum total_qty from all those Purchase Receipts
-	- Update total_received_quantity and total_billed_quantity in Load Dispatch
-	
-	Case 2 - Purchase Invoice:
-	- Check if Purchase Invoice has any Purchase Receipt linked (check purchase_receipt field in items)
-	- If ANY item has purchase_receipt filled → STOP, don't update
-	- If ALL items have empty purchase_receipt → Get custom_load_dispatch field value (Load Dispatch name/ID)
-	- Verify Load Dispatch document exists with that name/ID
-	- Find all submitted Purchase Invoices (without Purchase Receipt) where custom_load_dispatch = that Load Dispatch name
-	- Sum total_qty from all those Purchase Invoices
-	- Update total_received_quantity and total_billed_quantity in Load Dispatch
+	On Submit: Updates with the submitted document's total_qty
+	On Cancel: Recalculates totals from all remaining submitted documents (excludes cancelled one)
 	
 	Args:
 		doc: Purchase Receipt or Purchase Invoice document
@@ -838,10 +832,16 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	print(f"DEBUG: update_load_dispatch_totals_from_document called")
 	print(f"DEBUG: Document Type: {doc.doctype}")
 	print(f"DEBUG: Document Name: {doc.name}")
+	print(f"DEBUG: Document Status: {doc.docstatus}")
+	print(f"DEBUG: Method: {method}")
 	print(f"{'='*60}\n")
 	
-	# Get custom_load_dispatch field value from the submitted document
-	# This value IS the Load Dispatch document name/ID
+	# For Purchase Invoice, only run this logic when "Update Stock" is enabled
+	if doc.doctype == "Purchase Invoice" and getattr(doc, "update_stock", 0) != 1:
+		print("DEBUG: Purchase Invoice has update_stock != 1. Skipping Load Dispatch totals update.")
+		return
+
+	# Get custom_load_dispatch field value from the document
 	load_dispatch_name = None
 	
 	# Try to get custom_load_dispatch from the document
@@ -859,93 +859,115 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	print(f"DEBUG: Load Dispatch Name/ID from custom_load_dispatch: {load_dispatch_name}")
 
 	# STEP 1: Verify Load Dispatch document exists with this name/ID
-	# Search for this ID in Load Dispatch doctype
 	if not frappe.db.exists("Load Dispatch", load_dispatch_name):
-		print(f"DEBUG: Load Dispatch document with name '{load_dispatch_name}' does not exist in Load Dispatch doctype. Exiting.")
+		print(f"DEBUG: Load Dispatch document with name '{load_dispatch_name}' does not exist. Exiting.")
 		return
 	
-	print(f"DEBUG: ✓ Load Dispatch document '{load_dispatch_name}' found in Load Dispatch doctype. Proceeding...")
+	print(f"DEBUG: ✓ Load Dispatch document '{load_dispatch_name}' found. Proceeding...")
 
 	# Initialize totals
 	total_received_qty = 0
 	total_billed_qty = 0
 
-	# Case 1: Purchase Receipt submitted
+	# Case 1: Purchase Receipt
 	if doc.doctype == "Purchase Receipt":
-		print(f"\nDEBUG: ===== CASE 1: Purchase Receipt Submitted =====")
+		print(f"\nDEBUG: ===== Processing Purchase Receipt =====")
 		
-		# Check if custom_load_dispatch field exists in Purchase Receipt
 		if not frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
-			print(f"DEBUG: custom_load_dispatch field does not exist in Purchase Receipt. Exiting.")
+			print(f"DEBUG: custom_load_dispatch field does not exist. Exiting.")
 			return
 		
-		# STEP 2: Get total_qty from THIS Purchase Receipt only
-		# One Load Dispatch has only one Purchase Receipt, so no need to sum
-		pr_qty = flt(doc.get("total_qty")) or 0
-		print(f"DEBUG: Purchase Receipt {doc.name} - total_qty: {pr_qty}")
+		# Find all submitted Purchase Receipts (docstatus=1) with this Load Dispatch
+		# This automatically excludes cancelled documents (docstatus=2)
+		pr_list = frappe.get_all(
+			"Purchase Receipt",
+			filters={
+				"docstatus": 1,
+				"custom_load_dispatch": load_dispatch_name
+			},
+			fields=["name", "total_qty"]
+		)
 		
-		# If total_qty is 0, try to get from items
-		if pr_qty == 0:
-			if hasattr(doc, "items") and doc.items:
-				pr_qty = sum(
-					flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
-					for item in doc.items
-				)
-				print(f"DEBUG: Purchase Receipt {doc.name} - calculated from items: {pr_qty}")
+		print(f"DEBUG: Found {len(pr_list)} submitted Purchase Receipt(s) with custom_load_dispatch = {load_dispatch_name}")
 		
-		# Use this Purchase Receipt's total_qty for both received and billed
-		total_received_qty = pr_qty
-		total_billed_qty = pr_qty
+		# Sum total_qty from all submitted Purchase Receipts
+		for pr in pr_list:
+			pr_qty = flt(pr.get("total_qty")) or 0
+			print(f"DEBUG: Purchase Receipt {pr.name} - total_qty: {pr_qty}")
+			
+			if pr_qty == 0:
+				pr_doc = frappe.get_doc("Purchase Receipt", pr.name)
+				if hasattr(pr_doc, "items") and pr_doc.items:
+					pr_qty = sum(
+						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
+						for item in pr_doc.items
+					)
+					print(f"DEBUG: Purchase Receipt {pr.name} - calculated from items: {pr_qty}")
+			
+			# From PR we only update RECEIVED quantity; billed qty comes from Purchase Invoices only
+			total_received_qty += pr_qty
 		
 		print(f"DEBUG: Total Received Qty = {total_received_qty}")
 		print(f"DEBUG: Total Billed Qty = {total_billed_qty}")
 
-	# Case 2: Purchase Invoice submitted
+	# Case 2: Purchase Invoice
 	elif doc.doctype == "Purchase Invoice":
-		print(f"\nDEBUG: ===== CASE 2: Purchase Invoice Submitted =====")
+		print(f"\nDEBUG: ===== Processing Purchase Invoice =====")
 		
-		# Check if Purchase Invoice has any Purchase Receipt linked
-		has_purchase_receipt = False
-		if hasattr(doc, "items") and doc.items:
-			for item in doc.items:
-				if hasattr(item, "purchase_receipt") and item.purchase_receipt:
-					has_purchase_receipt = True
-					print(f"DEBUG: Found Purchase Receipt '{item.purchase_receipt}' in item {item.idx}")
-					break
-		
-		if has_purchase_receipt:
-			print(f"DEBUG: Purchase Invoice has Purchase Receipt linked. STOPPING - will not update Load Dispatch.")
-			return
-		
-		print(f"DEBUG: Purchase Invoice does NOT have Purchase Receipt. Proceeding with update...")
-		
-		# Check if custom_load_dispatch field exists in Purchase Invoice
 		if not frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
-			print(f"DEBUG: custom_load_dispatch field does not exist in Purchase Invoice. Exiting.")
+			print(f"DEBUG: custom_load_dispatch field does not exist. Exiting.")
 			return
 		
-		# STEP 2: Get total_qty from THIS Purchase Invoice only
-		# One Load Dispatch has only one Purchase Invoice (without PR), so no need to sum
-		pi_qty = flt(doc.get("total_qty")) or 0
-		print(f"DEBUG: Purchase Invoice {doc.name} - total_qty: {pi_qty}")
+		# Find all submitted Purchase Invoices (docstatus=1) with this Load Dispatch
+		pi_list = frappe.get_all(
+			"Purchase Invoice",
+			filters={
+				"docstatus": 1,
+				"custom_load_dispatch": load_dispatch_name
+			},
+			fields=["name", "total_qty"]
+		)
 		
-		# If total_qty is 0, try to get from items
-		if pi_qty == 0:
-			if hasattr(doc, "items") and doc.items:
-				pi_qty = sum(
-					flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
-					for item in doc.items
-				)
-				print(f"DEBUG: Purchase Invoice {doc.name} - calculated from items: {pi_qty}")
+		print(f"DEBUG: Found {len(pi_list)} submitted Purchase Invoice(s) with custom_load_dispatch = {load_dispatch_name}")
 		
-		# Use this Purchase Invoice's total_qty for both received and billed
-		total_received_qty = pi_qty
-		total_billed_qty = pi_qty
+		# Filter out Purchase Invoices that have Purchase Receipt linked
+		pi_without_pr = []
+		for pi in pi_list:
+			pi_doc = frappe.get_doc("Purchase Invoice", pi.name)
+			has_pr = False
+			
+			if hasattr(pi_doc, "items") and pi_doc.items:
+				for item in pi_doc.items:
+					if hasattr(item, "purchase_receipt") and item.purchase_receipt:
+						has_pr = True
+						print(f"DEBUG: Purchase Invoice {pi.name} has Purchase Receipt. Skipping.")
+						break
+			
+			if not has_pr:
+				pi_without_pr.append(pi)
+				print(f"DEBUG: Purchase Invoice {pi.name} does NOT have Purchase Receipt. Including.")
+		
+		# Sum total_qty from Purchase Invoices without Purchase Receipt
+		for pi in pi_without_pr:
+			pi_qty = flt(pi.get("total_qty")) or 0
+			print(f"DEBUG: Purchase Invoice {pi.name} - total_qty: {pi_qty}")
+			
+			if pi_qty == 0:
+				pi_doc = frappe.get_doc("Purchase Invoice", pi.name)
+				if hasattr(pi_doc, "items") and pi_doc.items:
+					pi_qty = sum(
+						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
+						for item in pi_doc.items
+					)
+					print(f"DEBUG: Purchase Invoice {pi.name} - calculated from items: {pi_qty}")
+			
+			total_received_qty += pi_qty
+			total_billed_qty += pi_qty
 		
 		print(f"DEBUG: Total Received Qty = {total_received_qty}")
 		print(f"DEBUG: Total Billed Qty = {total_billed_qty}")
 
-	# Update Load Dispatch document using db_set (works for submitted documents)
+	# Update Load Dispatch document
 	print(f"\nDEBUG: ===== UPDATING LOAD DISPATCH =====")
 	print(f"DEBUG: Load Dispatch Name: {load_dispatch_name}")
 	print(f"DEBUG: Setting total_received_quantity = {total_received_qty}")

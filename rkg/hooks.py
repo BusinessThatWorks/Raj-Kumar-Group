@@ -142,11 +142,17 @@ doc_events = {
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
+        ],
+        "on_cancel": [
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
         ]
     },
     "Purchase Invoice": {
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
+        ],
+        "on_cancel": [
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
         ]
     }    
