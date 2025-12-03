@@ -12,6 +12,7 @@
   "column_break_qxhg",
   "to_warehouse",
   "date",
+  "stock_entry",
   "column_break_ifii",
   "section_break_nwwo",
   "damage_assessment_item",
@@ -71,6 +72,13 @@
    "fieldname": "date",
    "fieldtype": "Date",
    "label": "Date"
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_nwwo",
