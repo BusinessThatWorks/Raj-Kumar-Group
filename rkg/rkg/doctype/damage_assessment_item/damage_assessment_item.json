@@ -8,8 +8,10 @@
  "field_order": [
   "item_code",
   "serial_no",
-  "item_remarks",
-  "type_of_damage"
+  "total_qty_received",
+  "type_of_damage",
+  "damaged_qty",
+  "item_remarks"
  ],
  "fields": [
   {
@@ -36,13 +38,23 @@
    "fieldtype": "Select",
    "label": "Type of Damage",
    "options": "\nDent\nPaint\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nSeat"
+  },
+  {
+   "fieldname": "total_qty_received",
+   "fieldtype": "Int",
+   "label": "Total Qty Received\t"
+  },
+  {
+   "fieldname": "damaged_qty",
+   "fieldtype": "Int",
+   "label": "Damaged Qty"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-03 15:59:55.151651",
+ "modified": "2025-12-03 16:33:48.089033",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Damage Assessment Item",
