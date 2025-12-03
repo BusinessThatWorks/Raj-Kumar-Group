@@ -1,6 +1,3 @@
-# Copyright (c) 2025, beetashoke.chakraborty@clapgrow.com and contributors
-# For license information, please see license.txt
-
 import frappe
 import csv
 import os
@@ -87,12 +84,20 @@ class LoadDispatch(Document):
 		"""Create serial nos for all items on save."""
 		if self.items:
 			for item in self.items:
+				# Debug: Print all relevant field values
+				print(f"=== DEBUG: Processing Load Dispatch Item ===")
+				print(f"item_code: {item.item_code}")
+				print(f"frame_no: {item.frame_no}")
+				print(f"engnie_no_motor_no: {getattr(item, 'engnie_no_motor_no', None)}")
+				print(f"key_no: {getattr(item, 'key_no', None)}")
+				print(f"key_no type: {type(getattr(item, 'key_no', None))}")
+				
 				if item.item_code and item.frame_no:
 					serial_no_name = str(item.frame_no).strip()
 
 					# Check if Serial No already exists
 					if not frappe.db.exists("Serial No", serial_no_name):
-						print(serial_no_name)
+						print(f"=== DEBUG: Creating NEW Serial No: {serial_no_name} ===")
 						try:
 							# IMPORTANT:
 							# - Serial No doctype still has a mandatory standard field `serial_no`
@@ -108,16 +113,32 @@ class LoadDispatch(Document):
 							# Map Engine No / Motor No from Load Dispatch Item to Serial No custom field
 							# Assumes Serial No has a custom field named `custom_engine_number`
 							if getattr(item, "engnie_no_motor_no", None):
+								print(f"=== DEBUG: Setting custom_engine_number to: {item.engnie_no_motor_no} ===")
 								setattr(serial_no, "custom_engine_number", item.engnie_no_motor_no)
 
+							# Map Key No from Load Dispatch Item to Serial No custom field
+							# Assumes Serial No has a custom field named `custom_key_no`
+							# Use 'is not None' check since key_no is Int and 0 is a valid value
+							key_no_value = getattr(item, "key_no", None)
+							print(f"=== DEBUG: key_no_value = {key_no_value}, type = {type(key_no_value)} ===")
+							if key_no_value is not None and str(key_no_value).strip():
+								print(f"=== DEBUG: Setting custom_key_no to: {str(key_no_value)} ===")
+								setattr(serial_no, "custom_key_no", str(key_no_value))
+							else:
+								print(f"=== DEBUG: key_no is None or empty, NOT setting custom_key_no ===")
+
 							serial_no.insert(ignore_permissions=True)
-							print(serial_no)
+							print(f"=== DEBUG: Serial No created successfully ===")
+							print(serial_no.as_dict())
 						except Exception as e:
+							print(f"=== DEBUG: Error creating Serial No: {str(e)} ===")
 							frappe.log_error(f"Error creating Serial No {serial_no_name}: {str(e)}", "Serial No Creation Error")
 					else:
+						print(f"=== DEBUG: Serial No already exists: {serial_no_name}, UPDATING ===")
 						# If Serial No already exists, update the custom engine number if provided
 						if getattr(item, "engnie_no_motor_no", None):
 							try:
+								print(f"=== DEBUG: Updating custom_engine_number to: {item.engnie_no_motor_no} ===")
 								frappe.db.set_value(
 									"Serial No",
 									serial_no_name,
@@ -129,6 +150,27 @@ class LoadDispatch(Document):
 									f"Error updating custom_engine_number for Serial No {serial_no_name}: {str(e)}",
 									"Serial No Update Error",
 								)
+						# If Serial No already exists, update the custom key no if provided
+						# Use 'is not None' check since key_no is Int and 0 is a valid value
+						key_no_value = getattr(item, "key_no", None)
+						print(f"=== DEBUG: (update) key_no_value = {key_no_value}, type = {type(key_no_value)} ===")
+						if key_no_value is not None and str(key_no_value).strip():
+							try:
+								print(f"=== DEBUG: Updating custom_key_no to: {str(key_no_value)} ===")
+								frappe.db.set_value(
+									"Serial No",
+									serial_no_name,
+									"custom_key_no",
+									str(key_no_value),
+								)
+							except Exception as e:
+								print(f"=== DEBUG: Error updating custom_key_no: {str(e)} ===")
+								frappe.log_error(
+									f"Error updating custom_key_no for Serial No {serial_no_name}: {str(e)}",
+									"Serial No Update Error",
+								)
+						else:
+							print(f"=== DEBUG: (update) key_no is None or empty, NOT updating custom_key_no ===")
 	
 	def set_item_code(self):
 		if self.items:
@@ -494,6 +536,86 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"EX-Showroom Price": "ex_showroom_price",
 				"GSTIN": "gstin"
 			}
+			
+			# Define required headers that MUST be present in the CSV
+			required_headers = [
+				"HMSI/InterDealer Load Reference No",
+				"Invoice No.",
+				"Invoice Date",
+				"Model Category",
+				"Model Name",
+				"Model Variant",
+				"Color Code",
+				"MTOC",
+				"Frame #",
+				"Engine No/Motor No",
+				"Physical Status",
+				"Chassis Status",
+				"Location",
+				"Key No",
+				"Load Type",
+				"Transporter Name",
+				"Shipment Truck #",
+				"Dispatch Date",
+				"Planned Arrival Date",
+				"GR Date",
+				"GR No",
+				"Plant Code",
+				"Payment Amount",
+				"Dealer Code",
+				"Manufacturing Date",
+				"Reference Number",
+				"Invoice Price",
+				"SAP Sales Order No",
+				"Booking Reference#",
+				"Vehicle Tracking Info",
+				"Dealer Purchase Order No",
+				"Type",
+				"Capacity",
+				"Option Code",
+				"Transporter Code",
+				"EV Battery Number",
+				"Model Code",
+				"Net Dealer price",
+				"Credit of GST",
+				"Dealer Billing Price",
+				"CGST Amount",
+				"SGST Amount",
+				"IGST Amount",
+				"EX-Showroom Price",
+				"GSTIN"
+			]
+			
+			# Get CSV headers (fieldnames from the reader)
+			csv_headers = reader.fieldnames if reader.fieldnames else []
+			
+			# Clean up headers (strip whitespace)
+			csv_headers = [h.strip() if h else "" for h in csv_headers]
+			
+			# Check for missing headers
+			missing_headers = []
+			for required_header in required_headers:
+				# Check if required header is present (also check alternative for load_reference_no)
+				if required_header == "HMSI/InterDealer Load Reference No":
+					if required_header not in csv_headers and "HMSI Load Reference No" not in csv_headers:
+						missing_headers.append(required_header)
+				elif required_header not in csv_headers:
+					missing_headers.append(required_header)
+			
+			# If there are missing headers, throw an error with the expected headers
+			if missing_headers:
+				expected_headers_str = "\n".join([f"• {h}" for h in required_headers])
+				missing_headers_str = "\n".join([f"• {h}" for h in missing_headers])
+				
+				frappe.throw(
+					_("CSV Header Validation Failed!\n\n"
+					  "<b>Missing Headers:</b>\n{0}\n\n"
+					  "<b>Expected Headers (CSV should contain these columns):</b>\n{1}").format(
+						missing_headers_str,
+						expected_headers_str
+					),
+					title=_("Invalid CSV Headers")
+				)
 			
 			rows = []
 			csv_load_reference_nos = set()  # Track all load_reference_no values from CSV

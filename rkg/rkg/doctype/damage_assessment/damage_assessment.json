@@ -1,0 +1,160 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-03 14:57:35.192329",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_b1aw",
+  "from_warehouse",
+  "stock_entry_type",
+  "amended_from",
+  "column_break_qxhg",
+  "to_warehouse",
+  "date",
+  "column_break_ifii",
+  "section_break_nwwo",
+  "damage_assessment_item",
+  "section_break_sisr",
+  "estimated_damage_value",
+  "column_break_ycyc",
+  "total_damage_value",
+  "column_break_xagc",
+  "checked_by_1",
+  "checked_by_2",
+  "checked_by_3"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_b1aw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Damage Assessment",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "from_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "From Warehouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "stock_entry_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stock Entry Type",
+   "options": "Stock Entry Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_qxhg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "to_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "To Warehouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date"
+  },
+  {
+   "fieldname": "section_break_nwwo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "damage_assessment_item",
+   "fieldtype": "Table",
+   "label": "Damage Assessment Item",
+   "options": "Damage Assessment Item"
+  },
+  {
+   "fieldname": "section_break_sisr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_damage_value",
+   "fieldtype": "Currency",
+   "label": "Actual Damage Value"
+  },
+  {
+   "fieldname": "column_break_ycyc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "estimated_damage_value",
+   "fieldtype": "Currency",
+   "label": "Estimated Damage Value",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_xagc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_ifii",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "checked_by_1",
+   "fieldtype": "Check",
+   "label": "Person 1"
+  },
+  {
+   "default": "0",
+   "fieldname": "checked_by_2",
+   "fieldtype": "Check",
+   "label": "Person 2"
+  },
+  {
+   "default": "0",
+   "fieldname": "checked_by_3",
+   "fieldtype": "Check",
+   "label": "Person 3"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-03 16:14:41.009411",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Damage Assessment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

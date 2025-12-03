@@ -2,5 +2,5 @@
 from frappe.model.document import Document
 
 
-class RKGSettings(Document):
+class DamageAssessmentItem(Document):
 	pass
