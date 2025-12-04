@@ -267,10 +267,31 @@ class LoadDispatch(Document):
 				)
 
 	def on_submit(self):
+		# Set Load Dispatch status to "In-Transit" when submitted
+		self.db_set("status", "In-Transit")
 		self.add_dispatch_quanity_to_load_plan(docstatus=1)
 	
 	def on_cancel(self):
 		self.add_dispatch_quanity_to_load_plan(docstatus=2)
+	
+	def update_status(self):
+		"""
+		Update Load Dispatch status based on received quantity.
+		- If total_received_quantity >= total_dispatch_quantity: status = 'Received'
+		- Otherwise: status = 'In-Transit'
+		"""
+		total_dispatch = flt(self.total_dispatch_quantity) or 0
+		total_received = flt(self.total_received_quantity) or 0
+		
+		if total_dispatch > 0 and total_received >= total_dispatch:
+			new_status = "Received"
+		else:
+			new_status = "In-Transit"
+		
+		# Update status if changed
+		if self.status != new_status:
+			frappe.db.set_value("Load Dispatch", self.name, "status", new_status, update_modified=False)
+			self.status = new_status
 	
 	def add_dispatch_quanity_to_load_plan(self, docstatus):
 		"""
@@ -1095,12 +1116,27 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	print(f"DEBUG: Setting total_received_quantity = {total_received_qty}")
 	print(f"DEBUG: Setting total_billed_quantity = {total_billed_qty}")
 	
+	# Get total_dispatch_quantity to determine status
+	total_dispatch_qty = frappe.db.get_value("Load Dispatch", load_dispatch_name, "total_dispatch_quantity") or 0
+	
+	# Determine status based on received quantity
+	# If total_received_quantity >= total_dispatch_quantity: status = 'Received'
+	# Otherwise: status = 'In-Transit'
+	if flt(total_dispatch_qty) > 0 and flt(total_received_qty) >= flt(total_dispatch_qty):
+		new_status = "Received"
+	else:
+		new_status = "In-Transit"
+	
+	print(f"DEBUG: total_dispatch_quantity = {total_dispatch_qty}")
+	print(f"DEBUG: Setting status = {new_status}")
+	
 	frappe.db.set_value(
 		"Load Dispatch",
 		load_dispatch_name,
 		{
 			"total_received_quantity": total_received_qty,
-			"total_billed_quantity": total_billed_qty
+			"total_billed_quantity": total_billed_qty,
+			"status": new_status
 		},
 		update_modified=False
 	)
