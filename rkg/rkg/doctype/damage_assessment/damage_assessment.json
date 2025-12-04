@@ -6,10 +6,14 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_b1aw",
+  "transfer_direction",
+  "original_damage_assessment",
   "from_warehouse",
   "stock_entry_type",
   "amended_from",
   "column_break_qxhg",
+  "return_status",
+  "return_damage_assessment",
   "to_warehouse",
   "date",
   "stock_entry",
@@ -29,6 +33,23 @@
   {
    "fieldname": "section_break_b1aw",
    "fieldtype": "Section Break"
+  },
+  {
+   "default": "Damage Transfer",
+   "fieldname": "transfer_direction",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Transfer Direction",
+   "options": "Damage Transfer\nReturn Transfer",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.transfer_direction=='Return Transfer'",
+   "fieldname": "original_damage_assessment",
+   "fieldtype": "Link",
+   "label": "Original Damage Assessment",
+   "mandatory_depends_on": "eval:doc.transfer_direction=='Return Transfer'",
+   "options": "Damage Assessment"
   },
   {
    "fieldname": "amended_from",
@@ -59,6 +80,23 @@
   {
    "fieldname": "column_break_qxhg",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "Not Returned",
+   "depends_on": "eval:doc.transfer_direction=='Damage Transfer'",
+   "fieldname": "return_status",
+   "fieldtype": "Select",
+   "label": "Return Status",
+   "options": "Not Returned\nPartially Returned\nFully Returned",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.transfer_direction=='Damage Transfer' && doc.return_damage_assessment",
+   "fieldname": "return_damage_assessment",
+   "fieldtype": "Link",
+   "label": "Return Damage Assessment",
+   "options": "Damage Assessment",
+   "read_only": 1
   },
   {
    "fieldname": "to_warehouse",
