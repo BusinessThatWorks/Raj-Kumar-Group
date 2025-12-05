@@ -35,7 +35,6 @@ frappe.pages["serial-batch-visual"].on_page_load = function (wrapper) {
 		.summary-card.items { border-left-color: #5e64ff; }
 		.summary-card.serials { border-left-color: #00d4aa; }
 		.summary-card.warehouses { border-left-color: #ff6b6b; }
-		.summary-card.vouchers { border-left-color: #ffa726; }
 		.summary-card .card-icon {
 			font-size: 28px;
 			margin-bottom: 10px;
@@ -43,7 +42,6 @@ frappe.pages["serial-batch-visual"].on_page_load = function (wrapper) {
 		.summary-card.items .card-icon { color: #5e64ff; }
 		.summary-card.serials .card-icon { color: #00d4aa; }
 		.summary-card.warehouses .card-icon { color: #ff6b6b; }
-		.summary-card.vouchers .card-icon { color: #ffa726; }
 		.summary-card .card-value {
 			font-size: 36px;
 			font-weight: 700;
@@ -288,6 +286,12 @@ class SerialBatchVisual {
 							</select>
 						</div>
 						<div class="filter-group">
+							<label>Status</label>
+							<select class="form-control filter-status">
+								<option value="">All Statuses</option>
+							</select>
+						</div>
+						<div class="filter-group">
 							<label>From Date</label>
 							<input type="date" class="form-control filter-from-date">
 						</div>
@@ -323,18 +327,13 @@ class SerialBatchVisual {
 						<div class="card-value" id="total-warehouses">0</div>
 						<div class="card-label">Warehouses</div>
 					</div>
-					<div class="summary-card vouchers">
-						<div class="card-icon"><i class="fa fa-check-circle"></i></div>
-						<div class="card-value" id="total-vouchers">0</div>
-						<div class="card-label">Statuses</div>
-					</div>
 				</div>
 
 				<!-- Charts Section -->
 				<div class="charts-section">
 					<div class="chart-container">
 						<div class="chart-title">
-							<i class="fa fa-bar-chart"></i> Serial Count by Item Code
+							<i class="fa fa-bar-chart"></i> Frame Count by Item Code
 						</div>
 						<div id="item-bar-chart"></div>
 					</div>
@@ -346,20 +345,10 @@ class SerialBatchVisual {
 					</div>
 				</div>
 
-				<!-- Additional Chart -->
-				<div class="charts-section">
-					<div class="chart-container" style="max-width: 500px;">
-						<div class="chart-title">
-							<i class="fa fa-dot-circle-o"></i> By Status
-						</div>
-						<div id="voucher-donut-chart"></div>
-					</div>
-				</div>
-
 				<!-- Tree View Section -->
 				<div class="tree-section">
 					<div class="tree-header">
-						<span><i class="fa fa-sitemap"></i> Serial Numbers by Item Code</span>
+						<span><i class="fa fa-sitemap"></i> Frame Numbers By Item Code</span>
 						<button class="btn btn-xs btn-default btn-expand-all">
 							<i class="fa fa-expand"></i> Expand All
 						</button>
@@ -388,6 +377,7 @@ class SerialBatchVisual {
 		// Clear button
 		this.wrapper.find(".btn-clear").on("click", function () {
 			me.wrapper.find(".filter-warehouse").val("");
+			me.wrapper.find(".filter-status").val("");
 			me.wrapper.find(".filter-from-date").val(thirtyDaysAgo);
 			me.wrapper.find(".filter-to-date").val(today);
 			me.refresh();
@@ -433,6 +423,15 @@ class SerialBatchVisual {
 					r.message.warehouses.forEach(function (warehouse) {
 						warehouseSelect.append(`<option value="${warehouse}">${warehouse}</option>`);
 					});
+
+					// Populate status dropdown
+					const statusSelect = me.wrapper.find(".filter-status");
+					statusSelect.html('<option value="">All Statuses</option>');
+					if (r.message.statuses) {
+						r.message.statuses.forEach(function (status) {
+							statusSelect.append(`<option value="${status}">${status}</option>`);
+						});
+					}
 				}
 			},
 		});
@@ -445,6 +444,7 @@ class SerialBatchVisual {
 		const filters = {
 			company: this.wrapper.find(".filter-company").val(),
 			warehouse: this.wrapper.find(".filter-warehouse").val(),
+			status: this.wrapper.find(".filter-status").val(),
 			from_date: this.wrapper.find(".filter-from-date").val(),
 			to_date: this.wrapper.find(".filter-to-date").val(),
 		};
@@ -463,7 +463,6 @@ class SerialBatchVisual {
 					me.render_summary(r.message.summary);
 					me.render_item_chart(r.message.by_item);
 					me.render_warehouse_chart(r.message.by_warehouse);
-					me.render_voucher_chart(r.message.by_voucher_type);
 				}
 
 				// Fetch grouped data for tree view
@@ -484,6 +483,7 @@ class SerialBatchVisual {
 			args: {
 				company: filters.company,
 				warehouse: filters.warehouse,
+				status: filters.status,
 			},
 			callback: function (r) {
 				frappe.show_progress("Loading", 100, 100, "Complete!");
@@ -500,7 +500,6 @@ class SerialBatchVisual {
 		this.wrapper.find("#total-items").text(summary.total_items || 0);
 		this.wrapper.find("#total-serials").text(summary.total_serials || 0);
 		this.wrapper.find("#total-warehouses").text(summary.total_warehouses || 0);
-		this.wrapper.find("#total-vouchers").text(summary.total_voucher_types || 0);
 	}
 
 	render_item_chart(data) {
@@ -566,36 +565,6 @@ class SerialBatchVisual {
 			},
 			type: "pie",
 			height: 300,
-			colors: colors.slice(0, data.labels.length),
-		});
-	}
-
-	render_voucher_chart(data) {
-		const container = this.wrapper.find("#voucher-donut-chart")[0];
-		
-		if (!data || !data.labels || data.labels.length === 0) {
-			$(container).html('<div class="no-data"><i class="fa fa-dot-circle-o"></i><p>No data available</p></div>');
-			return;
-		}
-
-		// Clear previous chart
-		$(container).empty();
-
-		const colors = ["#ffa726", "#42a5f5", "#66bb6a", "#ef5350", "#ab47bc"];
-
-		this.charts.voucherChart = new frappe.Chart(container, {
-			title: "",
-			data: {
-				labels: data.labels,
-				datasets: [
-					{
-						name: "Count",
-						values: data.values,
-					},
-				],
-			},
-			type: "donut",
-			height: 280,
 			colors: colors.slice(0, data.labels.length),
 		});
 	}

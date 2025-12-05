@@ -7,7 +7,7 @@ from frappe.utils import flt, getdate, nowdate, add_days
 
 
 @frappe.whitelist()
-def get_serial_batch_data(company=None, from_date=None, to_date=None, item_code=None, warehouse=None):
+def get_serial_batch_data(company=None, from_date=None, to_date=None, item_code=None, warehouse=None, status=None):
 	"""
 	Get Serial and Batch Summary data for visual dashboard.
 	Returns aggregated data for charts and detailed data for tree view.
@@ -27,6 +27,10 @@ def get_serial_batch_data(company=None, from_date=None, to_date=None, item_code=
 	if item_code:
 		conditions.append("sn.item_code = %(item_code)s")
 		filters["item_code"] = item_code
+	
+	if status:
+		conditions.append("sn.status = %(status)s")
+		filters["status"] = status
 	
 	where_clause = " AND ".join(conditions)
 	
@@ -180,7 +184,7 @@ def get_serials_by_item(item_code, company=None, warehouse=None):
 
 
 @frappe.whitelist()
-def get_grouped_serial_data(company=None, from_date=None, to_date=None, warehouse=None):
+def get_grouped_serial_data(company=None, from_date=None, to_date=None, warehouse=None, status=None):
 	"""
 	Get serial numbers grouped by item code for tree view.
 	"""
@@ -194,6 +198,10 @@ def get_grouped_serial_data(company=None, from_date=None, to_date=None, warehous
 	if warehouse:
 		conditions.append("sn.warehouse = %(warehouse)s")
 		filters["warehouse"] = warehouse
+	
+	if status:
+		conditions.append("sn.status = %(status)s")
+		filters["status"] = status
 	
 	where_clause = " AND ".join(conditions)
 	
@@ -268,9 +276,18 @@ def get_filter_options():
 		limit=500
 	)
 	
+	# Get distinct statuses from Serial No
+	statuses = frappe.db.sql_list("""
+		SELECT DISTINCT status 
+		FROM `tabSerial No` 
+		WHERE status IS NOT NULL AND status != ''
+		ORDER BY status
+	""")
+	
 	return {
 		"companies": [c.name for c in companies],
 		"warehouses": [w.name for w in warehouses],
-		"items": items
+		"items": items,
+		"statuses": statuses
 	}
 
