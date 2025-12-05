@@ -8,9 +8,14 @@
  "field_order": [
   "item_code",
   "serial_no",
-  "total_qty_received",
+  "column_break_item",
   "type_of_damage",
+  "damage_description",
+  "section_break_qty",
+  "total_qty_received",
   "damaged_qty",
+  "column_break_cost",
+  "estimated_cost",
   "item_remarks"
  ],
  "fields": [
@@ -25,43 +30,71 @@
   {
    "fieldname": "serial_no",
    "fieldtype": "Link",
-   "label": "Serial No",
-   "options": "Serial No"
+   "in_list_view": 1,
+   "label": "Frame No (Serial No)",
+   "options": "Serial No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_item",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "type_of_damage",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Type of Damage",
+   "options": "\nDent\nPaint\nScratches\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nTail Light\nSeat\nHandle Bar\nMudguard\nSide Panel\nFuel Tank\nEngine Cover\nWheel/Tyre\nBattery\nElectrical\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "damage_description",
+   "fieldtype": "Small Text",
+   "label": "Damage Description"
+  },
+  {
+   "fieldname": "section_break_qty",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "total_qty_received",
+   "fieldtype": "Int",
+   "label": "Total Qty Received"
+  },
+  {
+   "default": "1",
+   "fieldname": "damaged_qty",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Damaged Qty"
+  },
+  {
+   "fieldname": "column_break_cost",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "estimated_cost",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Estimated Repair Cost",
+   "reqd": 1
   },
   {
    "fieldname": "item_remarks",
    "fieldtype": "Small Text",
    "label": "Item Remarks"
-  },
-  {
-   "fieldname": "type_of_damage",
-   "fieldtype": "Select",
-   "label": "Type of Damage",
-   "options": "\nDent\nPaint\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nSeat"
-  },
-  {
-   "fieldname": "total_qty_received",
-   "fieldtype": "Int",
-   "label": "Total Qty Received\t"
-  },
-  {
-   "fieldname": "damaged_qty",
-   "fieldtype": "Int",
-   "label": "Damaged Qty"
   }
  ],
- "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-03 16:33:48.089033",
+ "modified": "2025-12-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Damage Assessment Item",
  "owner": "Administrator",
  "permissions": [],
- "row_format": "Dynamic",
- "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
