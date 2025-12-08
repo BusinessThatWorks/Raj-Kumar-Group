@@ -8,8 +8,6 @@
  "field_order": [
   "basic_info_section",
   "date",
-  "branch_warehouse",
-  "delivery_person",
   "column_break_basic",
   "workflow_state",
   "amended_from",
@@ -22,60 +20,10 @@
   "damage_items_section",
   "damage_assessment_item",
   "estimation_section",
-  "estimated_by",
   "estimation_date",
   "column_break_estimation",
   "total_estimated_cost",
-  "estimation_remarks",
-  "approval_section",
-  "approval_status",
-  "final_approved_amount",
-  "godown_owner_approval_section",
-  "godown_owner",
-  "godown_owner_date",
-  "godown_owner_action",
-  "column_break_godown",
-  "godown_owner_amount",
-  "godown_owner_remarks",
-  "sales_manager_approval_section",
-  "sales_manager",
-  "sales_manager_date",
-  "sales_manager_action",
-  "column_break_sm",
-  "sales_manager_amount",
-  "sales_manager_remarks",
-  "recoupment_section",
-  "recoupment_status",
-  "recoupment_date",
-  "column_break_recoup",
-  "amount_deducted",
-  "deduction_method",
-  "column_break_recoup2",
-  "recoupment_journal_entry",
-  "recoupment_remarks",
-  "repair_section",
-  "repair_status",
-  "repair_start_date",
-  "repair_completion_date",
-  "column_break_repair",
-  "repaired_by",
-  "actual_repair_cost",
-  "repair_remarks",
-  "settlement_section",
-  "settlement_status",
-  "settlement_date",
-  "column_break_settlement",
-  "difference_amount",
-  "settlement_action",
-  "column_break_settlement2",
-  "settlement_journal_entry",
-  "settlement_remarks",
-  "return_section",
-  "return_status",
-  "return_date",
-  "column_break_return",
-  "return_stock_entry",
-  "return_remarks"
+  "estimation_remarks"
  ],
  "fields": [
   {
@@ -89,20 +37,6 @@
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Date",
-   "reqd": 1
-  },
-  {
-   "fieldname": "branch_warehouse",
-   "fieldtype": "Link",
-   "label": "Branch/Godown",
-   "options": "Warehouse",
-   "reqd": 1
-  },
-  {
-   "fieldname": "delivery_person",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Delivery Person",
    "reqd": 1
   },
   {
@@ -132,13 +66,13 @@
    "collapsible": 1,
    "fieldname": "warehouse_section",
    "fieldtype": "Section Break",
-   "label": "Warehouse Transfer Details (Move to Damage Godown)"
+   "label": "Warehouse Transfer Details"
   },
   {
-   "description": "Source warehouse where damaged items are currently located",
+   "description": "Source warehouse for this transfer",
    "fieldname": "from_warehouse",
    "fieldtype": "Link",
-   "label": "From Warehouse (Stores)",
+   "label": "From Warehouse",
    "options": "Warehouse"
   },
   {
@@ -152,16 +86,16 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Destination warehouse for damaged items",
+   "description": "Destination warehouse for this transfer",
    "fieldname": "to_warehouse",
    "fieldtype": "Link",
-   "label": "To Warehouse (Damage Godown)",
+   "label": "To Warehouse",
    "options": "Warehouse"
   },
   {
    "fieldname": "stock_entry",
    "fieldtype": "Link",
-   "label": "Stock Entry (To Damage Godown)",
+   "label": "Stock Entry (Transfer)",
    "options": "Stock Entry",
    "read_only": 1
   },
@@ -180,13 +114,7 @@
   {
    "fieldname": "estimation_section",
    "fieldtype": "Section Break",
-   "label": "Cost Estimation (By Technician)"
-  },
-  {
-   "fieldname": "estimated_by",
-   "fieldtype": "Link",
-   "label": "Estimated By (Technician)",
-   "options": "User"
+   "label": "Cost Estimation (By Sales Manager)"
   },
   {
    "fieldname": "estimation_date",
@@ -207,290 +135,12 @@
    "fieldname": "estimation_remarks",
    "fieldtype": "Small Text",
    "label": "Estimation Remarks"
-  },
-  {
-   "fieldname": "approval_section",
-   "fieldtype": "Section Break",
-   "label": "Approval Summary"
-  },
-  {
-   "default": "Pending",
-   "fieldname": "approval_status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Approval Status",
-   "options": "Pending\nPending Godown Owner\nPending Sales Manager\nApproved\nRejected",
-   "read_only": 1
-  },
-  {
-   "fieldname": "final_approved_amount",
-   "fieldtype": "Currency",
-   "label": "Final Approved Amount",
-   "read_only": 1
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "godown_owner_approval_section",
-   "fieldtype": "Section Break",
-   "label": "Step 1: Godown Owner Approval"
-  },
-  {
-   "fieldname": "godown_owner",
-   "fieldtype": "Link",
-   "label": "Godown Owner",
-   "options": "User"
-  },
-  {
-   "fieldname": "godown_owner_date",
-   "fieldtype": "Datetime",
-   "label": "Reviewed On",
-   "read_only": 1
-  },
-  {
-   "fieldname": "godown_owner_action",
-   "fieldtype": "Select",
-   "label": "Action",
-   "options": "\nApproved\nEdited & Approved\nRejected\nSent Back for Re-estimation"
-  },
-  {
-   "fieldname": "column_break_godown",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.godown_owner_action=='Edited & Approved'",
-   "fieldname": "godown_owner_amount",
-   "fieldtype": "Currency",
-   "label": "Revised Amount"
-  },
-  {
-   "fieldname": "godown_owner_remarks",
-   "fieldtype": "Small Text",
-   "label": "Remarks"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "sales_manager_approval_section",
-   "fieldtype": "Section Break",
-   "label": "Step 2: Sales Manager Approval"
-  },
-  {
-   "fieldname": "sales_manager",
-   "fieldtype": "Link",
-   "label": "Sales Manager",
-   "options": "User"
-  },
-  {
-   "fieldname": "sales_manager_date",
-   "fieldtype": "Datetime",
-   "label": "Reviewed On",
-   "read_only": 1
-  },
-  {
-   "fieldname": "sales_manager_action",
-   "fieldtype": "Select",
-   "label": "Action",
-   "options": "\nApproved\nEdited & Approved\nRejected\nSent Back for Re-estimation"
-  },
-  {
-   "fieldname": "column_break_sm",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.sales_manager_action=='Edited & Approved'",
-   "fieldname": "sales_manager_amount",
-   "fieldtype": "Currency",
-   "label": "Final Amount"
-  },
-  {
-   "fieldname": "sales_manager_remarks",
-   "fieldtype": "Small Text",
-   "label": "Remarks"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "recoupment_section",
-   "fieldtype": "Section Break",
-   "label": "Recoupment (Deduction from Delivery Person)"
-  },
-  {
-   "default": "Pending",
-   "fieldname": "recoupment_status",
-   "fieldtype": "Select",
-   "label": "Recoupment Status",
-   "options": "Pending\nPartially Deducted\nFully Deducted"
-  },
-  {
-   "fieldname": "recoupment_date",
-   "fieldtype": "Date",
-   "label": "Recoupment Date"
-  },
-  {
-   "fieldname": "column_break_recoup",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "amount_deducted",
-   "fieldtype": "Currency",
-   "label": "Amount Deducted"
-  },
-  {
-   "fieldname": "deduction_method",
-   "fieldtype": "Select",
-   "label": "Deduction Method",
-   "options": "\nSalary Deduction\nCash Collection\nBank Transfer\nJournal Entry"
-  },
-  {
-   "fieldname": "column_break_recoup2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "recoupment_journal_entry",
-   "fieldtype": "Link",
-   "label": "Journal Entry",
-   "options": "Journal Entry"
-  },
-  {
-   "fieldname": "recoupment_remarks",
-   "fieldtype": "Small Text",
-   "label": "Recoupment Remarks"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "repair_section",
-   "fieldtype": "Section Break",
-   "label": "Actual Repair"
-  },
-  {
-   "default": "Pending",
-   "fieldname": "repair_status",
-   "fieldtype": "Select",
-   "label": "Repair Status",
-   "options": "Pending\nIn Progress\nCompleted"
-  },
-  {
-   "fieldname": "repair_start_date",
-   "fieldtype": "Date",
-   "label": "Repair Start Date"
-  },
-  {
-   "fieldname": "repair_completion_date",
-   "fieldtype": "Date",
-   "label": "Repair Completion Date"
-  },
-  {
-   "fieldname": "column_break_repair",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "repaired_by",
-   "fieldtype": "Data",
-   "label": "Repaired By (Technician/Vendor)"
-  },
-  {
-   "fieldname": "actual_repair_cost",
-   "fieldtype": "Currency",
-   "label": "Actual Repair Cost"
-  },
-  {
-   "fieldname": "repair_remarks",
-   "fieldtype": "Small Text",
-   "label": "Repair Remarks"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "settlement_section",
-   "fieldtype": "Section Break",
-   "label": "Final Settlement"
-  },
-  {
-   "default": "Pending",
-   "fieldname": "settlement_status",
-   "fieldtype": "Select",
-   "label": "Settlement Status",
-   "options": "Pending\nSettled"
-  },
-  {
-   "fieldname": "settlement_date",
-   "fieldtype": "Date",
-   "label": "Settlement Date"
-  },
-  {
-   "fieldname": "column_break_settlement",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Positive = Refund to Delivery Person, Negative = Additional Charge",
-   "fieldname": "difference_amount",
-   "fieldtype": "Currency",
-   "label": "Difference Amount",
-   "read_only": 1
-  },
-  {
-   "fieldname": "settlement_action",
-   "fieldtype": "Select",
-   "label": "Settlement Action",
-   "options": "\nRefund to Delivery Person\nAbsorb by Company\nCharge Extra from Delivery Person"
-  },
-  {
-   "fieldname": "column_break_settlement2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "settlement_journal_entry",
-   "fieldtype": "Link",
-   "label": "Settlement Journal Entry",
-   "options": "Journal Entry"
-  },
-  {
-   "fieldname": "settlement_remarks",
-   "fieldtype": "Small Text",
-   "label": "Settlement Remarks"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "return_section",
-   "fieldtype": "Section Break",
-   "label": "Return to Stores (After Repair)"
-  },
-  {
-   "allow_on_submit": 1,
-   "default": "Not Returned",
-   "fieldname": "return_status",
-   "fieldtype": "Select",
-   "label": "Return Status",
-   "options": "Not Returned\nPartially Returned\nFully Returned",
-   "read_only": 1
-  },
-  {
-   "allow_on_submit": 1,
-   "fieldname": "return_date",
-   "fieldtype": "Date",
-   "label": "Return Date",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_return",
-   "fieldtype": "Column Break"
-  },
-  {
-   "allow_on_submit": 1,
-   "fieldname": "return_stock_entry",
-   "fieldtype": "Link",
-   "label": "Return Stock Entry",
-   "options": "Stock Entry",
-   "read_only": 1
-  },
-  {
-   "allow_on_submit": 1,
-   "fieldname": "return_remarks",
-   "fieldtype": "Small Text",
-   "label": "Return Remarks"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-05 14:00:00.000000",
+ "modified": "2025-12-08 12:40:00.000000",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Damage Assessment",
