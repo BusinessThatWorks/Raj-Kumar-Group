@@ -611,15 +611,14 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 			frappe.throw(f"Unable to read file with supported encodings. Please ensure the file is in UTF-8, UTF-16, or Latin-1 format.")
 		
 		try:
-			# Detect delimiter from sample
-			sniffer = csv.Sniffer()
-			delimiter = sniffer.sniff(sample).delimiter
-			
-			reader = csv.DictReader(csvfile, delimiter=delimiter)
-			
+			def _norm_header(h):
+				# Normalize header for comparison: strip, lower, collapse spaces, remove BOM
+				return " ".join((h or "").replace("\ufeff", "").strip().lower().split())
+
 			# Mapping from CSV column names to child table fieldnames
 			column_mapping = {
 				"HMSI/InterDealer Load Reference No": "load_reference_no",
+				"HMSI Load Reference No": "load_reference_no",  # alternate spelling
 				"Invoice No.": "invoice_no",
 				"Invoice Date": "invoice_date",
 				"Model Category": "model_category",
@@ -656,8 +655,8 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"Transporter Code": "transporter_code",
 				"EV Battery Number": "ev_battery_number",
 				"Model Code": "model_code",
-				"HMSI Load Reference No": "load_reference_no",  # Alternative column name
 				"Net Dealer price": "net_dealer_price",
+				"Net Dealer Price": "net_dealer_price",  # allow capital P
 				"Credit of GST": "credit_of_gst",
 				"Dealer Billing Price": "dealer_billing_price",
 				"CGST Amount": "cgst_amount",
@@ -667,8 +666,8 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"GSTIN": "gstin"
 			}
 			
-			# Define required headers that MUST be present in the CSV
-			required_headers = [
+			# Required headers that MUST be present in the CSV (core), case/space-insensitive
+			required_headers_core = [
 				"HMSI/InterDealer Load Reference No",
 				"Invoice No.",
 				"Invoice Date",
@@ -706,7 +705,6 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"Transporter Code",
 				"EV Battery Number",
 				"Model Code",
-				"Net Dealer price",
 				"Credit of GST",
 				"Dealer Billing Price",
 				"CGST Amount",
@@ -715,27 +713,78 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"EX-Showroom Price",
 				"GSTIN"
 			]
+
+			# Optional headers (ignored if absent)
+			optional_headers = [
+				"Booking Reference#",
+				"Booking Reference #",
+				"Net Dealer price",
+				"Net Dealer Price",
+			]
 			
-			# Get CSV headers (fieldnames from the reader)
-			csv_headers = reader.fieldnames if reader.fieldnames else []
+			# Detect delimiter from sample, with fallbacks for common delimiters
+			try:
+				delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+			except Exception:
+				# If sniffer cannot determine, start with comma as default
+				delimiter = ","
+
+			# Try multiple delimiters to find one that satisfies required headers
+			delimiters_to_try = []
+			for d in [delimiter, ",", "\t", ";", "|"]:
+				if d not in delimiters_to_try:
+					delimiters_to_try.append(d)
+
+			best_delimiter = delimiter
+			best_missing = None
+			best_headers = []
+			for delim in delimiters_to_try:
+				csvfile.seek(0)
+				test_reader = csv.DictReader(csvfile, delimiter=delim)
+				test_headers = [h.strip() if h else "" for h in (test_reader.fieldnames or [])]
+				norm_test_headers = {_norm_header(h) for h in test_headers}
+
+				missing = []
+				for required_header in required_headers_core:
+					norm_req = _norm_header(required_header)
+					if norm_req not in norm_test_headers and _norm_header("HMSI Load Reference No") not in norm_test_headers:
+						missing.append(required_header)
+
+				if best_missing is None or len(missing) < len(best_missing):
+					best_missing = missing
+					best_delimiter = delim
+					best_headers = test_headers
+
+				# Perfect match found; stop searching
+				if not missing:
+					break
+
+			# Use the best delimiter found
+			csvfile.seek(0)
+			reader = csv.DictReader(csvfile, delimiter=best_delimiter)
+			csv_headers = best_headers
+			norm_csv_headers = {_norm_header(h): h for h in csv_headers}
+
+			# If best_headers is empty (e.g., file without headers), derive from reader
+			if not csv_headers:
+				csv_headers = [h.strip() if h else "" for h in (reader.fieldnames or [])]
 			
-			# Clean up headers (strip whitespace)
-			csv_headers = [h.strip() if h else "" for h in csv_headers]
-			
-			# Check for missing headers
-			missing_headers = []
-			for required_header in required_headers:
-				# Check if required header is present (also check alternative for load_reference_no)
-				if required_header == "HMSI/InterDealer Load Reference No":
-					if required_header not in csv_headers and "HMSI Load Reference No" not in csv_headers:
-						missing_headers.append(required_header)
-				elif required_header not in csv_headers:
-					missing_headers.append(required_header)
-			
-			# If there are missing headers, throw an error with the expected headers
-			if missing_headers:
-				expected_headers_str = "\n".join([f"• {h}" for h in required_headers])
-				missing_headers_str = "\n".join([f"• {h}" for h in missing_headers])
+			# Check for missing headers using the chosen delimiter (case/space-insensitive)
+			missing_core_headers = []
+			for required_header in required_headers_core:
+				norm_req = _norm_header(required_header)
+				if norm_req not in norm_csv_headers and _norm_header("HMSI Load Reference No") not in norm_csv_headers:
+					missing_core_headers.append(required_header)
+
+			# Optional headers: warn only
+			missing_optional_headers = []
+			for optional_header in optional_headers:
+				if _norm_header(optional_header) not in norm_csv_headers:
+					missing_optional_headers.append(optional_header)
+
+			if missing_core_headers:
+				expected_headers_str = "\n".join([f"• {h}" for h in required_headers_core + optional_headers])
+				missing_headers_str = "\n".join([f"• {h}" for h in missing_core_headers + missing_optional_headers])
 				
 				frappe.throw(
 					_("CSV Header Validation Failed!\n\n"
@@ -745,6 +794,14 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 						expected_headers_str
 					),
 					title=_("Invalid CSV Headers")
+				)
+			elif missing_optional_headers:
+				missing_headers_str = "\n".join([f"• {h}" for h in missing_optional_headers])
+				frappe.msgprint(
+					_("CSV missing optional headers (processing will continue):\n{0}").format(missing_headers_str),
+					title=_("CSV Optional Headers Missing"),
+					indicator="orange",
+					alert=True,
 				)
 			
 			rows = []
@@ -757,7 +814,16 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				
 				row_data = {}
 				for csv_col, fieldname in column_mapping.items():
-					value = csv_row.get(csv_col, "").strip()
+					# Resolve actual CSV column using normalized header lookup
+					actual_col = norm_csv_headers.get(_norm_header(csv_col))
+					# Fallback: if alternate key exists (e.g., HMSI Load Reference No)
+					if not actual_col and csv_col == "HMSI/InterDealer Load Reference No":
+						actual_col = norm_csv_headers.get(_norm_header("HMSI Load Reference No"))
+					if not actual_col:
+						continue
+
+					raw_value = csv_row.get(actual_col, "")
+					value = raw_value.strip() if isinstance(raw_value, str) else raw_value
 					
 					if value:
 						# Handle date fields
