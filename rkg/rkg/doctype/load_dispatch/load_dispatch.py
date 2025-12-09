@@ -5,6 +5,18 @@ from frappe.model.document import Document
 from frappe import _
 from frappe.utils import flt
 
+# Canonical list of Item custom fieldnames that must be populated.
+ITEM_CUSTOM_FIELDS = [
+	"net_dealer_price",
+	"ex_showroom_price",
+	"dealer_billing_price",
+	"credit_of_gst",
+	"cgst_amount",
+	"sgst_amount",
+	"igst_amount",
+	"gstin",
+]
+
 
 class LoadDispatch(Document):
 	def before_save(self):
@@ -14,6 +26,7 @@ class LoadDispatch(Document):
 			self.set_item_code()
 			self.create_serial_nos()
 			self.set_fields_value()
+			self.update_item_pricing_fields()
 			self.set_item_group()
 			self.set_supplier()
 			self.validate_vehicle_model_variant()
@@ -24,6 +37,7 @@ class LoadDispatch(Document):
 			self.set_item_code()
 			self.create_serial_nos()
 			self.set_fields_value()
+			self.update_item_pricing_fields()
 			self.set_item_group()
 			self.validate_vehicle_model_variant()
 		
@@ -197,6 +211,64 @@ class LoadDispatch(Document):
 		for item in self.items:
 			# You can add more field mappings here if needed
 			pass
+
+	def update_item_pricing_fields(self):
+		"""
+		Update Item doctypes with pricing/GST values from Load Dispatch Items.
+		This runs on save/validate so existing Items get refreshed too.
+		"""
+		if not self.items:
+			return
+
+		custom_field_map = {field: field for field in ITEM_CUSTOM_FIELDS}
+
+		for item in self.items:
+			print(
+				f"DEBUG pricing sync: row frame={getattr(item, 'frame_no', None)}, "
+				f"item_code={getattr(item, 'item_code', None)}, "
+				f"mtoc={getattr(item, 'mtoc', None)}, "
+				f"values={{"
+				f"ndp={getattr(item, 'net_dealer_price', None)}, "
+				f"cogst={getattr(item, 'credit_of_gst', None)}, "
+				f"dbp={getattr(item, 'dealer_billing_price', None)}, "
+				f"cgst={getattr(item, 'cgst_amount', None)}, "
+				f"sgst={getattr(item, 'sgst_amount', None)}, "
+				f"igst={getattr(item, 'igst_amount', None)}, "
+				f"exs={getattr(item, 'ex_showroom_price', None)}, "
+				f"gstin={getattr(item, 'gstin', None)}}}"
+			)
+			item_code = (item.item_code or item.mtoc or "").strip()
+			if not item_code:
+				print("DEBUG pricing sync: skip row (no item_code/mtoc)", getattr(item, "frame_no", None))
+				continue
+			if not frappe.db.exists("Item", item_code):
+				print(f"DEBUG pricing sync: Item {item_code} not found; skipping")
+				continue
+
+			item_doc = frappe.get_doc("Item", item_code)
+			updated = False
+
+			for child_field, item_field in custom_field_map.items():
+				if hasattr(item, child_field):
+					child_value = getattr(item, child_field)
+					# Allow zero/falsey numeric values to flow through; skip only if None or empty string
+					if child_value is not None and child_value != "":
+						if hasattr(item_doc, item_field):
+							print(f"DEBUG pricing sync: setting {item_code}.{item_field} = {child_value}")
+							setattr(item_doc, item_field, child_value)
+							updated = True
+						else:
+							print(f"DEBUG pricing sync: Item field {item_field} missing on {item_code}")
+					else:
+						print(f"DEBUG pricing sync: empty value for {child_field} on row {getattr(item, 'frame_no', None)}")
+				else:
+					print(f"DEBUG pricing sync: child field {child_field} not on row {getattr(item, 'frame_no', None)}")
+
+			if updated:
+				item_doc.save(ignore_permissions=True)
+				print(f"DEBUG pricing sync: saved Item {item_code}")
+			else:
+				print(f"DEBUG pricing sync: no updates applied for Item {item_code}")
 	
 	def set_item_group(self):
 		"""Set item_group for Load Dispatch Items based on model_name or default."""
@@ -349,6 +421,7 @@ class LoadDispatch(Document):
 			frappe.throw(_("RKG Settings not found. Please create RKG Settings first before submitting Load Dispatch."))
 		
 		created_items = []
+		updated_items = []
 		skipped_items = []
 		
 		for item in self.items:
@@ -367,11 +440,29 @@ class LoadDispatch(Document):
 			item.item_code = item_code
 			
 			# Check if Item already exists
-			if frappe.db.exists("Item", item_code):
-				skipped_items.append(item_code)
-				continue
-			
 			try:
+				# Map pricing/GST custom fields from Load Dispatch Item -> Item custom fields
+				custom_field_map = {field: field for field in ITEM_CUSTOM_FIELDS}
+
+				if frappe.db.exists("Item", item_code):
+					# Update existing Item with pricing/GST values when provided
+					item_doc = frappe.get_doc("Item", item_code)
+					updated = False
+
+					for child_field, item_field in custom_field_map.items():
+						child_value = getattr(item, child_field, None)
+						# Allow zero/falsey numeric values to flow through; skip only if None or empty string
+						if child_value is not None and child_value != "" and hasattr(item_doc, item_field):
+							setattr(item_doc, item_field, child_value)
+							updated = True
+
+					if updated:
+						item_doc.save(ignore_permissions=True)
+						updated_items.append(item_code)
+					else:
+						skipped_items.append(item_code)
+					continue
+
 				# Determine item_group - try model_name first, then fall back to parent group
 				item_group = None
 				if item.model_name:
@@ -424,6 +515,14 @@ class LoadDispatch(Document):
 						item_doc.custom_gst_hsn_code = rkg_settings.default_hsn_code
 				
 				# Save the Item
+				for child_field, item_field in custom_field_map.items():
+					if hasattr(item, child_field):
+						child_value = getattr(item, child_field)
+						# Allow zero/falsey numeric values to flow through; skip only if None or empty string
+						if child_value is not None and child_value != "":
+							if hasattr(item_doc, item_field):
+								setattr(item_doc, item_field, child_value)
+
 				item_doc.insert(ignore_permissions=True)
 				created_items.append(item_code)
 				
@@ -442,6 +541,16 @@ class LoadDispatch(Document):
 					", ".join(created_items[:10]) + ("..." if len(created_items) > 10 else "")
 				),
 				indicator="green",
+				alert=True
+			)
+		
+		if updated_items:
+			frappe.msgprint(
+				_("Updated {0} Item(s): {1}").format(
+					len(updated_items),
+					", ".join(updated_items[:10]) + ("..." if len(updated_items) > 10 else "")
+				),
+				indicator="blue",
 				alert=True
 			)
 		
@@ -1107,14 +1216,9 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 			total_received_qty += pi_qty
 			total_billed_qty += pi_qty
 		
-		print(f"DEBUG: Total Received Qty = {total_received_qty}")
-		print(f"DEBUG: Total Billed Qty = {total_billed_qty}")
+	
 
-	# Update Load Dispatch document
-	print(f"\nDEBUG: ===== UPDATING LOAD DISPATCH =====")
-	print(f"DEBUG: Load Dispatch Name: {load_dispatch_name}")
-	print(f"DEBUG: Setting total_received_quantity = {total_received_qty}")
-	print(f"DEBUG: Setting total_billed_quantity = {total_billed_qty}")
+	
 	
 	# Get total_dispatch_quantity to determine status
 	total_dispatch_qty = frappe.db.get_value("Load Dispatch", load_dispatch_name, "total_dispatch_quantity") or 0
