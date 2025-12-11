@@ -345,6 +345,21 @@ class SerialBatchVisual {
 					</div>
 				</div>
 
+				<!-- Frame Aging Table -->
+				<div class="tree-section">
+					<div class="tree-header">
+						<span><i class="fa fa-table"></i> Aging Summary</span>
+					</div>
+					<div id="aging-summary-table"></div>
+				</div>
+
+				<div class="tree-section">
+					<div class="tree-header">
+						<span><i class="fa fa-list"></i> Frame Aging</span>
+					</div>
+					<div id="frame-aging-table"></div>
+				</div>
+
 				<!-- Tree View Section -->
 				<div class="tree-section">
 					<div class="tree-header">
@@ -412,11 +427,6 @@ class SerialBatchVisual {
 						companySelect.append(`<option value="${company}">${company}</option>`);
 					});
 
-					// Set default company if available
-					if (r.message.companies.length > 0) {
-						companySelect.val(r.message.companies[0]);
-					}
-
 					// Populate warehouse dropdown
 					const warehouseSelect = me.wrapper.find(".filter-warehouse");
 					warehouseSelect.html('<option value="">All Warehouses</option>');
@@ -463,6 +473,8 @@ class SerialBatchVisual {
 					me.render_summary(r.message.summary);
 					me.render_item_chart(r.message.by_item);
 					me.render_warehouse_chart(r.message.by_warehouse);
+					me.render_aging_summary(r.message.by_age_bucket);
+					me.render_frame_table(r.message.raw_data);
 				}
 
 				// Fetch grouped data for tree view
@@ -484,6 +496,8 @@ class SerialBatchVisual {
 				company: filters.company,
 				warehouse: filters.warehouse,
 				status: filters.status,
+				from_date: filters.from_date,
+				to_date: filters.to_date,
 			},
 			callback: function (r) {
 				frappe.show_progress("Loading", 100, 100, "Complete!");
@@ -569,6 +583,80 @@ class SerialBatchVisual {
 		});
 	}
 
+	render_frame_table(data) {
+		const container = this.wrapper.find("#frame-aging-table");
+		container.empty();
+
+		if (!data || data.length === 0) {
+			container.html('<div class="no-data"><i class="fa fa-list"></i><p>No serial numbers found</p></div>');
+			return;
+		}
+
+		// Limit rows to 200 to keep UI light
+		const rows = data.slice(0, 200);
+		const table = $(`
+			<div class="serial-list" style="display:block; max-height:400px; overflow:auto; padding:0;">
+				<div class="serial-item" style="font-weight:600; background: var(--bg-light-gray); grid-template-columns: 1.5fr 1fr 1fr 1fr 0.8fr;">
+					<div>Serial No</div>
+					<div>Item Code</div>
+					<div>Warehouse</div>
+					<div>Age Bucket</div>
+					<div>Age (days)</div>
+				</div>
+				${rows
+					.map(
+						(r) => `
+						<div class="serial-item" style="grid-template-columns: 1.5fr 1fr 1fr 1fr 0.8fr;">
+							<div class="serial-no">${r.serial_no || ""}</div>
+							<div>${r.item_code || "-"}</div>
+							<div class="warehouse">${r.warehouse || "-"}</div>
+							<div>${r.age_bucket || "-"}</div>
+							<div>${typeof r.age_days === "number" ? r.age_days : "-"}</div>
+						</div>
+					`
+					)
+					.join("")}
+				${data.length > 200 ? `<div class="serial-item" style="justify-content:center; color: var(--text-muted);">
+					<em>... and ${data.length - 200} more</em>
+				</div>` : ""}
+			</div>
+		`);
+
+		container.append(table);
+	}
+
+	render_aging_summary(data) {
+		const container = this.wrapper.find("#aging-summary-table");
+		container.empty();
+
+		if (!data || !data.labels || data.labels.length === 0) {
+			container.html('<div class="no-data"><i class="fa fa-table"></i><p>No data available</p></div>');
+			return;
+		}
+
+		const rows = data.labels.map((label, idx) => {
+			const value = Array.isArray(data.values) ? data.values[idx] : 0;
+			return `
+				<div class="serial-item" style="grid-template-columns: 1fr 0.5fr;">
+					<div>${label}</div>
+					<div>${value}</div>
+				</div>
+			`;
+		}).join("");
+
+		const table = $(`
+			<div class="serial-list" style="display:block; max-height:240px; overflow:auto; padding:0;">
+				<div class="serial-item" style="font-weight:600; background: var(--bg-light-gray); grid-template-columns: 1fr 0.5fr;">
+					<div>Period (days)</div>
+					<div>No. of Frames</div>
+				</div>
+				${rows}
+			</div>
+		`);
+
+		container.append(table);
+	}
+
 	render_tree_view(data) {
 		const container = this.wrapper.find("#item-tree-container");
 		container.empty();
@@ -603,7 +691,7 @@ class SerialBatchVisual {
 							<div>Serial No</div>
 							<div>Warehouse</div>
 							<div>Status</div>
-							<div>Created On</div>
+							<div>Age (days)</div>
 						</div>
 						${me.render_serial_items(item.serials)}
 					</div>
@@ -634,7 +722,7 @@ class SerialBatchVisual {
 				<div class="serial-no">${s.serial_no || ""}</div>
 				<div class="warehouse">${s.warehouse || "-"}</div>
 				<div class="status ${(s.status || "").toLowerCase()}">${s.status || "-"}</div>
-				<div class="document">${s.creation ? frappe.datetime.str_to_user(s.creation) : "-"}</div>
+				<div class="document">${typeof s.age_days === "number" ? s.age_days : "-"}</div>
 			</div>
 		`
 			)

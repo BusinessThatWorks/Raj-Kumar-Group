@@ -97,6 +97,7 @@ class LoadDispatch(Document):
 	def create_serial_nos(self):
 		"""Create serial nos for all items on save."""
 		if self.items:
+			has_purchase_date = frappe.db.has_column("Serial No", "purchase_date")
 			for item in self.items:
 				# Debug: Print all relevant field values
 				print(f"=== DEBUG: Processing Load Dispatch Item ===")
@@ -140,6 +141,21 @@ class LoadDispatch(Document):
 								setattr(serial_no, "custom_key_no", str(key_no_value))
 							else:
 								print(f"=== DEBUG: key_no is None or empty, NOT setting custom_key_no ===")
+
+							# Map purchase_date for aging (prefer dispatch_date -> planned_arrival_date -> parent.dispatch_date) when column exists
+							if has_purchase_date:
+								purchase_date = (
+									getattr(item, "dispatch_date", None)
+									or getattr(item, "planned_arrival_date", None)
+									or getattr(self, "dispatch_date", None)
+								)
+								if purchase_date:
+									try:
+										from frappe.utils import getdate
+										setattr(serial_no, "purchase_date", getdate(purchase_date))
+										print(f"=== DEBUG: Setting purchase_date to: {purchase_date} ===")
+									except Exception:
+										print(f"=== DEBUG: purchase_date parsing failed for value: {purchase_date}")
 
 							serial_no.insert(ignore_permissions=True)
 							print(f"=== DEBUG: Serial No created successfully ===")
@@ -185,6 +201,30 @@ class LoadDispatch(Document):
 								)
 						else:
 							print(f"=== DEBUG: (update) key_no is None or empty, NOT updating custom_key_no ===")
+
+						# Backfill purchase_date when missing to support aging buckets (only if column exists)
+						if has_purchase_date:
+							purchase_date = (
+								getattr(item, "dispatch_date", None)
+								or getattr(item, "planned_arrival_date", None)
+								or getattr(self, "dispatch_date", None)
+							)
+							if purchase_date:
+								try:
+									from frappe.utils import getdate
+									frappe.db.set_value(
+										"Serial No",
+										serial_no_name,
+										"purchase_date",
+										getdate(purchase_date),
+									)
+									print(f"=== DEBUG: (update) purchase_date set to: {purchase_date} ===")
+								except Exception as e:
+									print(f"=== DEBUG: Error setting purchase_date: {str(e)} ===")
+									frappe.log_error(
+										f"Error setting purchase_date for Serial No {serial_no_name}: {str(e)}",
+										"Serial No Update Error",
+									)
 	
 	def set_item_code(self):
 		if self.items:

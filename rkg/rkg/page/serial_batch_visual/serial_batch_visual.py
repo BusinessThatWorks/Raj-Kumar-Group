@@ -14,6 +14,13 @@ def get_serial_batch_data(company=None, from_date=None, to_date=None, item_code=
 	"""
 	filters = {}
 	conditions = ["1=1"]
+	has_purchase_date = frappe.db.has_column("Serial No", "purchase_date")
+	# Prefer Purchase Receipt/Invoice posting_date -> purchase_date -> creation
+	age_date_expr = (
+		"COALESCE(pr.posting_date, pi.posting_date, sn.purchase_date, sn.creation)"
+		if has_purchase_date
+		else "COALESCE(pr.posting_date, pi.posting_date, sn.creation)"
+	)
 	
 	# Build conditions for Serial No table
 	if company:
@@ -31,6 +38,14 @@ def get_serial_batch_data(company=None, from_date=None, to_date=None, item_code=
 	if status:
 		conditions.append("sn.status = %(status)s")
 		filters["status"] = status
+
+	# Date filters (use purchase_date/PR/PI dates, fallback to creation)
+	if from_date:
+		conditions.append(f"{age_date_expr} >= %(from_date)s")
+		filters["from_date"] = getdate(from_date)
+	if to_date:
+		conditions.append(f"{age_date_expr} <= %(to_date)s")
+		filters["to_date"] = getdate(to_date)
 	
 	where_clause = " AND ".join(conditions)
 	
@@ -42,9 +57,19 @@ def get_serial_batch_data(company=None, from_date=None, to_date=None, item_code=
 			sn.warehouse,
 			sn.status,
 			sn.item_group,
-			item.item_name
+			item.item_name,
+			{age_date_expr} as age_date,
+			DATEDIFF(CURDATE(), {age_date_expr}) as age_days,
+			CASE
+				WHEN DATEDIFF(CURDATE(), {age_date_expr}) <= 30 THEN '0-30'
+				WHEN DATEDIFF(CURDATE(), {age_date_expr}) <= 60 THEN '30-60'
+				WHEN DATEDIFF(CURDATE(), {age_date_expr}) <= 90 THEN '60-90'
+				ELSE '>90'
+			END as age_bucket
 		FROM `tabSerial No` sn
 		LEFT JOIN `tabItem` item ON sn.item_code = item.name
+		LEFT JOIN `tabPurchase Receipt` pr ON pr.name = sn.purchase_document_no
+		LEFT JOIN `tabPurchase Invoice` pi ON pi.name = sn.purchase_document_no
 		WHERE {where_clause}
 		ORDER BY sn.item_code, sn.name
 		LIMIT 2000
@@ -59,6 +84,7 @@ def get_serial_batch_data(company=None, from_date=None, to_date=None, item_code=
 		"by_item": get_data_by_item_from_serials(data),
 		"by_warehouse": get_data_by_warehouse_from_serials(data),
 		"by_voucher_type": get_data_by_voucher_type_from_serials(data),
+		"by_age_bucket": get_data_by_age_bucket(data),
 	}
 	
 	return result
@@ -161,6 +187,23 @@ def get_data_by_voucher_type_from_serials(data):
 	}
 
 
+def get_data_by_age_bucket(data):
+	"""Group Serial No data into aging buckets."""
+	bucket_order = ["0-30", "30-60", "60-90", ">90"]
+	bucket_counts = {bucket: 0 for bucket in bucket_order}
+	
+	for row in data:
+		bucket = row.get("age_bucket") or ">90"
+		if bucket not in bucket_counts:
+			bucket_counts[bucket] = 0
+		bucket_counts[bucket] += 1
+	
+	return {
+		"labels": bucket_order,
+		"values": [bucket_counts.get(b, 0) for b in bucket_order],
+	}
+
+
 @frappe.whitelist()
 def get_serials_by_item(item_code, company=None, warehouse=None):
 	"""Get all serial numbers for a specific item code."""
@@ -190,6 +233,12 @@ def get_grouped_serial_data(company=None, from_date=None, to_date=None, warehous
 	"""
 	filters = {}
 	conditions = ["1=1"]
+	has_purchase_date = frappe.db.has_column("Serial No", "purchase_date")
+	age_date_expr = (
+		"COALESCE(pr.posting_date, pi.posting_date, sn.purchase_date, sn.creation)"
+		if has_purchase_date
+		else "COALESCE(pr.posting_date, pi.posting_date, sn.creation)"
+	)
 	
 	if company:
 		conditions.append("sn.company = %(company)s")
@@ -202,6 +251,14 @@ def get_grouped_serial_data(company=None, from_date=None, to_date=None, warehous
 	if status:
 		conditions.append("sn.status = %(status)s")
 		filters["status"] = status
+
+	# Date filters (use purchase_date, fallback to creation)
+	if from_date:
+		conditions.append(f"{age_date_expr} >= %(from_date)s")
+		filters["from_date"] = getdate(from_date)
+	if to_date:
+		conditions.append(f"{age_date_expr} <= %(to_date)s")
+		filters["to_date"] = getdate(to_date)
 	
 	where_clause = " AND ".join(conditions)
 	
@@ -214,9 +271,18 @@ def get_grouped_serial_data(company=None, from_date=None, to_date=None, warehous
 			sn.status,
 			sn.purchase_document_no,
 			sn.creation,
-			item.item_name
+			item.item_name,
+			DATEDIFF(CURDATE(), {age_date_expr}) as age_days,
+			CASE
+				WHEN DATEDIFF(CURDATE(), {age_date_expr}) <= 30 THEN '0-30'
+				WHEN DATEDIFF(CURDATE(), {age_date_expr}) <= 60 THEN '30-60'
+				WHEN DATEDIFF(CURDATE(), {age_date_expr}) <= 90 THEN '60-90'
+				ELSE '>90'
+			END as age_bucket
 		FROM `tabSerial No` sn
 		LEFT JOIN `tabItem` item ON sn.item_code = item.name
+		LEFT JOIN `tabPurchase Receipt` pr ON pr.name = sn.purchase_document_no
+		LEFT JOIN `tabPurchase Invoice` pi ON pi.name = sn.purchase_document_no
 		WHERE {where_clause}
 		ORDER BY sn.item_code, sn.name
 		LIMIT 2000
