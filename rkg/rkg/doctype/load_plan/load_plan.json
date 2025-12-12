@@ -14,6 +14,7 @@
   "status",
   "column_break_drgo",
   "payment_plan_date",
+  "attach_load_plan",
   "items",
   "table_tezh",
   "section_break_jxkq",
@@ -109,13 +110,19 @@
    "no_copy": 1,
    "options": "Submitted\nIn-Transit\nDispatched\nPartial Dispatched",
    "read_only": 1
+  },
+  {
+   "fieldname": "attach_load_plan",
+   "fieldtype": "Attach",
+   "label": "Attach Load Plan",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-01 17:37:01.266999",
+ "modified": "2025-12-12 14:23:28.713111",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Plan",

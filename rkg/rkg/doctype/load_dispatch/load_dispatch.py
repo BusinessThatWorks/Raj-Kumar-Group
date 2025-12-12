@@ -652,115 +652,66 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 		
 		try:
 			def _norm_header(h):
-				# Normalize header for comparison: strip, lower, collapse spaces, remove BOM
-				return " ".join((h or "").replace("\ufeff", "").strip().lower().split())
+				# Normalize header for comparison: strip, lower, collapse spaces, remove BOM and special chars
+				if not h:
+					return ""
+				# Remove BOM and other invisible characters
+				normalized = str(h).replace("\ufeff", "").replace("\u200b", "").strip()
+				# Convert to lowercase and collapse multiple spaces/tabs into single space
+				normalized = " ".join(normalized.lower().split())
+				return normalized
 
 			# Mapping from CSV column names to child table fieldnames
 			column_mapping = {
-				"HMSI/InterDealer Load Reference No": "load_reference_no",
-				"HMSI Load Reference No": "load_reference_no",  # alternate spelling
-				"Invoice No.": "invoice_no",
-				"Invoice Date": "invoice_date",
-				"Model Category": "model_category",
+				"HMSI Load Reference No": "hmsi_load_reference_no",
+				"Invoice No": "invoice_no",
+				"Dispatch Date": "dispatch_date",
+				"Frame No": "frame_no",
+				"Engine no": "engnie_no_motor_no",
+				"Engine No": "engnie_no_motor_no",  # alternate spelling
+				"Key No": "key_no",
+				"Model": "model",
 				"Model Name": "model_name",
-				"Model Variant": "model_variant",
-				"Color Code": "color_code",
-				"MTOC": "mtoc",
+				"Colour": "color_code",
+				"Color": "color_code",  # alternate spelling
+				"Tax Rate": "tax_rate",
+				"Print Name": "print_name",
+				"DOR": "dor",
+				"HSN Code": "hsn_code",
+				"Qty": "qty",
+				"Unit": "unit",
+				"Price/Unit": "price_unit",
+				"Price/unit": "price_unit",  # alternate spelling
+				# Legacy mappings for backward compatibility
+				"HMSI/InterDealer Load Reference No": "hmsi_load_reference_no",
+				"Invoice No.": "invoice_no",
 				"Frame #": "frame_no",
 				"Engine No/Motor No": "engnie_no_motor_no",
-				"Physical Status": "physical_status",
-				"Chassis Status": "chassis_status",
-				"Location": "location",
-				"Key No": "key_no",
-				"Load Type": "load_type",
-				"Transporter Name": "transporter_name",
-				"Shipment Truck #": "shipment_truck",
-				"Dispatch Date": "dispatch_date",
-				"Planned Arrival Date": "planned_arrival_date",
-				"GR Date": "gr_date",
-				"GR No": "gr_no",
-				"Plant Code": "plant_code",
-				"Payment Amount": "payment_amount",
-				"Dealer Code": "dealer_code",
-				"Manufacturing Date": "manufacturing_date",
-				"Reference Number": "reference_number",
-				"Invoice Price": "invoice_price",
-				"SAP Sales Order No": "sap_sales_order_no",
-				"Booking Reference#": "booking_reference",
-				"Vehicle Tracking Info": "vehicle_tracking_info",
-				"Dealer Purchase Order No": "dealer_purchase_order_no",
-				"Type": "type",
-				"Capacity": "capacity",
-				"Option Code": "option_code",
-				"Transporter Code": "transporter_code",
-				"EV Battery Number": "ev_battery_number",
-				"Model Code": "model_code",
-				"Net Dealer price": "net_dealer_price",
-				"Net Dealer Price": "net_dealer_price",  # allow capital P
-				"Credit of GST": "credit_of_gst",
-				"Dealer Billing Price": "dealer_billing_price",
-				"CGST Amount": "cgst_amount",
-				"SGST Amount": "sgst_amount",
-				"IGST Amount": "igst_amount",
-				"EX-Showroom Price": "ex_showroom_price",
-				"GSTIN": "gstin"
+				"Color Code": "color_code",
 			}
 			
 			# Required headers that MUST be present in the CSV (core), case/space-insensitive
 			required_headers_core = [
-				"HMSI/InterDealer Load Reference No",
-				"Invoice No.",
-				"Invoice Date",
-				"Model Category",
-				"Model Name",
-				"Model Variant",
-				"Color Code",
-				"MTOC",
-				"Frame #",
-				"Engine No/Motor No",
-				"Physical Status",
-				"Chassis Status",
-				"Location",
-				"Key No",
-				"Load Type",
-				"Transporter Name",
-				"Shipment Truck #",
+				"HMSI Load Reference No",
+				"Invoice No",
 				"Dispatch Date",
-				"Planned Arrival Date",
-				"GR Date",
-				"GR No",
-				"Plant Code",
-				"Payment Amount",
-				"Dealer Code",
-				"Manufacturing Date",
-				"Reference Number",
-				"Invoice Price",
-				"SAP Sales Order No",
-				"Booking Reference#",
-				"Vehicle Tracking Info",
-				"Dealer Purchase Order No",
-				"Type",
-				"Capacity",
-				"Option Code",
-				"Transporter Code",
-				"EV Battery Number",
-				"Model Code",
-				"Credit of GST",
-				"Dealer Billing Price",
-				"CGST Amount",
-				"SGST Amount",
-				"IGST Amount",
-				"EX-Showroom Price",
-				"GSTIN"
+				"Frame No",
+				"Engine no",
+				"Key No",
+				"Model",
+				"Model Name",
+				"Colour",
+				"Tax Rate",
+				"Print Name",
+				"DOR",
+				"HSN Code",
+				"Qty",
+				"Unit",
+				"Price/Unit"
 			]
 
 			# Optional headers (ignored if absent)
-			optional_headers = [
-				"Booking Reference#",
-				"Booking Reference #",
-				"Net Dealer price",
-				"Net Dealer Price",
-			]
+			optional_headers = []
 			
 			# Detect delimiter from sample, with fallbacks for common delimiters
 			try:
@@ -787,7 +738,24 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				missing = []
 				for required_header in required_headers_core:
 					norm_req = _norm_header(required_header)
-					if norm_req not in norm_test_headers and _norm_header("HMSI Load Reference No") not in norm_test_headers:
+					# Check for alternate spellings
+					alternates = {
+						_norm_header("Engine no"): [_norm_header("Engine No"), _norm_header("Engine No/Motor No")],
+						_norm_header("Colour"): [_norm_header("Color"), _norm_header("Color Code")],
+						_norm_header("Price/Unit"): [_norm_header("Price/unit")],
+						_norm_header("Frame No"): [_norm_header("Frame #")],
+						_norm_header("Invoice No"): [_norm_header("Invoice No.")],
+						_norm_header("HMSI Load Reference No"): [_norm_header("HMSI/InterDealer Load Reference No")]
+					}
+					
+					found = norm_req in norm_test_headers
+					if not found and norm_req in alternates:
+						for alt in alternates[norm_req]:
+							if alt in norm_test_headers:
+								found = True
+								break
+					
+					if not found:
 						missing.append(required_header)
 
 				if best_missing is None or len(missing) < len(best_missing):
@@ -799,21 +767,45 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				if not missing:
 					break
 
-			# Use the best delimiter found
+			# Use the best delimiter found - recreate reader to get actual headers
 			csvfile.seek(0)
 			reader = csv.DictReader(csvfile, delimiter=best_delimiter)
-			csv_headers = best_headers
-			norm_csv_headers = {_norm_header(h): h for h in csv_headers}
-
-			# If best_headers is empty (e.g., file without headers), derive from reader
+			
+			# Always get headers from the reader to ensure we have the actual headers from the file
+			reader_headers = [h.strip() if h else "" for h in (reader.fieldnames or [])]
+			
+			# Use reader headers (they're the actual headers from the file)
+			csv_headers = reader_headers
+			
+			# Create normalized header mapping after csv_headers is finalized
+			norm_csv_headers = {_norm_header(h): h for h in csv_headers if h}  # Filter out empty headers
+			
+			# Debug: Log found headers for troubleshooting
 			if not csv_headers:
-				csv_headers = [h.strip() if h else "" for h in (reader.fieldnames or [])]
+				frappe.throw(_("CSV file appears to have no headers. Please ensure the first row contains column headers."))
 			
 			# Check for missing headers using the chosen delimiter (case/space-insensitive)
 			missing_core_headers = []
 			for required_header in required_headers_core:
 				norm_req = _norm_header(required_header)
-				if norm_req not in norm_csv_headers and _norm_header("HMSI Load Reference No") not in norm_csv_headers:
+				# Check for alternate spellings
+				alternates = {
+					_norm_header("Engine no"): [_norm_header("Engine No"), _norm_header("Engine No/Motor No")],
+					_norm_header("Colour"): [_norm_header("Color"), _norm_header("Color Code")],
+					_norm_header("Price/Unit"): [_norm_header("Price/unit")],
+					_norm_header("Frame No"): [_norm_header("Frame #")],
+					_norm_header("Invoice No"): [_norm_header("Invoice No.")],
+					_norm_header("HMSI Load Reference No"): [_norm_header("HMSI/InterDealer Load Reference No")]
+				}
+				
+				found = norm_req in norm_csv_headers
+				if not found and norm_req in alternates:
+					for alt in alternates[norm_req]:
+						if alt in norm_csv_headers:
+							found = True
+							break
+				
+				if not found:
 					missing_core_headers.append(required_header)
 
 			# Optional headers: warn only
@@ -825,13 +817,18 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 			if missing_core_headers:
 				expected_headers_str = "\n".join([f"• {h}" for h in required_headers_core + optional_headers])
 				missing_headers_str = "\n".join([f"• {h}" for h in missing_core_headers + missing_optional_headers])
+				found_headers_str = "\n".join([f"• {h}" for h in csv_headers[:20]])  # Show first 20 headers found
+				if len(csv_headers) > 20:
+					found_headers_str += f"\n... and {len(csv_headers) - 20} more"
 				
 				frappe.throw(
 					_("CSV Header Validation Failed!\n\n"
 					  "<b>Missing Headers:</b>\n{0}\n\n"
-					  "<b>Expected Headers (CSV should contain these columns):</b>\n{1}").format(
+					  "<b>Expected Headers (CSV should contain these columns):</b>\n{1}\n\n"
+					  "<b>Found Headers in CSV:</b>\n{2}").format(
 						missing_headers_str,
-						expected_headers_str
+						expected_headers_str,
+						found_headers_str
 					),
 					title=_("Invalid CSV Headers")
 				)
@@ -856,9 +853,6 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				for csv_col, fieldname in column_mapping.items():
 					# Resolve actual CSV column using normalized header lookup
 					actual_col = norm_csv_headers.get(_norm_header(csv_col))
-					# Fallback: if alternate key exists (e.g., HMSI Load Reference No)
-					if not actual_col and csv_col == "HMSI/InterDealer Load Reference No":
-						actual_col = norm_csv_headers.get(_norm_header("HMSI Load Reference No"))
 					if not actual_col:
 						continue
 
@@ -867,30 +861,21 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 					
 					if value:
 						# Handle date fields
-						if fieldname in ["invoice_date", "dispatch_date", "manufacturing_date"]:
+						if fieldname in ["dispatch_date", "dor"]:
 							# Try to parse date (assuming format YYYY-MM-DD or similar)
 							try:
 								from frappe.utils import getdate
 								row_data[fieldname] = getdate(value)
 							except:
 								row_data[fieldname] = value
-						# Handle datetime fields
-						elif fieldname in ["planned_arrival_date", "gr_date"]:
-							try:
-								from frappe.utils import get_datetime
-								row_data[fieldname] = get_datetime(value)
-							except:
-								row_data[fieldname] = value
 						# Handle integer fields
-						elif fieldname in ["key_no", "gr_no"]:
+						elif fieldname in ["key_no", "hsn_code", "qty"]:
 							try:
 								row_data[fieldname] = int(float(value)) if value else None
 							except:
 								row_data[fieldname] = value
 						# Handle currency fields
-						elif fieldname in ["payment_amount", "net_dealer_price", "credit_of_gst", 
-										   "dealer_billing_price", "cgst_amount", "sgst_amount", 
-										   "igst_amount", "ex_showroom_price"]:
+						elif fieldname in ["price_unit"]:
 							try:
 								row_data[fieldname] = float(value) if value else 0.0
 							except:
@@ -898,17 +883,20 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 						else:
 							row_data[fieldname] = value
 					
-					# Track load_reference_no from CSV
-					if fieldname == "load_reference_no" and value:
+					# Track hmsi_load_reference_no from CSV (for validation)
+					if fieldname == "hmsi_load_reference_no" and value:
 						csv_load_reference_nos.add(value)
+					# Also track invoice_no for parent document
+					if fieldname == "invoice_no" and value:
+						row_data[fieldname] = value
 				
 				if row_data:
 					rows.append(row_data)
 			
-			# Validate load_reference_no match if manually selected
+			# Validate hmsi_load_reference_no match if manually selected
 			if selected_load_reference_no:
 				if len(csv_load_reference_nos) == 0:
-					frappe.throw(_("CSV file does not contain any Load Reference Number. Please ensure the CSV has 'HMSI/InterDealer Load Reference No' or 'HMSI Load Reference No' column."))
+					frappe.throw(_("CSV file does not contain any Load Reference Number. Please ensure the CSV has 'HMSI Load Reference No' column."))
 				elif len(csv_load_reference_nos) > 1:
 					frappe.throw(_("CSV file contains multiple different Load Reference Numbers: {0}. All rows must have the same Load Reference Number.").format(", ".join(sorted(csv_load_reference_nos))))
 				else:

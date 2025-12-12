@@ -46,16 +46,16 @@ frappe.ui.form.on("Load Dispatch", {
 	},
 
 	load_dispatch_file_attach(frm) {
-		// Event listener for when CSV file is attached
+		// Event listener for when spreadsheet/CSV file is attached
 		if (frm.doc.load_dispatch_file_attach) {
 			frappe.show_alert({
-				message: __("Processing CSV file..."),
+				message: __("Processing attached file..."),
 				indicator: "blue"
 			}, 3);
 
-			// Call server method to extract CSV data
+			// Call server method to extract tabular data row-wise
 			frappe.call({
-				method: "rkg.rkg.doctype.load_dispatch.load_dispatch.process_csv_file",
+				method: "rkg.rkg.doctype.load_dispatch.load_dispatch.process_tabular_file",
 				args: {
 					file_url: frm.doc.load_dispatch_file_attach,
 					selected_load_reference_no: frm.doc.load_reference_no || null
@@ -65,25 +65,23 @@ frappe.ui.form.on("Load Dispatch", {
 						// Clear existing items
 						frm.clear_table("items");
 						
-						// Add rows from CSV data
+						// Add rows from imported data
 						if (r.message.length > 0) {
 							r.message.forEach(function(row) {
 								let child_row = frm.add_child("items");
-								// Set values directly on the child row object
 								Object.keys(row).forEach(function(key) {
 									child_row[key] = row[key];
 								});
-								// Note: item_code will be populated from mtoc on save
 							});
 							
 							frm.refresh_field("items");
 							
 							// Map values from first imported row to parent fields
 							const first_row = r.message[0] || {};
-							if (first_row.load_reference_no) {
-								// Store the load_reference_no from CSV to prevent changes (set before updating field)
-								frm._load_reference_no_from_csv = first_row.load_reference_no;
-								frm.set_value("load_reference_no", first_row.load_reference_no);
+							if (first_row.hmsi_load_reference_no) {
+								// Store the load_reference_no from the file to prevent changes
+								frm._load_reference_no_from_csv = first_row.hmsi_load_reference_no;
+								frm.set_value("load_reference_no", first_row.hmsi_load_reference_no);
 							}
 							if (first_row.invoice_no) {
 								frm.set_value("invoice_no", first_row.invoice_no);
@@ -93,12 +91,12 @@ frappe.ui.form.on("Load Dispatch", {
 							calculate_total_dispatch_quantity(frm);
 							
 							frappe.show_alert({
-								message: __("Successfully imported {0} rows from CSV", [r.message.length]),
+								message: __("Successfully imported {0} rows from file", [r.message.length]),
 								indicator: "green"
 							}, 5);
 						} else {
 							frappe.show_alert({
-								message: __("No data found in CSV file"),
+								message: __("No data found in attached file"),
 								indicator: "orange"
 							}, 5);
 						}
@@ -106,7 +104,7 @@ frappe.ui.form.on("Load Dispatch", {
 				},
 				error: function(r) {
 					frappe.show_alert({
-						message: __("Error processing CSV file: {0}", [r.message || "Unknown error"]),
+						message: __("Error processing file: {0}", [r.message || "Unknown error"]),
 						indicator: "red"
 					}, 5);
 				}

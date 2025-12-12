@@ -1,6 +1,11 @@
+import csv
+import os
+
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from frappe.utils.xlsxutils import read_xlsx_file_from_attached_file
 
 
 class LoadPlan(Document):
@@ -154,3 +159,447 @@ def update_load_plan_status_from_document(doc, method=None):
 		load_plan.status = new_status
 		load_plan.save(ignore_permissions=True)
 		frappe.db.commit()
+
+
+@frappe.whitelist()
+def process_tabular_file(file_url):
+	"""
+	Read the attached file row-wise (CSV or Excel) and map it to Load Plan Item fields.
+	Returns a list of dicts ready to be added to the child table.
+	"""
+	if not file_url:
+		frappe.throw(_("No file provided"))
+
+	# Reusable header normalizer
+	def _norm_header(h):
+		if not h:
+			return ""
+		normalized = str(h).replace("\ufeff", "").replace("\u200b", "").strip()
+		return " ".join(normalized.lower().split())
+
+	# Header → fieldname mapping (parent fields included to pass back)
+	column_mapping = {
+		# Parent
+		"load reference no": "load_reference_no",
+		"dispatch plan date": "dispatch_plan_date",
+		"payment plan date": "payment_plan_date",
+		# Alternate (from Load Dispatch CSV)
+		"hmsi load reference no": "load_reference_no",
+		"dispatch date": "dispatch_plan_date",
+		# Child (vehicle_model_variant now optional)
+		"vehicle model variant": "vehicle_model_variant",
+		"model": "model",
+		"model name": "model_name",
+		"type": "model_type",
+		"variant": "model_variant",
+		"color": "model_color",
+		"colour": "model_color",
+		"group color": "group_color",
+		"group colour": "group_color",
+		"group co": "group_color",
+		"tax rate": "group_color",  # fallback
+		"option": "option",
+		"qty": "quantity",
+		"quantity": "quantity",
+	}
+
+	required_headers = [
+		"Load Reference No",
+		"Dispatch Plan Date",
+		"Payment Plan Date",
+		"Model",
+		"Model Name",
+		"Type",
+		"Variant",
+		"Color",
+		"Group Color",
+		"Option",
+		"Quantity",
+	]
+	optional_headers = []
+
+	# Try Excel first (works even if extension is .csv but content is xlsx)
+	data = None
+	try:
+		data = read_xlsx_file_from_attached_file(file_url=file_url)
+	except Exception:
+		data = None
+
+	if data:
+		result = _process_tabular_rows(data, column_mapping, required_headers, optional_headers, _norm_header)
+		if not result:
+			frappe.log_error(
+				message=f"Load Plan import: no rows built from Excel. Headers={data[0] if data else 'N/A'}",
+				title="Load Plan Import Empty (Excel)"
+			)
+		return result
+
+	# CSV path (fallback to previous logic)
+	result = _process_load_plan_csv(file_url, column_mapping, required_headers, optional_headers)
+	if not result:
+		frappe.log_error(
+			message="Load Plan import: no rows built from CSV after fallback.",
+			title="Load Plan Import Empty (CSV)"
+		)
+	return result
+
+
+def _process_tabular_rows(data, column_mapping, required_headers, optional_headers, norm_func):
+	if not data or len(data) == 0:
+		return []
+
+	headers = [(cell or "").strip() for cell in data[0]]
+	norm_csv_headers = {norm_func(h): h for h in headers if h}
+	frappe.log_error(
+		message=f"Load Plan import: headers detected={headers}",
+		title="Load Plan Import Debug"
+	)
+
+	# Validate headers (accept either primary set or dispatch-style set)
+	def _missing(headers, norm_headers):
+		miss = []
+		for req in headers:
+			if norm_func(req) not in norm_headers:
+				miss.append(req)
+		return miss
+
+	missing_headers = _missing(required_headers, norm_csv_headers)
+	missing_optional = _missing(optional_headers, norm_csv_headers)
+
+	# Fallback: accept dispatch CSV headers (subset) when primary missing
+	dispatch_min_headers = [
+		"HMSI Load Reference No",
+		"Dispatch Date",
+		"Model",
+		"Model Name",
+		"Colour",
+		"Variant",
+		"Qty",
+	]
+	dispatch_missing = _missing(dispatch_min_headers, norm_csv_headers)
+	if missing_headers and not dispatch_missing:
+		missing_headers = []
+
+	if missing_headers:
+		# If we still have at least one mapped column, just warn and continue
+		has_any_mapped = any(norm_func(col) in norm_csv_headers for col in column_mapping.keys())
+		if has_any_mapped:
+			frappe.msgprint(
+				_("Missing headers (processing will continue):<br>{0}").format(
+					"<br>".join([f"• {h}" for h in missing_headers])
+				),
+				indicator="orange",
+				alert=True,
+			)
+		else:
+			found_headers_str = "\n".join([f"• {h}" for h in headers[:20]])
+			if len(headers) > 20:
+				found_headers_str += f"\n... and {len(headers) - 20} more"
+			frappe.throw(
+				_("Header Validation Failed!\n\n"
+				  "<b>Missing Headers:</b>\n{0}\n\n"
+				  "<b>Expected Headers:</b>\n{1}\n\n"
+				  "<b>Found Headers:</b>\n{2}").format(
+					"\n".join([f"• {h}" for h in missing_headers]),
+					"\n".join([f"• {h}" for h in required_headers + optional_headers]),
+					found_headers_str
+				),
+				title=_("Invalid Headers")
+			)
+	elif missing_optional:
+		frappe.msgprint(
+			_("Optional headers missing (processing will continue):<br>{0}").format(
+				"<br>".join([f"• {h}" for h in missing_optional])
+			),
+			indicator="orange",
+			alert=True,
+		)
+
+	rows = []
+	for row in data[1:]:
+		if not any(row):
+			continue
+
+		row_data = {}
+		for csv_col, fieldname in column_mapping.items():
+			actual_col = norm_csv_headers.get(norm_func(csv_col))
+			if not actual_col:
+				continue
+
+			try:
+				col_idx = headers.index(actual_col)
+			except ValueError:
+				continue
+
+			raw_value = row[col_idx] if col_idx < len(row) else ""
+			value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+
+			if value or value == 0:
+				if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+					try:
+						from frappe.utils import getdate
+						row_data[fieldname] = getdate(value)
+					except Exception:
+						row_data[fieldname] = value
+				elif fieldname == "quantity":
+					try:
+						row_data[fieldname] = int(float(value)) if value or value == 0 else None
+					except Exception:
+						row_data[fieldname] = value
+				else:
+					row_data[fieldname] = value
+
+		if row_data:
+			rows.append(row_data)
+
+	child_fields = {
+		"model",
+		"model_name",
+		"model_type",
+		"model_variant",
+		"model_color",
+		"group_color",
+		"option",
+		"quantity",
+	}
+
+	def _has_child_fields(row):
+		return any(k in child_fields for k in row.keys())
+
+	if (not rows) or all(not _has_child_fields(r) for r in rows):
+		frappe.log_error(
+			message=f"Load Plan import: no rows built. First data rows={data[1:6]}",
+			title="Load Plan Import Debug (no rows)"
+		)
+		# Fallback: positional mapping using expected order
+		expected_order = [
+			"load reference no",
+			"dispatch plan date",
+			"payment plan date",
+			"model",
+			"model name",
+			"type",
+			"variant",
+			"color",
+			"group color",
+			"option",
+			"quantity",
+		]
+		for row in data[1:]:
+			if not any(row):
+				continue
+			row_data = {}
+			for idx, key in enumerate(expected_order):
+				if idx >= len(row):
+					break
+				raw_value = row[idx]
+				value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+				fieldname = column_mapping.get(key, key)
+				if value or value == 0:
+					if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+						try:
+							from frappe.utils import getdate
+							row_data[fieldname] = getdate(value)
+						except Exception:
+							row_data[fieldname] = value
+					elif fieldname == "quantity":
+						try:
+							row_data[fieldname] = int(float(value)) if value or value == 0 else None
+						except Exception:
+							row_data[fieldname] = value
+					else:
+						row_data[fieldname] = value
+			if row_data:
+				rows.append(row_data)
+
+	return rows
+
+
+def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_headers):
+	"""CSV-only processing reused by process_tabular_file."""
+	if file_url.startswith("/files/"):
+		file_name = file_url.split("/files/")[-1]
+		file_path = frappe.get_site_path("public", "files", file_name)
+	else:
+		file_path = frappe.get_site_path("public", file_url.lstrip("/"))
+
+	if not os.path.exists(file_path):
+		frappe.throw(_("File not found: {0}").format(file_url))
+
+	# Try multiple encodings
+	encodings = ["utf-8-sig", "utf-8", "utf-16-le", "utf-16-be", "latin-1", "cp1252"]
+	csvfile = None
+	for encoding in encodings:
+		try:
+			csvfile = open(file_path, "r", encoding=encoding)
+			sample = csvfile.read(1024)
+			csvfile.seek(0)
+			break
+		except (UnicodeDecodeError, UnicodeError):
+			if csvfile:
+				csvfile.close()
+			csvfile = None
+			continue
+
+	if not csvfile:
+		frappe.throw(_("Unable to read the file. Please ensure it is saved as CSV."))
+
+	try:
+		def _norm_header(h):
+			if not h:
+				return ""
+			normalized = str(h).replace("\ufeff", "").replace("\u200b", "").strip()
+			return " ".join(normalized.lower().split())
+
+		# Detect delimiter
+		try:
+			delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+		except Exception:
+			delimiter = ","
+
+		# Build reader and headers
+		csvfile.seek(0)
+		reader = csv.DictReader(csvfile, delimiter=delimiter)
+		reader_headers = [h.strip() if h else "" for h in (reader.fieldnames or [])]
+		csv_headers = reader_headers
+		norm_csv_headers = {_norm_header(h): h for h in csv_headers if h}
+
+		if not csv_headers:
+			frappe.throw(_("CSV file appears to have no headers. Please ensure the first row contains column headers."))
+
+		# Check missing headers
+		missing_headers = []
+		for req in required_headers:
+			if _norm_header(req) not in norm_csv_headers:
+				missing_headers.append(req)
+		missing_optional = []
+		for opt in optional_headers:
+			if _norm_header(opt) not in norm_csv_headers:
+				missing_optional.append(opt)
+
+		if missing_headers:
+			has_any_mapped = any(_norm_header(col) in norm_csv_headers for col in column_mapping.keys())
+			if has_any_mapped:
+				frappe.msgprint(
+					_("Missing headers (processing will continue):<br>{0}").format(
+						"<br>".join([f"• {h}" for h in missing_headers])
+					),
+					indicator="orange",
+					alert=True,
+				)
+			else:
+				# Don't block; just warn and continue
+				frappe.msgprint(
+					_("Missing headers (processing will continue):<br>{0}").format(
+						"<br>".join([f"• {h}" for h in missing_headers])
+					),
+					indicator="orange",
+					alert=True,
+				)
+		elif missing_optional:
+			frappe.msgprint(
+				_("Optional headers missing (processing will continue):<br>{0}").format(
+					"<br>".join([f"• {h}" for h in missing_optional])
+				),
+				indicator="orange",
+				alert=True,
+			)
+
+		rows = []
+		for csv_row in reader:
+			if not any(csv_row.values()):
+				continue
+
+			row_data = {}
+			for csv_col, fieldname in column_mapping.items():
+				actual_col = norm_csv_headers.get(_norm_header(csv_col))
+				if not actual_col:
+					continue
+
+				raw_value = csv_row.get(actual_col, "")
+				value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+
+				if value or value == 0:
+					if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+						try:
+							from frappe.utils import getdate
+							row_data[fieldname] = getdate(value)
+						except Exception:
+							row_data[fieldname] = value
+					elif fieldname == "quantity":
+						try:
+							row_data[fieldname] = int(float(value)) if value or value == 0 else None
+						except Exception:
+							row_data[fieldname] = value
+					else:
+						row_data[fieldname] = value
+
+			if row_data:
+				rows.append(row_data)
+
+		child_fields = {
+			"model",
+			"model_name",
+			"model_type",
+			"model_variant",
+			"model_color",
+			"group_color",
+			"option",
+			"quantity",
+		}
+
+		def _has_child_fields(row):
+			return any(k in child_fields for k in row.keys())
+
+		# Fallback positional mapping if still empty or no child fields populated
+		if (not rows) or all(not _has_child_fields(r) for r in rows):
+			try:
+				csvfile.seek(0)
+				raw_reader = csv.reader(csvfile, delimiter=delimiter)
+				raw_headers = next(raw_reader, [])
+				expected_order = [
+					"load reference no",
+					"dispatch plan date",
+					"payment plan date",
+					"model",
+					"model name",
+					"type",
+					"variant",
+					"color",
+					"group color",
+					"option",
+					"quantity",
+				]
+				for raw_row in raw_reader:
+					if not any(raw_row):
+						continue
+					row_data = {}
+					for idx, key in enumerate(expected_order):
+						if idx >= len(raw_row):
+							break
+						raw_value = raw_row[idx]
+						value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+						fieldname = column_mapping.get(key, key)
+						if value or value == 0:
+							if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+								try:
+									from frappe.utils import getdate
+									row_data[fieldname] = getdate(value)
+								except Exception:
+									row_data[fieldname] = value
+							elif fieldname == "quantity":
+								try:
+									row_data[fieldname] = int(float(value)) if value or value == 0 else None
+								except Exception:
+									row_data[fieldname] = value
+							else:
+								row_data[fieldname] = value
+					if row_data:
+						rows.append(row_data)
+			except Exception:
+				pass
+
+		return rows
+	finally:
+		if csvfile:
+			csvfile.close()
