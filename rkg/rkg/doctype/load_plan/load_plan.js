@@ -57,7 +57,8 @@ function handle_load_plan_file_import(frm, file_url) {
 	frappe.call({
 		method: "rkg.rkg.doctype.load_plan.load_plan.process_tabular_file",
 		args: {
-			file_url: file_url
+			file_url: file_url,
+			current_load_reference_no: frm.doc.load_reference_no || null
 		},
 		callback: function(r) {
 			if (!r.message) {
