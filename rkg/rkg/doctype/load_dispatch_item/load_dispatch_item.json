@@ -13,7 +13,6 @@
   "engnie_no_motor_no",
   "key_no",
   "model_variant",
-  "vehicle_model_variant",
   "column_break_anog",
   "model",
   "model_name",
@@ -103,12 +102,6 @@
    "fieldname": "dispatch_date",
    "fieldtype": "Date",
    "label": "Dispatch Date"
-  },
-  {
-   "fieldname": "vehicle_model_variant",
-   "fieldtype": "Link",
-   "label": "Vehicle Model Variant ",
-   "options": "Vehicle Model Variant"
   },
   {
    "fieldname": "hmsi_load_reference_no",

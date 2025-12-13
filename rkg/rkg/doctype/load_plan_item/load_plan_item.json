@@ -18,27 +18,23 @@
  ],
  "fields": [
   {
-   "fetch_from": "vehicle_model_variant.model",
    "fieldname": "model",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Model"
   },
   {
-   "fetch_from": "vehicle_model_variant.model_name",
    "fieldname": "model_name",
    "fieldtype": "Data",
    "label": "Model Name"
   },
   {
-   "fetch_from": "vehicle_model_variant.model_type",
    "fieldname": "model_type",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Type"
   },
   {
-   "fetch_from": "vehicle_model_variant.model_variant",
    "fieldname": "model_variant",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -49,19 +45,16 @@
    "fieldtype": "Column Break"
   },
   {
-   "fetch_from": "vehicle_model_variant.model_color",
    "fieldname": "model_color",
    "fieldtype": "Data",
    "label": "Color"
   },
   {
-   "fetch_from": "vehicle_model_variant.group_color",
    "fieldname": "group_color",
    "fieldtype": "Data",
    "label": "Group Color"
   },
   {
-   "fetch_from": "vehicle_model_variant.option",
    "fieldname": "option",
    "fieldtype": "Data",
    "label": "Option"

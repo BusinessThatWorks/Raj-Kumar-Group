@@ -162,7 +162,7 @@ def update_load_plan_status_from_document(doc, method=None):
 
 
 @frappe.whitelist()
-def process_tabular_file(file_url, current_load_reference_no=None):
+def process_tabular_file(file_url):
 	"""
 	Read the attached file row-wise (CSV or Excel) and map it to Load Plan Item fields.
 	Returns a list of dicts ready to be added to the child table.
@@ -186,8 +186,7 @@ def process_tabular_file(file_url, current_load_reference_no=None):
 		# Alternate (from Load Dispatch CSV)
 		"hmsi load reference no": "load_reference_no",
 		"dispatch date": "dispatch_plan_date",
-		# Child (vehicle_model_variant now optional)
-		"vehicle model variant": "vehicle_model_variant",
+		# Child
 		"model": "model",
 		"model name": "model_name",
 		"type": "model_type",
@@ -232,7 +231,7 @@ def process_tabular_file(file_url, current_load_reference_no=None):
 				message=f"Load Plan import: no rows built from Excel. Headers={data[0] if data else 'N/A'}",
 				title="Load Plan Import Empty (Excel)"
 			)
-		return _filter_rows_for_primary_ref(result, current_load_reference_no, file_url)
+		return result
 
 	# CSV path (fallback to previous logic)
 	result = _process_load_plan_csv(file_url, column_mapping, required_headers, optional_headers)
@@ -241,115 +240,7 @@ def process_tabular_file(file_url, current_load_reference_no=None):
 			message="Load Plan import: no rows built from CSV after fallback.",
 			title="Load Plan Import Empty (CSV)"
 		)
-	else:
-		# If multiple load_reference_no values are present, auto-create Load Plans for other refs
-		return _filter_rows_for_primary_ref(result, current_load_reference_no, file_url)
-
 	return result
-
-
-def _enqueue_load_plan_creation(rows):
-	"""Enqueue background creation of Load Plan docs grouped by load_reference_no."""
-	from frappe.utils.background_jobs import enqueue
-
-	unique_refs = {r.get("load_reference_no") for r in rows if r.get("load_reference_no")}
-	# Only act when there are multiple distinct load reference numbers
-	if not unique_refs or len(unique_refs) < 2:
-		return
-
-	enqueue(
-		_create_load_plans_from_rows,
-		queue="default",
-		rows=rows,
-		now=False,
-	)
-
-
-def _create_load_plans_from_rows(rows, file_url=None, exclude_reference=None):
-	"""Create Load Plan documents grouped by load_reference_no."""
-	if not rows:
-		return
-
-	created = []
-	skipped = []
-
-	# Group rows by load_reference_no
-	grouped = {}
-	for row in rows:
-		ref = (row.get("load_reference_no") or "").strip()
-		if not ref:
-			continue
-		if exclude_reference and ref == exclude_reference:
-			continue
-		grouped.setdefault(ref, []).append(row)
-
-	for ref, items in grouped.items():
-		# Skip if Load Plan already exists
-		if frappe.db.exists("Load Plan", ref):
-			skipped.append(ref)
-			continue
-
-		try:
-			doc = frappe.new_doc("Load Plan")
-			doc.load_reference_no = ref
-			# Attach the same file used for import if the field is mandatory
-			if file_url:
-				doc.attach_load_plan = file_url
-
-			# Use first row for parent dates when present
-			first = items[0] if items else {}
-			if first.get("dispatch_plan_date"):
-				doc.dispatch_plan_date = first["dispatch_plan_date"]
-			if first.get("payment_plan_date"):
-				doc.payment_plan_date = first["payment_plan_date"]
-
-			# Add child rows
-			for item in items:
-				child = doc.append("table_tezh", {})
-				for key, val in item.items():
-					child.set(key, val)
-
-			# Compute totals and insert
-			doc.calculate_total_quantity()
-			doc.insert(ignore_permissions=True, ignore_mandatory=True)
-			created.append(ref)
-		except Exception as exc:
-			frappe.log_error(
-				message=f"Auto Load Plan creation failed for {ref}: {exc}",
-				title="Load Plan Auto-Creation",
-			)
-
-	if created or skipped:
-		frappe.logger().info(
-			{
-				"event": "load_plan_auto_creation",
-				"created": created,
-				"skipped_existing": skipped,
-				"file_url": file_url,
-			}
-		)
-
-
-def _filter_rows_for_primary_ref(rows, current_load_reference_no, file_url=None):
-	"""Return only rows matching the primary reference; create others automatically."""
-	if not rows:
-		return []
-
-	# Determine primary reference: current form value, else first row's reference
-	primary_ref = (current_load_reference_no or (rows[0].get("load_reference_no") if rows else "")) or ""
-	primary_ref = primary_ref.strip()
-
-	# Create other Load Plans (excluding primary)
-	_create_load_plans_from_rows(rows, file_url=file_url, exclude_reference=primary_ref)
-
-	# Filter rows for primary
-	if primary_ref:
-		filtered = [r for r in rows if (r.get("load_reference_no") or "").strip() == primary_ref]
-		if filtered:
-			return filtered
-
-	# Fallback: return all rows if filtering yielded nothing (to avoid empty UI)
-	return rows
 
 
 def _process_tabular_rows(data, column_mapping, required_headers, optional_headers, norm_func):

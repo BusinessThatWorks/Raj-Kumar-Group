@@ -29,7 +29,6 @@ class LoadDispatch(Document):
 			self.update_item_pricing_fields()
 			self.set_item_group()
 			self.set_supplier()
-			self.validate_vehicle_model_variant()
 	def validate(self):
 		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
 		# Also populate item_code in validate as backup
@@ -39,7 +38,6 @@ class LoadDispatch(Document):
 			self.set_fields_value()
 			self.update_item_pricing_fields()
 			self.set_item_group()
-			self.validate_vehicle_model_variant()
 		
 		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
 		has_imported_items = False
@@ -342,41 +340,6 @@ class LoadDispatch(Document):
 		except frappe.DoesNotExistError:
 			# RKG Settings not found, skip setting supplier
 			pass
-
-	def validate_vehicle_model_variant(self):
-		"""Ensure vehicle_model_variant matches mtoc for every item.
-
-		Business rule:
-		- Vehicle Model Variant value must always be the same as MTOC.
-		- If VMV is empty and MTOC is present -> auto-set VMV = MTOC.
-		- If VMV is present and differs from MTOC -> throw a validation error.
-		"""
-		if not self.items:
-			return
-
-		for item in self.items:
-			mtoc_value = (item.mtoc or "").strip()
-			vmv_value = (item.vehicle_model_variant or "").strip()
-
-			# If there is no MTOC, we don't enforce anything
-			if not mtoc_value:
-				continue
-
-			# Auto-set VMV when blank
-			if not vmv_value:
-				item.vehicle_model_variant = mtoc_value
-			# If both exist and differ, raise error
-			elif vmv_value != mtoc_value:
-				frappe.throw(
-					_(
-						"Vehicle Model Variant '{0}' does not match MTOC '{1}' "
-						"for row {2}. Please correct the value so they are the same."
-					).format(
-						vmv_value,
-						mtoc_value,
-						getattr(item, "idx", "?"),
-					)
-				)
 
 	def on_submit(self):
 		# Set Load Dispatch status to "In-Transit" when submitted

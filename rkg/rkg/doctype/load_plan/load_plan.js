@@ -4,8 +4,6 @@ frappe.ui.form.on("Load Plan", {
 	refresh(frm) {
 		// Calculate total quantity on refresh
 		calculate_total_quantity(frm);
-		// Also listen to files added via the standard Attachments area
-		setup_attachment_listener(frm);
 	},
 
 	// Attachment handler (custom field)
@@ -40,11 +38,6 @@ frappe.ui.form.on("Load Plan Item", {
 });
 
 function handle_load_plan_file_import(frm, file_url) {
-	// file_url may arrive as an attachment object when uploaded via the sidebar
-	if (file_url && file_url.file_url) {
-		file_url = file_url.file_url;
-	}
-
 	if (!file_url) {
 		return;
 	}
@@ -57,8 +50,7 @@ function handle_load_plan_file_import(frm, file_url) {
 	frappe.call({
 		method: "rkg.rkg.doctype.load_plan.load_plan.process_tabular_file",
 		args: {
-			file_url: file_url,
-			current_load_reference_no: frm.doc.load_reference_no || null
+			file_url: file_url
 		},
 		callback: function(r) {
 			if (!r.message) {
@@ -69,11 +61,12 @@ function handle_load_plan_file_import(frm, file_url) {
 			frm.clear_table("table_tezh");
 
 			if (r.message.length > 0) {
-				r.message.forEach(function(row, idx) {
+				r.message.forEach(function(row) {
 					const child = frm.add_child("table_tezh");
-					// Assign all keys; Frappe will ignore unknown fields
 					Object.keys(row).forEach(function(key) {
-						child[key] = row[key];
+						if (key in child) {
+							child[key] = row[key];
+						}
 					});
 				});
 
@@ -112,18 +105,4 @@ function handle_load_plan_file_import(frm, file_url) {
 			}, 5);
 		}
 	});
-}
-
-function setup_attachment_listener(frm) {
-	// Prevent duplicate listeners across refreshes
-	if (frm._load_plan_attachment_listener_added) {
-		return;
-	}
-
-	if (frm.attachments && frm.attachments.on) {
-		frm.attachments.on("attachment-added", function(file) {
-			handle_load_plan_file_import(frm, file);
-		});
-		frm._load_plan_attachment_listener_added = true;
-	}
 }
