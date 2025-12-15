@@ -77,6 +77,13 @@ frappe.ui.form.on("Load Dispatch", {
 									if (row.model_serial_no && row.model_serial_no.trim()) {
 										child_row.item_code = row.model_serial_no.trim();
 									}
+									// Calculate rate from price_unit (excluding 18% GST)
+									if (row.price_unit) {
+										const price_unit = flt(row.price_unit);
+										if (price_unit > 0) {
+											child_row.rate = price_unit / 1.18;
+										}
+									}
 								});
 								
 								frm.refresh_field("items");
@@ -172,6 +179,29 @@ function calculate_total_dispatch_quantity(frm) {
 frappe.ui.form.on("Load Dispatch Item", {
 	frame_no: function(frm) {
 		calculate_total_dispatch_quantity(frm);
+	},
+	price_unit: function(frm, cdt, cdn) {
+		// Calculate rate from price_unit (excluding 18% GST)
+		// rate = price_unit / 1.18 (standard GST exclusion formula)
+		// Note: price_unit remains unchanged, only rate is calculated
+		let row = locals[cdt][cdn];
+		if (row.price_unit) {
+			const price_unit = flt(row.price_unit);
+			if (price_unit > 0) {
+				// Always calculate rate by excluding 18% GST from price_unit
+				// price_unit value is preserved as-is from Excel
+				row.rate = price_unit / 1.18;
+				frm.refresh_field("rate", row.name, "items");
+			} else {
+				// Clear rate if price_unit is 0 or negative
+				row.rate = 0;
+				frm.refresh_field("rate", row.name, "items");
+			}
+		} else {
+			// Clear rate if price_unit is empty
+			row.rate = 0;
+			frm.refresh_field("rate", row.name, "items");
+		}
 	},
 	model_serial_no: function(frm, cdt, cdn) {
 		// Calculate print_name from model_name and model_serial_no when it changes
