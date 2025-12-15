@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{document_name}-{upload_date}-{####}",
  "creation": "2025-12-15 16:16:41.503409",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -50,10 +51,11 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-15 16:21:16.358621",
+ "modified": "2025-12-15 16:54:41.229465",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Color Sheet",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

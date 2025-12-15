@@ -276,11 +276,11 @@ def get_load_dispatch_data(where_clause, params):
 	model_rows = frappe.db.sql(
 		f"""
 		SELECT
-			COALESCE(ldi.model_name, ldi.model_variant, ldi.model) as label,
+			COALESCE(ldi.model_name, ldi.model_variant) as label,
 			SUM(ldi.qty) as qty
 		FROM `tabLoad Dispatch Item` ldi
 		JOIN `tabLoad Dispatch` ld ON ldi.parent = ld.name
-		WHERE {where_clause} AND COALESCE(ldi.model_name, ldi.model_variant, ldi.model) IS NOT NULL
+		WHERE {where_clause} AND COALESCE(ldi.model_name, ldi.model_variant) IS NOT NULL
 		GROUP BY label
 		ORDER BY qty DESC
 		LIMIT 8
