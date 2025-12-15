@@ -19,10 +19,18 @@ ITEM_CUSTOM_FIELDS = [
 
 
 class LoadDispatch(Document):
+	def has_valid_load_plan(self):
+		"""Check if Load Dispatch has a valid Load Plan linked."""
+		if not self.load_reference_no:
+			return False
+		if not frappe.db.exists("Load Plan", self.load_reference_no):
+			return False
+		return True
+	
 	def before_save(self):
-		"""Populate item_code from mtoc before saving and create Items if needed."""
-		# Populate item_code from mtoc for all items on save
-		if self.items:
+		"""Populate item_code from model_serial_no before saving and create Items if needed."""
+		# Only process items if Load Plan exists
+		if self.items and self.has_valid_load_plan():
 			self.set_item_code()
 			self.create_serial_nos()
 			self.set_fields_value()
@@ -31,8 +39,8 @@ class LoadDispatch(Document):
 			self.set_supplier()
 	def validate(self):
 		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
-		# Also populate item_code in validate as backup
-		if self.items:
+		# Only process items if Load Plan exists
+		if self.items and self.has_valid_load_plan():
 			self.set_item_code()
 			self.create_serial_nos()
 			self.set_fields_value()
@@ -72,40 +80,31 @@ class LoadDispatch(Document):
 						).format(old_value or "None", self.load_reference_no)
 					)
 		
-		if self.load_reference_no:
-			# Check if Load Plan with given Load Reference No exists
-			if not frappe.db.exists("Load Plan", self.load_reference_no):
-				frappe.throw(
-					_(
-						"Load Plan with Load Reference No {0} does not exist."
-					).format(self.load_reference_no)
-				)
-
-			load_plan = frappe.get_doc("Load Plan", self.load_reference_no)
-			if load_plan.docstatus != 1:
-				frappe.throw(
-					_(
-						"Please submit Load Plan against this Load Reference No before creating Load Dispatch."
-					)
-				)
+		# Note: Load Plan validation is done in before_submit to allow saving without Load Plan
+		# This enables importing CSV data first, then creating/submitting Load Plan later
 		
 		# Calculate total dispatch quantity from child table
 		self.calculate_total_dispatch_quantity()
 	
 	def create_serial_nos(self):
 		"""Create serial nos for all items on save."""
+		# Only create serial nos if Load Plan exists
+		if not self.has_valid_load_plan():
+			return
+		
 		if self.items:
 			has_purchase_date = frappe.db.has_column("Serial No", "purchase_date")
 			for item in self.items:
 				# Debug: Print all relevant field values
 				print(f"=== DEBUG: Processing Load Dispatch Item ===")
-				print(f"item_code: {item.item_code}")
+				print(f"model_serial_no: {getattr(item, 'model_serial_no', None)}")
 				print(f"frame_no: {item.frame_no}")
 				print(f"engnie_no_motor_no: {getattr(item, 'engnie_no_motor_no', None)}")
 				print(f"key_no: {getattr(item, 'key_no', None)}")
 				print(f"key_no type: {type(getattr(item, 'key_no', None))}")
 				
-				if item.item_code and item.frame_no:
+				item_code = str(item.model_serial_no).strip() if item.model_serial_no else ""
+				if item_code and item.frame_no:
 					serial_no_name = str(item.frame_no).strip()
 
 					# Check if Serial No already exists
@@ -119,7 +118,7 @@ class LoadDispatch(Document):
 							#   so this insert works without SQL errors.
 							serial_no = frappe.get_doc({
 								"doctype": "Serial No",
-								"item_code": item.item_code,
+								"item_code": item_code,
 								"serial_no": serial_no_name,  # Frame Number -> Serial No field
 							})
 
@@ -225,14 +224,20 @@ class LoadDispatch(Document):
 									)
 	
 	def set_item_code(self):
+		"""Populate item_code from model_serial_no for all items."""
+		# Only set item_code if Load Plan exists
+		if not self.has_valid_load_plan():
+			return
+		
 		if self.items:
 			for item in self.items:
-				if item.mtoc and str(item.mtoc).strip():
-					if frappe.db.exists("Item", str(item.mtoc).strip()):
-						item_doc = frappe.get_doc("Item", str(item.mtoc).strip())
-						item.item_code = item_doc.item_code
-					else:
+				if item.model_serial_no and str(item.model_serial_no).strip():
+					item_code = str(item.model_serial_no).strip()
+					# Check if Item exists, create if it doesn't
+					if not frappe.db.exists("Item", item_code):
 						self.create_items_from_dispatch_items()
+					# Set item_code on the child table item
+					item.item_code = item_code
 	
 	def set_fields_value(self):
 		"""Set default values from RKG Settings if not already set."""
@@ -255,6 +260,10 @@ class LoadDispatch(Document):
 		Update Item doctypes with pricing/GST values from Load Dispatch Items.
 		This runs on save/validate so existing Items get refreshed too.
 		"""
+		# Only update pricing if Load Plan exists
+		if not self.has_valid_load_plan():
+			return
+		
 		if not self.items:
 			return
 
@@ -264,7 +273,7 @@ class LoadDispatch(Document):
 			print(
 				f"DEBUG pricing sync: row frame={getattr(item, 'frame_no', None)}, "
 				f"item_code={getattr(item, 'item_code', None)}, "
-				f"mtoc={getattr(item, 'mtoc', None)}, "
+				f"model_serial_no={getattr(item, 'model_serial_no', None)}, "
 				f"values={{"
 				f"ndp={getattr(item, 'net_dealer_price', None)}, "
 				f"cogst={getattr(item, 'credit_of_gst', None)}, "
@@ -275,9 +284,9 @@ class LoadDispatch(Document):
 				f"exs={getattr(item, 'ex_showroom_price', None)}, "
 				f"gstin={getattr(item, 'gstin', None)}}}"
 			)
-			item_code = (item.item_code or item.mtoc or "").strip()
+			item_code = (item.model_serial_no or "").strip()
 			if not item_code:
-				print("DEBUG pricing sync: skip row (no item_code/mtoc)", getattr(item, "frame_no", None))
+				print("DEBUG pricing sync: skip row (no item_code/model_serial_no)", getattr(item, "frame_no", None))
 				continue
 			if not frappe.db.exists("Item", item_code):
 				print(f"DEBUG pricing sync: Item {item_code} not found; skipping")
@@ -310,11 +319,16 @@ class LoadDispatch(Document):
 	
 	def set_item_group(self):
 		"""Set item_group for Load Dispatch Items based on model_name or default."""
+		# Only set item_group if Load Plan exists
+		if not self.has_valid_load_plan():
+			return
+		
 		if not self.items:
 			return
 		
 		for item in self.items:
-			if not item.item_group and item.model_name:
+			# Only set item_group if the field exists on LoadDispatchItem
+			if hasattr(item, 'item_group') and not item.item_group and item.model_name:
 				# Check if model_name exists as an Item Group
 				if frappe.db.exists("Item Group", item.model_name):
 					item.item_group = item.model_name
@@ -325,6 +339,10 @@ class LoadDispatch(Document):
 	
 	def set_supplier(self):
 		"""Set supplier for items from RKG Settings."""
+		# Only set supplier if Load Plan exists
+		if not self.has_valid_load_plan():
+			return
+		
 		if not self.items:
 			return
 		
@@ -341,6 +359,25 @@ class LoadDispatch(Document):
 			# RKG Settings not found, skip setting supplier
 			pass
 
+	def before_submit(self):
+		"""Validate that Load Plan exists and is submitted before submitting Load Dispatch."""
+		if self.load_reference_no:
+			# Check if Load Plan with given Load Reference No exists
+			if not frappe.db.exists("Load Plan", self.load_reference_no):
+				frappe.throw(
+					_(
+						"Load Plan with Load Reference No {0} does not exist. Please create and submit the Load Plan before submitting Load Dispatch."
+					).format(self.load_reference_no)
+				)
+
+			load_plan = frappe.get_doc("Load Plan", self.load_reference_no)
+			if load_plan.docstatus != 1:
+				frappe.throw(
+					_(
+						"Please submit Load Plan with Load Reference No {0} before submitting Load Dispatch."
+					).format(self.load_reference_no)
+				)
+	
 	def on_submit(self):
 		# Set Load Dispatch status to "In-Transit" when submitted
 		self.db_set("status", "In-Transit")
@@ -411,9 +448,13 @@ class LoadDispatch(Document):
 	
 	def create_items_from_dispatch_items(self):
 		"""
-		Create Items in Item doctype for all load_dispatch_items that have item_code.
+		Create Items in Item doctype for all load_dispatch_items that have model_serial_no.
 		Populates Supplier and HSN Code from RKG Settings.
 		"""
+		# Only create items if Load Plan exists
+		if not self.has_valid_load_plan():
+			return
+		
 		if not self.items:
 			return
 		
@@ -428,19 +469,14 @@ class LoadDispatch(Document):
 		skipped_items = []
 		
 		for item in self.items:
-			# Prefer explicit item_code, else fall back to mtoc as the item code
+			# Use model_serial_no as the item code
 			item_code = None
-			if item.item_code and str(item.item_code).strip():
-				item_code = str(item.item_code).strip()
-			elif item.mtoc and str(item.mtoc).strip():
-				item_code = str(item.mtoc).strip()
+			if item.model_serial_no and str(item.model_serial_no).strip():
+				item_code = str(item.model_serial_no).strip()
 			
 			# Nothing to create if we still don't have a code
 			if not item_code:
 				continue
-
-			# Ensure the child row reflects the chosen item_code
-			item.item_code = item_code
 			
 			# Check if Item already exists
 			try:
@@ -569,7 +605,7 @@ class LoadDispatch(Document):
 
 
 @frappe.whitelist()
-def process_csv_file(file_url, selected_load_reference_no=None):
+def process_tabular_file(file_url, selected_load_reference_no=None):
 	"""
 	Process CSV file and extract data for child table
 	Maps CSV columns to Load Dispatch Item fields
@@ -633,8 +669,10 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"Engine no": "engnie_no_motor_no",
 				"Engine No": "engnie_no_motor_no",  # alternate spelling
 				"Key No": "key_no",
-				"Model": "model",
+				"Model": "model_variant",  # Map to model_variant field
+				"Model Variant": "model_variant",
 				"Model Name": "model_name",
+				"Model Serial No": "model_serial_no",
 				"Colour": "color_code",
 				"Color": "color_code",  # alternate spelling
 				"Tax Rate": "tax_rate",
@@ -645,6 +683,7 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"Unit": "unit",
 				"Price/Unit": "price_unit",
 				"Price/unit": "price_unit",  # alternate spelling
+				"Battery No": "battery_no",
 				# Legacy mappings for backward compatibility
 				"HMSI/InterDealer Load Reference No": "hmsi_load_reference_no",
 				"Invoice No.": "invoice_no",
@@ -661,7 +700,6 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				"Frame No",
 				"Engine no",
 				"Key No",
-				"Model",
 				"Model Name",
 				"Colour",
 				"Tax Rate",
@@ -840,7 +878,12 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 						# Handle currency fields
 						elif fieldname in ["price_unit"]:
 							try:
-								row_data[fieldname] = float(value) if value else 0.0
+								if value:
+									# Remove commas (thousand separators) before converting to float
+									cleaned_value = str(value).replace(",", "").strip()
+									row_data[fieldname] = float(cleaned_value) if cleaned_value else 0.0
+								else:
+									row_data[fieldname] = 0.0
 							except:
 								row_data[fieldname] = 0.0
 						else:
@@ -855,6 +898,45 @@ def process_csv_file(file_url, selected_load_reference_no=None):
 				
 				if row_data:
 					rows.append(row_data)
+			
+			# Validate that we have at least one hmsi_load_reference_no if we have rows
+			if rows and not csv_load_reference_nos:
+				frappe.throw(
+					_("CSV file contains rows but no Load Reference Numbers found. Please ensure the 'HMSI Load Reference No' column has values in all rows."),
+					title=_("Missing Load Reference Numbers")
+				)
+			
+			# Validate that Load Plans exist for all hmsi_load_reference_no values from CSV
+			if csv_load_reference_nos:
+				missing_load_plans = []
+				for load_ref_no in csv_load_reference_nos:
+					if not frappe.db.exists("Load Plan", load_ref_no):
+						missing_load_plans.append(load_ref_no)
+				
+				if missing_load_plans:
+					missing_list = "\n".join([f"• {ref_no}" for ref_no in sorted(missing_load_plans)])
+					frappe.throw(
+						_("Load Plan Validation Failed!\n\n"
+						  "The following Load Reference Numbers from the CSV do not have corresponding Load Plans:\n{0}\n\n"
+						  "Please create and submit Load Plans for these Load Reference Numbers before importing the CSV.").format(missing_list),
+						title=_("Load Plan Not Found")
+					)
+				
+				# Also validate that all Load Plans are submitted
+				unsubmitted_load_plans = []
+				for load_ref_no in csv_load_reference_nos:
+					load_plan = frappe.get_doc("Load Plan", load_ref_no)
+					if load_plan.docstatus != 1:
+						unsubmitted_load_plans.append(load_ref_no)
+				
+				if unsubmitted_load_plans:
+					unsubmitted_list = "\n".join([f"• {ref_no}" for ref_no in sorted(unsubmitted_load_plans)])
+					frappe.throw(
+						_("Load Plan Validation Failed!\n\n"
+						  "The following Load Reference Numbers have Load Plans that are not submitted:\n{0}\n\n"
+						  "Please submit these Load Plans before importing the CSV.").format(unsubmitted_list),
+						title=_("Load Plan Not Submitted")
+					)
 			
 			# Validate hmsi_load_reference_no match if manually selected
 			if selected_load_reference_no:

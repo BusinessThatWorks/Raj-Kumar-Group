@@ -193,6 +193,10 @@ class LoadPlanDashboard {
 			$(container).html(no_data("No status data"));
 			return;
 		}
+		// Destroy existing chart if it exists
+		if (this.charts.statusChart && typeof this.charts.statusChart.destroy === "function") {
+			this.charts.statusChart.destroy();
+		}
 		$(container).empty();
 		this.charts.statusChart = new frappe.Chart(container, {
 			data: { labels: data.labels, datasets: [{ name: "Load Plans", values: data.values }] },
@@ -207,6 +211,10 @@ class LoadPlanDashboard {
 		if (!data || !data.labels || data.labels.length === 0) {
 			$(container).html(no_data("No plan data"));
 			return;
+		}
+		// Destroy existing chart if it exists
+		if (this.charts.planChart && typeof this.charts.planChart.destroy === "function") {
+			this.charts.planChart.destroy();
 		}
 		$(container).empty();
 		this.charts.planChart = new frappe.Chart(container, {
@@ -230,6 +238,10 @@ class LoadPlanDashboard {
 		if (!data || !data.labels || data.labels.length === 0) {
 			$(container).html(no_data("No model data"));
 			return;
+		}
+		// Destroy existing chart if it exists
+		if (this.charts.modelsChart && typeof this.charts.modelsChart.destroy === "function") {
+			this.charts.modelsChart.destroy();
 		}
 		$(container).empty();
 		this.charts.modelsChart = new frappe.Chart(container, {

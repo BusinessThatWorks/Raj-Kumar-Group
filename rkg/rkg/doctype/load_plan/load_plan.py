@@ -602,3 +602,174 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 	finally:
 		if csvfile:
 			csvfile.close()
+
+
+@frappe.whitelist()
+def create_load_plans_from_file(file_url, create_multiple=True):
+	"""
+	Process file and create Load Plan documents.
+	If create_multiple=True and file contains multiple load_reference_no values,
+	creates separate Load Plan documents for each unique load_reference_no.
+	
+	Args:
+		file_url: URL of the attached file
+		create_multiple: If True, create separate Load Plans for each load_reference_no
+	
+	Returns:
+		dict with created_load_plans list and summary
+	"""
+	if not file_url:
+		frappe.throw(_("No file provided"))
+	
+	# Process the file to get all rows
+	all_rows = process_tabular_file(file_url)
+	
+	if not all_rows:
+		frappe.throw(_("No data found in the file"))
+	
+	# Group rows by load_reference_no
+	grouped_data = {}
+	for row in all_rows:
+		load_ref = row.get("load_reference_no")
+		if not load_ref:
+			# Skip rows without load_reference_no
+			continue
+		
+		load_ref = str(load_ref).strip()
+		if load_ref not in grouped_data:
+			grouped_data[load_ref] = {
+				"load_reference_no": load_ref,
+				"dispatch_plan_date": row.get("dispatch_plan_date"),
+				"payment_plan_date": row.get("payment_plan_date"),
+				"rows": []
+			}
+		
+		# Add child table row (exclude parent fields)
+		child_row = {}
+		child_fields = ["model", "model_name", "model_type", "model_variant", 
+		               "model_color", "group_color", "option", "quantity"]
+		for field in child_fields:
+			if field in row:
+				child_row[field] = row[field]
+		
+		if child_row:
+			grouped_data[load_ref]["rows"].append(child_row)
+	
+	if not grouped_data:
+		frappe.throw(_("No valid Load Reference Numbers found in the file"))
+	
+	# Determine if we should create multiple Load Plans
+	unique_load_refs = list(grouped_data.keys())
+	should_create_multiple = create_multiple and len(unique_load_refs) > 1
+	
+	created_load_plans = []
+	errors = []
+	
+	if should_create_multiple:
+		# Create multiple Load Plans
+		for load_ref, data in grouped_data.items():
+			try:
+				load_plan = _create_single_load_plan(
+					load_ref,
+					data.get("dispatch_plan_date"),
+					data.get("payment_plan_date"),
+					data.get("rows", []),
+					file_url
+				)
+				created_load_plans.append({
+					"name": load_plan.name,
+					"load_reference_no": load_ref,
+					"rows_count": len(data.get("rows", [])),
+					"total_quantity": load_plan.total_quantity
+				})
+			except Exception as e:
+				error_msg = str(e)
+				errors.append({
+					"load_reference_no": load_ref,
+					"error": error_msg
+				})
+				frappe.log_error(
+					message=f"Error creating Load Plan {load_ref}: {error_msg}",
+					title="Load Plan Creation Error"
+				)
+	else:
+		# Create single Load Plan (use first load_reference_no or current form)
+		first_load_ref = unique_load_refs[0]
+		data = grouped_data[first_load_ref]
+		try:
+			load_plan = _create_single_load_plan(
+				first_load_ref,
+				data.get("dispatch_plan_date"),
+				data.get("payment_plan_date"),
+				data.get("rows", []),
+				file_url
+			)
+			created_load_plans.append({
+				"name": load_plan.name,
+				"load_reference_no": first_load_ref,
+				"rows_count": len(data.get("rows", [])),
+				"total_quantity": load_plan.total_quantity
+			})
+		except Exception as e:
+			error_msg = str(e)
+			errors.append({
+				"load_reference_no": first_load_ref,
+				"error": error_msg
+			})
+			frappe.log_error(
+				message=f"Error creating Load Plan {first_load_ref}: {error_msg}",
+				title="Load Plan Creation Error"
+			)
+	
+	return {
+		"created_load_plans": created_load_plans,
+		"errors": errors,
+		"total_created": len(created_load_plans),
+		"total_errors": len(errors),
+		"unique_load_refs": unique_load_refs,
+		"multiple_created": should_create_multiple
+	}
+
+
+def _create_single_load_plan(load_reference_no, dispatch_plan_date, payment_plan_date, child_rows, file_url):
+	"""
+	Create a single Load Plan document with the provided data.
+	
+	Args:
+		load_reference_no: Load Reference Number
+		dispatch_plan_date: Dispatch Plan Date
+		payment_plan_date: Payment Plan Date
+		child_rows: List of child table row dictionaries
+		file_url: File URL for attachment
+	
+	Returns:
+		Created LoadPlan document
+	"""
+	# Check if Load Plan already exists
+	if frappe.db.exists("Load Plan", load_reference_no):
+		# Update existing Load Plan
+		load_plan = frappe.get_doc("Load Plan", load_reference_no)
+		load_plan.dispatch_plan_date = dispatch_plan_date or load_plan.dispatch_plan_date
+		load_plan.payment_plan_date = payment_plan_date or load_plan.payment_plan_date
+		load_plan.attach_load_plan = file_url
+		# Clear existing child table
+		load_plan.table_tezh = []
+	else:
+		# Create new Load Plan
+		load_plan = frappe.get_doc({
+			"doctype": "Load Plan",
+			"load_reference_no": load_reference_no,
+			"dispatch_plan_date": dispatch_plan_date,
+			"payment_plan_date": payment_plan_date,
+			"attach_load_plan": file_url
+		})
+	
+	# Add child table rows
+	for row_data in child_rows:
+		load_plan.append("table_tezh", row_data)
+	
+	# Save the document
+	load_plan.save(ignore_permissions=True)
+	frappe.db.commit()
+	
+	return load_plan

@@ -159,7 +159,7 @@ def get_filter_options():
 		"""
 		SELECT DISTINCT status
 		FROM `tabLoad Plan`
-		WHERE status IS NOT NULL AND status != ''
+		WHERE docstatus < 2 AND status IS NOT NULL AND status != ''
 		ORDER BY status
 		"""
 	)

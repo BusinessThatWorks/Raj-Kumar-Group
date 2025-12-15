@@ -6,14 +6,14 @@
  "creation": "2025-11-28 16:14:35.505427",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
+  "field_order": [
   "section_break_885c",
   "dispatch_no",
+  "load_reference_no",
   "invoice_no",
   "amended_from",
   "load_dispatch_file_attach",
   "column_break_jxwc",
-  "load_reference_no",
   "import_data_from_file",
   "status",
   "section_break_bhgj",
@@ -47,6 +47,18 @@
    "unique": 1
   },
   {
+   "fieldname": "load_reference_no",
+   "fieldtype": "Link",
+   "label": "Load Reference No",
+   "options": "Load Plan",
+   "reqd": 1
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "label": "Invoice No"
+  },
+  {
    "fieldname": "column_break_jxwc",
    "fieldtype": "Column Break"
   },
@@ -71,18 +83,6 @@
    "fieldname": "import_data_from_file",
    "fieldtype": "Button",
    "label": "Import Data From File"
-  },
-  {
-   "fieldname": "load_reference_no",
-   "fieldtype": "Link",
-   "label": "Load Reference No",
-   "options": "Load Plan",
-   "reqd": 1
-  },
-  {
-   "fieldname": "invoice_no",
-   "fieldtype": "Data",
-   "label": "Invoice No."
   },
   {
    "fieldname": "section_break_ugzt",
@@ -142,7 +142,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 1,
- "modified": "2025-12-01 17:38:14.973818",
+ "modified": "2025-12-15 11:14:29.377410",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch",

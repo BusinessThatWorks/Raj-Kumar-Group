@@ -7,27 +7,27 @@
  "field_order": [
   "section_break_z2a1",
   "hmsi_load_reference_no",
-  "invoice_no",
-  "dispatch_date",
-  "frame_no",
-  "engnie_no_motor_no",
-  "key_no",
   "model_variant",
-  "column_break_anog",
-  "model",
-  "model_name",
+  "frame_no",
   "color_code",
-  "item_code",
-  "mtoc",
-  "tax_rate",
-  "print_name",
-  "column_break_emyv",
-  "amended_from",
-  "dor",
   "hsn_code",
+  "price_unit",
+  "amended_from",
+  "column_break_anog",
+  "invoice_no",
+  "model_name",
+  "engnie_no_motor_no",
+  "tax_rate",
   "qty",
+  "key_no",
+  "column_break_emyv",
+  "dispatch_date",
+  "model_serial_no",
+  "item_code",
+  "print_name",
+  "dor",
   "unit",
-  "price_unit"
+  "battery_no"
  ],
  "fields": [
   {
@@ -54,17 +54,6 @@
   {
    "fieldname": "column_break_anog",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "mtoc",
-   "fieldtype": "Data",
-   "label": "MTOC"
-  },
-  {
-   "fieldname": "item_code",
-   "fieldtype": "Link",
-   "label": "Item Code",
-   "options": "Item"
   },
   {
    "fieldname": "frame_no",
@@ -110,18 +99,13 @@
    "options": "Load Plan"
   },
   {
-   "fieldname": "model",
-   "fieldtype": "Data",
-   "label": "Model"
-  },
-  {
    "fieldname": "tax_rate",
    "fieldtype": "Data",
    "label": "Tax Rate"
   },
   {
    "fieldname": "print_name",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Print Name",
    "options": "Item"
   },
@@ -154,6 +138,23 @@
    "fieldname": "invoice_no",
    "fieldtype": "Data",
    "label": "Invoice No"
+  },
+  {
+   "fieldname": "model_serial_no",
+   "fieldtype": "Data",
+   "label": "Model Serial No"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "battery_no",
+   "fieldtype": "Data",
+   "label": "Battery No"
   }
  ],
  "grid_page_length": 50,
@@ -161,7 +162,7 @@
  "is_submittable": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-12 11:36:42.283177",
+ "modified": "2025-12-15 11:54:21.455381",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch Item",

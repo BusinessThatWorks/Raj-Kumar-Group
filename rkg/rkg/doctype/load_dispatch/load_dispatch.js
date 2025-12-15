@@ -9,7 +9,7 @@ frappe.ui.form.on("Load Dispatch", {
 		
 		// Show item_code field - it will be populated on save
 		if (frm.fields_dict.items && frm.fields_dict.items.grid) {
-			// Always show the field (it will be populated from mtoc on save)
+			// Always show the field (it will be populated from model_serial_no on save)
 			frm.fields_dict.items.grid.update_docfield_property("item_code", "hidden", false);
 		}
 		if(frm.doc.docstatus==1){
@@ -61,45 +61,74 @@ frappe.ui.form.on("Load Dispatch", {
 					selected_load_reference_no: frm.doc.load_reference_no || null
 				},
 				callback: function(r) {
-					if (r.message) {
-						// Clear existing items
-						frm.clear_table("items");
-						
-						// Add rows from imported data
-						if (r.message.length > 0) {
-							r.message.forEach(function(row) {
-								let child_row = frm.add_child("items");
-								Object.keys(row).forEach(function(key) {
-									child_row[key] = row[key];
+					try {
+						if (r && r.message) {
+							// Clear existing items
+							frm.clear_table("items");
+							
+							// Add rows from imported data
+							if (r.message.length > 0) {
+								r.message.forEach(function(row) {
+									let child_row = frm.add_child("items");
+									Object.keys(row).forEach(function(key) {
+										child_row[key] = row[key];
+									});
+									// Set item_code from model_serial_no if available
+									if (row.model_serial_no && row.model_serial_no.trim()) {
+										child_row.item_code = row.model_serial_no.trim();
+									}
 								});
-							});
-							
-							frm.refresh_field("items");
-							
-							// Map values from first imported row to parent fields
-							const first_row = r.message[0] || {};
-							if (first_row.hmsi_load_reference_no) {
-								// Store the load_reference_no from the file to prevent changes
-								frm._load_reference_no_from_csv = first_row.hmsi_load_reference_no;
-								frm.set_value("load_reference_no", first_row.hmsi_load_reference_no);
+								
+								frm.refresh_field("items");
+								
+								// Map values from first imported row to parent fields
+								const first_row = r.message[0] || {};
+								if (first_row.hmsi_load_reference_no) {
+									// Store the load_reference_no from the file to prevent changes
+									frm._load_reference_no_from_csv = first_row.hmsi_load_reference_no;
+									// Check if field exists before setting
+									if (frm.fields_dict.load_reference_no) {
+										frm.set_value("load_reference_no", first_row.hmsi_load_reference_no);
+									} else {
+										// Fallback: set directly on doc if field not yet available
+										frm.doc.load_reference_no = first_row.hmsi_load_reference_no;
+									}
+								}
+								if (first_row.invoice_no) {
+									// Check if field exists before setting
+									if (frm.fields_dict.invoice_no) {
+										frm.set_value("invoice_no", first_row.invoice_no);
+									} else {
+										// Fallback: set directly on doc if field not yet available
+										frm.doc.invoice_no = first_row.invoice_no;
+									}
+								}
+								
+								// Recalculate total dispatch quantity after import
+								calculate_total_dispatch_quantity(frm);
+								
+								frappe.show_alert({
+									message: __("Successfully imported {0} rows from file", [r.message.length]),
+									indicator: "green"
+								}, 5);
+							} else {
+								frappe.show_alert({
+									message: __("No data found in attached file"),
+									indicator: "orange"
+								}, 5);
 							}
-							if (first_row.invoice_no) {
-								frm.set_value("invoice_no", first_row.invoice_no);
-							}
-							
-							// Recalculate total dispatch quantity after import
-							calculate_total_dispatch_quantity(frm);
-							
-							frappe.show_alert({
-								message: __("Successfully imported {0} rows from file", [r.message.length]),
-								indicator: "green"
-							}, 5);
 						} else {
 							frappe.show_alert({
-								message: __("No data found in attached file"),
+								message: __("Unexpected response format from server"),
 								indicator: "orange"
 							}, 5);
 						}
+					} catch (error) {
+						console.error("Error processing CSV import:", error);
+						frappe.show_alert({
+							message: __("Error processing imported data: {0}", [error.message || "Unknown error"]),
+							indicator: "red"
+						}, 5);
 					}
 				},
 				error: function(r) {
