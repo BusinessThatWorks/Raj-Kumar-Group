@@ -41,8 +41,9 @@ def _build_where_clause(doctype="Load Plan", status=None, from_date=None, to_dat
 		params["to_date"] = getdate(to_date)
 
 	if load_reference:
-		conditions.append(f"{ref_field} LIKE %(load_reference)s")
-		params["load_reference"] = f"%{load_reference}%"
+		# Use exact match for dropdown selection (no wildcards)
+		conditions.append(f"{ref_field} = %(load_reference)s")
+		params["load_reference"] = load_reference
 
 	return " AND ".join(conditions), params
 
@@ -98,7 +99,7 @@ def get_load_plan_data(where_clause, params):
 	total_plans = len(plans)
 	total_planned_qty = sum(flt(p.total_quantity) for p in plans)
 	total_dispatched_qty = sum(flt(p.load_dispatch_quantity) for p in plans)
-	dispatch_completion = flt((total_dispatched_qty / total_planned_qty) * 100) if total_planned_qty else 0
+	dispatch_completion = min(flt((total_dispatched_qty / total_planned_qty) * 100) if total_planned_qty else 0, 100)
 
 	# Status distribution
 	status_rows = frappe.db.sql(
@@ -348,6 +349,17 @@ def get_filter_options(doctype="Load Plan"):
 			ORDER BY status
 			"""
 		)
+		# Ensure "Transit" is included (check for both "Transit" and "In-Transit")
+		if "Transit" not in statuses and "In-Transit" not in statuses:
+			statuses.append("In-Transit")
+		load_references = frappe.db.sql_list(
+			"""
+			SELECT DISTINCT load_reference_no
+			FROM `tabLoad Dispatch`
+			WHERE docstatus < 2 AND load_reference_no IS NOT NULL AND load_reference_no != ''
+			ORDER BY load_reference_no
+			"""
+		)
 	else:
 		statuses = frappe.db.sql_list(
 			"""
@@ -357,32 +369,31 @@ def get_filter_options(doctype="Load Plan"):
 			ORDER BY status
 			"""
 		)
+		# Ensure "Transit" is included (check for both "Transit" and "In-Transit")
+		if "Transit" not in statuses and "In-Transit" not in statuses:
+			statuses.append("In-Transit")
+		load_references = frappe.db.sql_list(
+			"""
+			SELECT DISTINCT load_reference_no
+			FROM `tabLoad Plan`
+			WHERE docstatus < 2 AND load_reference_no IS NOT NULL AND load_reference_no != ''
+			ORDER BY load_reference_no
+			"""
+		)
 
-	return {"statuses": statuses}
-
-
-@frappe.whitelist()
-def get_combined_dashboard_data(status=None, from_date=None, to_date=None, load_reference=None):
-	"""Get combined data for both Load Plan and Load Dispatch."""
-	load_plan_data = get_dashboard_data(status, from_date, to_date, load_reference, "Load Plan")
-	load_dispatch_data = get_dashboard_data(status, from_date, to_date, load_reference, "Load Dispatch")
-	
-	return {
-		"load_plan": load_plan_data,
-		"load_dispatch": load_dispatch_data,
-	}
+	return {"statuses": sorted(statuses), "load_references": load_references}
 
 
 @frappe.whitelist()
 def get_load_plan_details(load_reference_no):
-	"""Get detailed information about a specific Load Plan including child table items."""
+	"""Get detailed information about a specific Load Plan including child table items in extended format."""
 	if not frappe.db.exists("Load Plan", load_reference_no):
 		return {"error": f"Load Plan {load_reference_no} not found"}
 	
 	# Get Load Plan document
 	load_plan = frappe.get_doc("Load Plan", load_reference_no)
 	
-	# Get child table items
+	# Get child table items - always return all fields in extended format
 	items = frappe.get_all(
 		"Load Plan Item",
 		filters={"parent": load_reference_no},
@@ -390,16 +401,21 @@ def get_load_plan_details(load_reference_no):
 		order_by="idx"
 	)
 	
+	# Return extended format with all details
 	return {
 		"plan": {
 			"load_reference_no": load_plan.load_reference_no,
+			"name": load_plan.name,
 			"dispatch_plan_date": str(load_plan.dispatch_plan_date) if load_plan.dispatch_plan_date else None,
 			"payment_plan_date": str(load_plan.payment_plan_date) if load_plan.payment_plan_date else None,
 			"status": load_plan.status,
 			"total_quantity": flt(load_plan.total_quantity) or 0,
 			"load_dispatch_quantity": flt(load_plan.load_dispatch_quantity) or 0,
+			"modified": str(load_plan.modified) if load_plan.modified else None,
+			"creation": str(load_plan.creation) if load_plan.creation else None,
 		},
-		"items": items
+		"items": items,
+		"extended_format": True  # Flag to indicate extended format
 	}
 
 

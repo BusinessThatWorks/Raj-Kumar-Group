@@ -49,9 +49,6 @@ class LoadPlanDashboard {
 					<button class="tab-btn" data-tab="load-dispatch">
 						<i class="fa fa-truck"></i> Load Dispatch
 					</button>
-					<button class="tab-btn" data-tab="combined">
-						<i class="fa fa-th"></i> Combined View
-					</button>
 				</div>
 
 				<div class="filters-section">
@@ -64,7 +61,9 @@ class LoadPlanDashboard {
 						</div>
 						<div class="filter-group">
 							<label>Load Reference No</label>
-							<input type="text" class="form-control filter-load-ref" placeholder="e.g. HMSI-001">
+							<select class="form-control filter-load-ref">
+								<option value="">All Load References</option>
+							</select>
 						</div>
 						<div class="filter-group filter-actions">
 							<button class="btn btn-primary btn-refresh">
@@ -180,47 +179,6 @@ class LoadPlanDashboard {
 						<div id="dispatch-list"></div>
 					</div>
 				</div>
-
-				<!-- Combined View Section -->
-				<div class="dashboard-content" id="combined-content" style="display: none;">
-					<div class="combined-summary">
-						<div class="combined-section">
-							<h3><i class="fa fa-clipboard-list"></i> Load Plan Summary</h3>
-							<div class="summary-cards">
-								<div class="summary-card plans">
-									<div class="card-icon"><i class="fa fa-clipboard-list"></i></div>
-									<div class="card-value" id="combined-total-plans">0</div>
-									<div class="card-label">Load Plans</div>
-								</div>
-								<div class="summary-card dispatched">
-									<div class="card-icon"><i class="fa fa-truck-loading"></i></div>
-									<div class="card-value" id="combined-total-dispatched">0</div>
-									<div class="card-label">Dispatched Qty</div>
-								</div>
-							</div>
-						</div>
-						<div class="combined-section">
-							<h3><i class="fa fa-truck"></i> Load Dispatch Summary</h3>
-							<div class="summary-cards">
-								<div class="summary-card dispatches">
-									<div class="card-icon"><i class="fa fa-truck"></i></div>
-									<div class="card-value" id="combined-total-dispatches">0</div>
-									<div class="card-label">Load Dispatches</div>
-								</div>
-								<div class="summary-card dispatched-qty">
-									<div class="card-icon"><i class="fa fa-cubes"></i></div>
-									<div class="card-value" id="combined-total-dispatch-qty">0</div>
-									<div class="card-label">Dispatch Qty</div>
-								</div>
-								<div class="summary-card received">
-									<div class="card-icon"><i class="fa fa-check-circle"></i></div>
-									<div class="card-value" id="combined-total-received-qty">0</div>
-									<div class="card-label">Received Qty</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
 			</div>
 		`);
 	}
@@ -255,10 +213,7 @@ class LoadPlanDashboard {
 		this.wrapper.find(".dashboard-content").hide();
 		this.load_filter_options(); // Reload filter options for the selected tab
 		
-		if (tab === "combined") {
-			this.wrapper.find("#combined-content").show();
-			this.load_combined_data();
-		} else if (tab === "load-dispatch") {
+		if (tab === "load-dispatch") {
 			this.wrapper.find("#load-dispatch-content").show();
 			this.load_dispatch_data();
 		} else {
@@ -273,21 +228,30 @@ class LoadPlanDashboard {
 			method: "rkg.rkg.page.load_plan_dashboard.load_plan_dashboard.get_filter_options",
 			args: { doctype: doctype },
 			callback: (r) => {
-				if (r.message && r.message.statuses) {
-					const select = this.wrapper.find(".filter-status");
-					select.empty().append(`<option value="">All Statuses</option>`);
-					r.message.statuses.forEach((st) => {
-						select.append(`<option value="${st}">${st}</option>`);
-					});
+				if (r.message) {
+					// Load statuses
+					if (r.message.statuses) {
+						const select = this.wrapper.find(".filter-status");
+						select.empty().append(`<option value="">All Statuses</option>`);
+						r.message.statuses.forEach((st) => {
+							select.append(`<option value="${st}">${st}</option>`);
+						});
+					}
+					// Load reference numbers
+					if (r.message.load_references) {
+						const select = this.wrapper.find(".filter-load-ref");
+						select.empty().append(`<option value="">All Load References</option>`);
+						r.message.load_references.forEach((ref) => {
+							select.append(`<option value="${ref}">${ref}</option>`);
+						});
+					}
 				}
 			},
 		});
 	}
 
 	refresh() {
-		if (this.current_tab === "combined") {
-			this.load_combined_data();
-		} else if (this.current_tab === "load-dispatch") {
+		if (this.current_tab === "load-dispatch") {
 			this.load_dispatch_data();
 		} else {
 			this.load_plan_data();
@@ -301,20 +265,40 @@ class LoadPlanDashboard {
 			doctype: "Load Plan",
 		};
 
+		const selectedLoadRef = filters.load_reference;
+
 		frappe.call({
 			method: "rkg.rkg.page.load_plan_dashboard.load_plan_dashboard.get_dashboard_data",
 			args: filters,
 			callback: (r) => {
 				if (r.message) {
 					this.render_summary(r.message.summary || {});
+					
+					// If a specific Load Reference No is selected, show it in expanded format
+					if (selectedLoadRef && selectedLoadRef.trim() !== "") {
+						const plans = r.message.plans || [];
+						if (plans.length > 0) {
+							// Find the exact match (in case of partial matches)
+							const selectedPlan = plans.find(p => p.load_reference_no === selectedLoadRef) || plans[0];
+							if (selectedPlan && selectedPlan.load_reference_no) {
+								this.show_load_plan_details(selectedPlan.load_reference_no);
+								return;
+							}
+						}
+					}
+					
+					// Otherwise, show the list of plans
+					this.hide_load_plan_details();
 					this.render_plan_list(r.message.plans || []);
 				} else {
+					this.hide_load_plan_details();
 					this.render_plan_list([]);
 				}
 			},
 			error: (r) => {
 				console.error("Error loading dashboard data:", r);
 				frappe.msgprint(__("Unable to load dashboard data right now."));
+				this.hide_load_plan_details();
 				this.render_plan_list([]);
 			},
 		});
@@ -337,31 +321,6 @@ class LoadPlanDashboard {
 					this.render_dispatch_chart(r.message.dispatch_vs_received);
 					this.render_dispatch_models_chart(r.message.top_models);
 					this.render_dispatch_list(r.message.dispatches);
-				}
-			},
-			error: () => {
-				frappe.msgprint(__("Unable to load dashboard data right now."));
-			},
-		});
-	}
-
-	load_combined_data() {
-		const filters = {
-			status: this.wrapper.find(".filter-status").val(),
-			load_reference: this.wrapper.find(".filter-load-ref").val(),
-		};
-
-		frappe.call({
-			method: "rkg.rkg.page.load_plan_dashboard.load_plan_dashboard.get_combined_dashboard_data",
-			args: filters,
-			callback: (r) => {
-				if (r.message) {
-					if (r.message.load_plan) {
-						this.render_combined_plan_summary(r.message.load_plan.summary || {});
-					}
-					if (r.message.load_dispatch) {
-						this.render_combined_dispatch_summary(r.message.load_dispatch.summary || {});
-					}
 				}
 			},
 			error: () => {
@@ -657,17 +616,6 @@ class LoadPlanDashboard {
 		`;
 	}
 
-	render_combined_plan_summary(summary) {
-		this.wrapper.find("#combined-total-plans").text(summary.total_plans || 0);
-		this.wrapper.find("#combined-total-dispatched").text(format_number(summary.total_dispatched_qty || 0, 0));
-	}
-
-	render_combined_dispatch_summary(summary) {
-		this.wrapper.find("#combined-total-dispatches").text(summary.total_dispatches || 0);
-		this.wrapper.find("#combined-total-dispatch-qty").text(format_number(summary.total_dispatch_qty || 0, 0));
-		this.wrapper.find("#combined-total-received-qty").text(format_number(summary.total_received_qty || 0, 0));
-	}
-
 	show_load_plan_details(load_reference_no) {
 		// Hide list, show details
 		this.wrapper.find(".plans-section").hide();
@@ -784,8 +732,6 @@ function add_styles() {
 		.tab-btn:hover { color: var(--heading-color); }
 		.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 		.dashboard-content { display: block; }
-		.combined-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
-		.combined-section h3 { margin-bottom: 12px; color: var(--heading-color); display: flex; align-items: center; gap: 8px; }
 		.filters-section { background: var(--card-bg); padding: 16px; border-radius: 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); margin-bottom: 18px; }
 		.filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
 		.filter-group label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
