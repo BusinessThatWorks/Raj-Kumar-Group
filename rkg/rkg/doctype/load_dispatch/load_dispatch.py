@@ -252,8 +252,15 @@ class LoadDispatch(Document):
 		
 		# Set default values if not already set
 		for item in self.items:
-			# You can add more field mappings here if needed
-			pass
+			# Calculate print_name from model_name and model_serial_no if model_serial_no exists
+			if hasattr(item, "model_serial_no") and item.model_serial_no:
+				model_name = getattr(item, "model_name", None)
+				if not hasattr(item, "print_name") or not item.print_name:
+					item.print_name = calculate_print_name(item.model_serial_no, model_name)
+				# Also recalculate if model_serial_no changed (for manual edits)
+				elif hasattr(item, "print_name") and item.model_serial_no:
+					# Recalculate to ensure it's always correct
+					item.print_name = calculate_print_name(item.model_serial_no, model_name)
 
 	def update_item_pricing_fields(self):
 		"""
@@ -604,6 +611,59 @@ class LoadDispatch(Document):
 			)
 
 
+def calculate_print_name(model_serial_no, model_name=None):
+	"""
+	Calculate Print Name from Model Name and Model Serial Number.
+	Logic: Model Name + (Model Serial Number up to "-ID") + (BS-VI)
+	
+	Example:
+		model_name: "CB125 HORNET OBD2B"
+		model_serial_no: "CBF125ZTIDNHB05" or "CBF125ZT-IDNHB05"
+		Output: "CB125 HORNET OBD2B (CBF125ZT-ID) (BS-VI)"
+	
+	Args:
+		model_serial_no: The Model Serial Number string
+		model_name: The Model Name string (optional)
+		
+	Returns:
+		Calculated Print Name string
+	"""
+	if not model_serial_no:
+		return ""
+	
+	model_serial_no = str(model_serial_no).strip()
+	if not model_serial_no:
+		return ""
+	
+	# Extract Model Serial Number part up to "-ID" (including "-ID")
+	# Search for "-ID" pattern (case-insensitive)
+	model_serial_upper = model_serial_no.upper()
+	id_index = model_serial_upper.find("-ID")
+	
+	if id_index != -1:
+		# Take everything up to and including "-ID"
+		# Add 3 to include "-ID" (3 characters)
+		serial_part = model_serial_no[:id_index + 3]
+	else:
+		# If "-ID" not found, try to find "ID" (without dash) and take up to it
+		id_index = model_serial_upper.find("ID")
+		if id_index != -1:
+			# Take everything up to "ID" and add "-ID"
+			serial_part = model_serial_no[:id_index] + "-ID"
+		else:
+			# If "ID" not found at all, use the whole model_serial_no
+			serial_part = model_serial_no
+	
+	# Build the result: Model Name + (Serial Part) + (BS-VI)
+	if model_name:
+		model_name = str(model_name).strip()
+		if model_name:
+			return f"{model_name} ({serial_part}) (BS-VI)"
+	
+	# If no model_name, just use serial_part
+	return f"{serial_part} (BS-VI)"
+
+
 @frappe.whitelist()
 def process_tabular_file(file_url, selected_load_reference_no=None):
 	"""
@@ -693,6 +753,7 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			}
 			
 			# Required headers that MUST be present in the CSV (core), case/space-insensitive
+			# Note: "Print Name" is calculated from Model Serial Number, so it's not required from CSV
 			required_headers_core = [
 				"HMSI Load Reference No",
 				"Invoice No",
@@ -703,7 +764,6 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 				"Model Name",
 				"Colour",
 				"Tax Rate",
-				"Print Name",
 				"DOR",
 				"HSN Code",
 				"Qty",
@@ -852,6 +912,10 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 				
 				row_data = {}
 				for csv_col, fieldname in column_mapping.items():
+					# Skip Print Name - it will be calculated from Model Serial Number
+					if fieldname == "print_name":
+						continue
+					
 					# Resolve actual CSV column using normalized header lookup
 					actual_col = norm_csv_headers.get(_norm_header(csv_col))
 					if not actual_col:
@@ -895,6 +959,11 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 					# Also track invoice_no for parent document
 					if fieldname == "invoice_no" and value:
 						row_data[fieldname] = value
+				
+				# Calculate print_name from model_name and model_serial_no (don't read from CSV)
+				if "model_serial_no" in row_data and row_data["model_serial_no"]:
+					model_name = row_data.get("model_name", None)
+					row_data["print_name"] = calculate_print_name(row_data["model_serial_no"], model_name)
 				
 				if row_data:
 					rows.append(row_data)

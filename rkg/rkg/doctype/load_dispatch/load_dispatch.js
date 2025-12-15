@@ -173,6 +173,22 @@ frappe.ui.form.on("Load Dispatch Item", {
 	frame_no: function(frm) {
 		calculate_total_dispatch_quantity(frm);
 	},
+	model_serial_no: function(frm, cdt, cdn) {
+		// Calculate print_name from model_name and model_serial_no when it changes
+		let row = locals[cdt][cdn];
+		if (row.model_serial_no) {
+			row.print_name = calculate_print_name_from_model_serial(row.model_serial_no, row.model_name);
+			frm.refresh_field("print_name", row.name, "items");
+		}
+	},
+	model_name: function(frm, cdt, cdn) {
+		// Recalculate print_name when model_name changes
+		let row = locals[cdt][cdn];
+		if (row.model_serial_no) {
+			row.print_name = calculate_print_name_from_model_serial(row.model_serial_no, row.model_name);
+			frm.refresh_field("print_name", row.name, "items");
+		}
+	},
 	items_remove: function(frm) {
 		calculate_total_dispatch_quantity(frm);
 		// Reset CSV load_reference_no flag if all items are cleared
@@ -183,6 +199,51 @@ frappe.ui.form.on("Load Dispatch Item", {
 		}
 	}
 });
+
+// Helper function to calculate print_name from model_name and model_serial_no (client-side)
+function calculate_print_name_from_model_serial(model_serial_no, model_name) {
+	if (!model_serial_no) {
+		return "";
+	}
+	
+	model_serial_no = String(model_serial_no).trim();
+	if (!model_serial_no) {
+		return "";
+	}
+	
+	// Extract Model Serial Number part up to "-ID" (including "-ID")
+	// Search for "-ID" pattern (case-insensitive)
+	const model_serial_upper = model_serial_no.toUpperCase();
+	let id_index = model_serial_upper.indexOf("-ID");
+	
+	let serial_part;
+	if (id_index !== -1) {
+		// Take everything up to and including "-ID"
+		// Add 3 to include "-ID" (3 characters)
+		serial_part = model_serial_no.substring(0, id_index + 3);
+	} else {
+		// If "-ID" not found, try to find "ID" (without dash) and take up to it
+		id_index = model_serial_upper.indexOf("ID");
+		if (id_index !== -1) {
+			// Take everything up to "ID" and add "-ID"
+			serial_part = model_serial_no.substring(0, id_index) + "-ID";
+		} else {
+			// If "ID" not found at all, use the whole model_serial_no
+			serial_part = model_serial_no;
+		}
+	}
+	
+	// Build the result: Model Name + (Serial Part) + (BS-VI)
+	if (model_name) {
+		model_name = String(model_name).trim();
+		if (model_name) {
+			return `${model_name} (${serial_part}) (BS-VI)`;
+		}
+	}
+	
+	// If no model_name, just use serial_part
+	return `${serial_part} (BS-VI)`;
+}
 cur_frm.cscript["Create Purchase Order"] = function(){
 	frappe.model.open_mapped_doc({
 		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_order",
