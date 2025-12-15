@@ -261,6 +261,17 @@ class LoadDispatch(Document):
 				elif hasattr(item, "print_name") and item.model_serial_no:
 					# Recalculate to ensure it's always correct
 					item.print_name = calculate_print_name(item.model_serial_no, model_name)
+			
+			# Calculate rate from price_unit (excluding 18% GST)
+			# rate = price_unit / 1.18 (standard GST exclusion formula)
+			# Note: price_unit remains unchanged from Excel, only rate is calculated
+			if hasattr(item, "price_unit") and item.price_unit:
+				price_unit = flt(item.price_unit)
+				if price_unit > 0:
+					# Always calculate rate from price_unit (excluding 18% GST)
+					# This ensures rate is always in sync with price_unit
+					calculated_rate = price_unit / 1.18
+					item.rate = calculated_rate
 
 	def update_item_pricing_fields(self):
 		"""
@@ -298,6 +309,11 @@ class LoadDispatch(Document):
 			if not frappe.db.exists("Item", item_code):
 				print(f"DEBUG pricing sync: Item {item_code} not found; skipping")
 				continue
+			
+			# Ensure print_name is calculated before updating Item
+			if not hasattr(item, "print_name") or not item.print_name:
+				model_name = getattr(item, "model_name", None)
+				item.print_name = calculate_print_name(item.model_serial_no, model_name)
 
 			item_doc = frappe.get_doc("Item", item_code)
 			updated = False
@@ -317,6 +333,15 @@ class LoadDispatch(Document):
 						print(f"DEBUG pricing sync: empty value for {child_field} on row {getattr(item, 'frame_no', None)}")
 				else:
 					print(f"DEBUG pricing sync: child field {child_field} not on row {getattr(item, 'frame_no', None)}")
+			
+			# Update custom_print_name from Load Dispatch Item's print_name
+			if hasattr(item, "print_name") and item.print_name:
+				if hasattr(item_doc, "custom_print_name"):
+					print(f"DEBUG pricing sync: setting {item_code}.custom_print_name = {item.print_name}")
+					item_doc.custom_print_name = item.print_name
+					updated = True
+				else:
+					print(f"DEBUG pricing sync: Item field custom_print_name missing on {item_code}")
 
 			if updated:
 				item_doc.save(ignore_permissions=True)
@@ -485,6 +510,11 @@ class LoadDispatch(Document):
 			if not item_code:
 				continue
 			
+			# Ensure print_name is calculated before creating/updating Item
+			if not hasattr(item, "print_name") or not item.print_name:
+				model_name = getattr(item, "model_name", None)
+				item.print_name = calculate_print_name(item.model_serial_no, model_name)
+			
 			# Check if Item already exists
 			try:
 				# Map pricing/GST custom fields from Load Dispatch Item -> Item custom fields
@@ -500,6 +530,12 @@ class LoadDispatch(Document):
 						# Allow zero/falsey numeric values to flow through; skip only if None or empty string
 						if child_value is not None and child_value != "" and hasattr(item_doc, item_field):
 							setattr(item_doc, item_field, child_value)
+							updated = True
+					
+					# Update custom_print_name from Load Dispatch Item's print_name
+					if hasattr(item, "print_name") and item.print_name:
+						if hasattr(item_doc, "custom_print_name"):
+							item_doc.custom_print_name = item.print_name
 							updated = True
 
 					if updated:
@@ -568,6 +604,11 @@ class LoadDispatch(Document):
 						if child_value is not None and child_value != "":
 							if hasattr(item_doc, item_field):
 								setattr(item_doc, item_field, child_value)
+				
+				# Set custom_print_name from Load Dispatch Item's print_name
+				if hasattr(item, "print_name") and item.print_name:
+					if hasattr(item_doc, "custom_print_name"):
+						item_doc.custom_print_name = item.print_name
 
 				item_doc.insert(ignore_permissions=True)
 				created_items.append(item_code)
@@ -1036,6 +1077,12 @@ def create_purchase_order(source_name, target_doc=None):
 		# Set load_reference_no from source
 		target.custom_load_reference_no = source.load_reference_no
 		
+		# Set custom_load_dispatch on Purchase Order so Purchase Invoices created from PO can be tracked
+		if hasattr(target, "custom_load_dispatch"):
+			target.custom_load_dispatch = source_name
+		elif frappe.db.has_column("Purchase Order", "custom_load_dispatch"):
+			target.db_set("custom_load_dispatch", source_name)
+		
 		# Set supplier and gst_hsn_code from RKG Settings on parent document
 		try:
 			rkg_settings = frappe.get_single("RKG Settings")
@@ -1059,14 +1106,18 @@ def create_purchase_order(source_name, target_doc=None):
 		# Set quantity to 1
 		target.qty = 1
 		
-		# Ensure UOM matches the Item's stock UOM
-		if target.item_code:
-			stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
-			if stock_uom:
-				if hasattr(target, "uom"):
-					target.uom = stock_uom
-				if hasattr(target, "stock_uom"):
-					target.stock_uom = stock_uom
+		# Set UOM to "Pcs" for Purchase Order
+		if hasattr(target, "uom"):
+			target.uom = "Pcs"
+		if hasattr(target, "stock_uom"):
+			target.stock_uom = "Pcs"
+		
+		# Map rate from Load Dispatch Item to Purchase Order Item
+		if hasattr(source, "rate") and source.rate:
+			target.rate = flt(source.rate)
+		elif hasattr(source, "price_unit") and source.price_unit:
+			# If rate is not set, calculate from price_unit (excluding 18% GST)
+			target.rate = flt(source.price_unit) / 1.18
 		
 		# Set item_group from source if available, otherwise get from Item
 		if source.item_group:
@@ -1099,6 +1150,7 @@ def create_purchase_order(source_name, target_doc=None):
 					"model_variant": "item_name",
 					"frame_no": "serial_no",
 					"item_group": "item_group",
+					"rate": "rate",
 				},
 				"postprocess": update_item
 			},
@@ -1296,10 +1348,9 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	print(f"DEBUG: Method: {method}")
 	print(f"{'='*60}\n")
 	
-	# For Purchase Invoice, only run this logic when "Update Stock" is enabled
-	if doc.doctype == "Purchase Invoice" and getattr(doc, "update_stock", 0) != 1:
-		print("DEBUG: Purchase Invoice has update_stock != 1. Skipping Load Dispatch totals update.")
-		return
+	# For Purchase Invoice, we always update billing totals regardless of update_stock
+	# The update_stock check only affects whether we update received quantity
+	# Billing should always be counted from Purchase Invoices
 
 	# Get custom_load_dispatch field value from the document
 	load_dispatch_name = None
@@ -1379,6 +1430,7 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 			return
 		
 		# Find all submitted Purchase Invoices (docstatus=1) with this Load Dispatch
+		# Method 1: Direct link via custom_load_dispatch field
 		pi_list = frappe.get_all(
 			"Purchase Invoice",
 			filters={
@@ -1390,25 +1442,39 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		
 		print(f"DEBUG: Found {len(pi_list)} submitted Purchase Invoice(s) with custom_load_dispatch = {load_dispatch_name}")
 		
-		# Filter out Purchase Invoices that have Purchase Receipt linked
-		pi_without_pr = []
-		for pi in pi_list:
-			pi_doc = frappe.get_doc("Purchase Invoice", pi.name)
-			has_pr = False
+		# Method 2: Also find Purchase Invoices created from Purchase Orders that have custom_load_dispatch
+		# Get Purchase Orders with this Load Dispatch
+		if frappe.db.has_column("Purchase Order", "custom_load_dispatch"):
+			po_list = frappe.get_all(
+				"Purchase Order",
+				filters={
+					"docstatus": 1,
+					"custom_load_dispatch": load_dispatch_name
+				},
+				fields=["name"]
+			)
 			
-			if hasattr(pi_doc, "items") and pi_doc.items:
-				for item in pi_doc.items:
-					if hasattr(item, "purchase_receipt") and item.purchase_receipt:
-						has_pr = True
-						print(f"DEBUG: Purchase Invoice {pi.name} has Purchase Receipt. Skipping.")
-						break
-			
-			if not has_pr:
-				pi_without_pr.append(pi)
-				print(f"DEBUG: Purchase Invoice {pi.name} does NOT have Purchase Receipt. Including.")
+			if po_list:
+				po_names = [po.name for po in po_list]
+				# Find Purchase Invoices linked to these Purchase Orders via purchase_order field in items
+				pi_from_po = frappe.db.sql("""
+					SELECT DISTINCT pi.name, pi.total_qty
+					FROM `tabPurchase Invoice` pi
+					INNER JOIN `tabPurchase Invoice Item` pii ON pii.parent = pi.name
+					WHERE pi.docstatus = 1
+					AND pii.purchase_order IN %(po_names)s
+					AND (pi.custom_load_dispatch IS NULL OR pi.custom_load_dispatch = '')
+				""", {"po_names": po_names}, as_dict=True)
+				
+				# Add to pi_list if not already there
+				existing_pi_names = {pi.name for pi in pi_list}
+				for pi_po in pi_from_po:
+					if pi_po.name not in existing_pi_names:
+						pi_list.append(pi_po)
+						print(f"DEBUG: Found Purchase Invoice {pi_po.name} linked via Purchase Order")
 		
-		# Sum total_qty from Purchase Invoices without Purchase Receipt
-		for pi in pi_without_pr:
+		# Sum total_qty from ALL Purchase Invoices (billing should count all Purchase Invoices)
+		for pi in pi_list:
 			pi_qty = flt(pi.get("total_qty")) or 0
 			print(f"DEBUG: Purchase Invoice {pi.name} - total_qty: {pi_qty}")
 			
@@ -1421,8 +1487,12 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 					)
 					print(f"DEBUG: Purchase Invoice {pi.name} - calculated from items: {pi_qty}")
 			
-			total_received_qty += pi_qty
+			# From Purchase Invoice we only update BILLED quantity (not received quantity)
+			# Received quantity comes from Purchase Receipts only
 			total_billed_qty += pi_qty
+		
+		print(f"DEBUG: Total Received Qty = {total_received_qty}")
+		print(f"DEBUG: Total Billed Qty = {total_billed_qty}")
 		
 	
 
