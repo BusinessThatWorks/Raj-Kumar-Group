@@ -74,6 +74,7 @@ frappe.ui.form.on("Load Dispatch", {
 										child_row[key] = row[key];
 									});
 									// Set item_code from model_serial_no if available
+									// Item will be created on save if it doesn't exist
 									if (row.model_serial_no && row.model_serial_no.trim()) {
 										child_row.item_code = row.model_serial_no.trim();
 									}
@@ -204,11 +205,21 @@ frappe.ui.form.on("Load Dispatch Item", {
 		}
 	},
 	model_serial_no: function(frm, cdt, cdn) {
-		// Calculate print_name from model_name and model_serial_no when it changes
+		// Set item_code from model_serial_no and calculate print_name when model_serial_no changes
 		let row = locals[cdt][cdn];
 		if (row.model_serial_no) {
+			// Set item_code from model_serial_no (Item will be created on save if it doesn't exist)
+			const item_code = row.model_serial_no.trim();
+			row.item_code = item_code;
+			frm.refresh_field("item_code", row.name, "items");
+			
+			// Calculate print_name from model_name and model_serial_no
 			row.print_name = calculate_print_name_from_model_serial(row.model_serial_no, row.model_name);
 			frm.refresh_field("print_name", row.name, "items");
+		} else {
+			// Clear item_code if model_serial_no is cleared
+			row.item_code = "";
+			frm.refresh_field("item_code", row.name, "items");
 		}
 	},
 	model_name: function(frm, cdt, cdn) {

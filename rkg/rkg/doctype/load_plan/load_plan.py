@@ -9,9 +9,60 @@ from frappe.utils.xlsxutils import read_xlsx_file_from_attached_file
 
 
 class LoadPlan(Document):
+	def before_insert(self):
+		"""Clean invalid fields before insert to prevent LinkValidationError."""
+		self.clean_child_table_fields()
+	
 	def validate(self):
-		"""Calculate total quantity from child table items."""
+		"""Calculate total quantity from child table items and clean invalid fields."""
+		self.clean_child_table_fields()
 		self.calculate_total_quantity()
+	
+	def clean_child_table_fields(self):
+		"""Remove invalid fields from child table rows that don't exist in the doctype."""
+		if not self.table_tezh:
+			return
+		
+		# Valid fields for Load Plan Item (from load_plan_item.json)
+		valid_child_fields = {
+			"model", "model_name", "model_type", "model_variant",
+			"model_color", "group_color", "option", "quantity"
+		}
+		
+		# Remove invalid fields directly from each row's __dict__
+		# This is safer than rebuilding the entire table and preserves internal state
+		for item in self.table_tezh:
+			if not hasattr(item, '__dict__'):
+				continue
+			
+			# Ensure flags attribute exists (Frappe requires this for Document objects)
+			if not hasattr(item, 'flags'):
+				# Initialize flags as a simple object if it doesn't exist
+				item.flags = type('Flags', (), {})()
+			
+			# Ensure _table_fieldnames attribute exists (Frappe requires this for child table items)
+			if not hasattr(item, '_table_fieldnames'):
+				# Initialize _table_fieldnames as a set if it doesn't exist
+				item._table_fieldnames = set(valid_child_fields)
+				
+			# Get list of fields to remove
+			fields_to_remove = []
+			for fieldname in item.__dict__.keys():
+				# Skip Frappe internal fields and valid child fields
+				if fieldname not in valid_child_fields and fieldname not in {
+					"name", "idx", "parent", "parentfield", "parenttype", "doctype",
+					"owner", "creation", "modified", "modified_by", "_meta", "_flags",
+					"flags", "_table_fieldnames"  # Ensure internal Frappe attributes are never removed
+				}:
+					fields_to_remove.append(fieldname)
+			
+			# Remove invalid fields from __dict__
+			for fieldname in fields_to_remove:
+				try:
+					del item.__dict__[fieldname]
+				except (KeyError, TypeError):
+					# Field might have been removed already or is protected
+					pass
 	
 	def calculate_total_quantity(self):
 		"""Sum up quantity from all Load Plan Item child table rows."""
@@ -411,7 +462,21 @@ def _process_tabular_rows(data, column_mapping, required_headers, optional_heade
 			if row_data:
 				rows.append(row_data)
 
-	return rows
+	# Filter out invalid fields that don't exist in Load Plan Item doctype
+	valid_child_fields = {
+		"model", "model_name", "model_type", "model_variant",
+		"model_color", "group_color", "option", "quantity",
+		"load_reference_no", "dispatch_plan_date", "payment_plan_date"
+	}
+	
+	# Remove invalid fields from each row (like item_code)
+	filtered_rows = []
+	for row in rows:
+		filtered_row = {k: v for k, v in row.items() if k in valid_child_fields}
+		if filtered_row:
+			filtered_rows.append(filtered_row)
+	
+	return filtered_rows
 
 
 def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_headers):
@@ -598,7 +663,21 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 			except Exception:
 				pass
 
-		return rows
+		# Filter out invalid fields that don't exist in Load Plan Item doctype
+		valid_child_fields = {
+			"model", "model_name", "model_type", "model_variant",
+			"model_color", "group_color", "option", "quantity",
+			"load_reference_no", "dispatch_plan_date", "payment_plan_date"
+		}
+		
+		# Remove invalid fields from each row (like item_code)
+		filtered_rows = []
+		for row in rows:
+			filtered_row = {k: v for k, v in row.items() if k in valid_child_fields}
+			if filtered_row:
+				filtered_rows.append(filtered_row)
+		
+		return filtered_rows
 	finally:
 		if csvfile:
 			csvfile.close()
@@ -764,9 +843,17 @@ def _create_single_load_plan(load_reference_no, dispatch_plan_date, payment_plan
 			"attach_load_plan": file_url
 		})
 	
-	# Add child table rows
+	# Add child table rows - filter to only include valid fields
+	valid_child_fields = {
+		"model", "model_name", "model_type", "model_variant",
+		"model_color", "group_color", "option", "quantity"
+	}
+	
 	for row_data in child_rows:
-		load_plan.append("table_tezh", row_data)
+		# Filter row_data to only include valid fields
+		filtered_row = {k: v for k, v in row_data.items() if k in valid_child_fields}
+		if filtered_row:  # Only append if there's at least one valid field
+			load_plan.append("table_tezh", filtered_row)
 	
 	# Save the document
 	load_plan.save(ignore_permissions=True)

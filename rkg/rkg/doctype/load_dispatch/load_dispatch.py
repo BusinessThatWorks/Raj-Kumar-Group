@@ -27,11 +27,328 @@ class LoadDispatch(Document):
 			return False
 		return True
 	
+	def _create_single_item_from_dispatch_item(self, dispatch_item, item_code):
+		"""
+		Create a single Item from a Load Dispatch Item.
+		This method handles Item Group creation and Item creation for one item.
+		"""
+		# Ensure print_name is calculated
+		if not hasattr(dispatch_item, "print_name") or not dispatch_item.print_name:
+			model_name = getattr(dispatch_item, "model_name", None)
+			dispatch_item.print_name = calculate_print_name(dispatch_item.model_serial_no, model_name)
+		
+		# Get or create Item Group from model_name
+		item_group = self._get_or_create_item_group(dispatch_item.model_name)
+		
+		# Ensure item_group is set - this is critical
+		if not item_group:
+			frappe.throw(_("Could not determine Item Group for Item '{0}'. Model Name: {1}").format(
+				item_code, getattr(dispatch_item, 'model_name', 'N/A')
+			))
+		
+		# Fetch RKG Settings (optional)
+		rkg_settings = None
+		try:
+			rkg_settings = frappe.get_single("RKG Settings")
+		except frappe.DoesNotExistError:
+			pass
+		
+		# Create new Item
+		item_doc = frappe.get_doc({
+			"doctype": "Item",
+			"item_code": item_code,
+			"item_name": dispatch_item.model_variant or item_code,
+			"item_group": item_group,
+			"stock_uom": "Nos",
+			"is_stock_item": 1,
+			"has_serial_no": 1,
+		})
+		
+		# Populate Supplier from RKG Settings
+		if rkg_settings and rkg_settings.get("default_supplier"):
+			if hasattr(item_doc, "supplier_items"):
+				item_doc.append("supplier_items", {
+					"supplier": rkg_settings.default_supplier,
+					"is_default": 1
+				})
+			elif hasattr(item_doc, "supplier"):
+				item_doc.supplier = rkg_settings.default_supplier
+		
+		# Populate HSN Code from RKG Settings
+		if rkg_settings and rkg_settings.get("default_hsn_code"):
+			if hasattr(item_doc, "gst_hsn_code"):
+				item_doc.gst_hsn_code = rkg_settings.default_hsn_code
+			elif hasattr(item_doc, "custom_gst_hsn_code"):
+				item_doc.custom_gst_hsn_code = rkg_settings.default_hsn_code
+		
+		# Set custom fields from Load Dispatch Item
+		custom_field_map = {field: field for field in ITEM_CUSTOM_FIELDS}
+		for child_field, item_field in custom_field_map.items():
+			if hasattr(dispatch_item, child_field):
+				child_value = getattr(dispatch_item, child_field)
+				if child_value is not None and child_value != "":
+					if hasattr(item_doc, item_field):
+						setattr(item_doc, item_field, child_value)
+		
+		# Set custom_print_name
+		if hasattr(dispatch_item, "print_name") and dispatch_item.print_name:
+			if hasattr(item_doc, "custom_print_name"):
+				item_doc.custom_print_name = dispatch_item.print_name
+		
+		# Insert Item with proper error handling
+		try:
+			# Validate Item before inserting
+			item_doc.validate()
+			
+			# Insert Item
+			item_doc.insert(ignore_permissions=True)
+			
+			# Commit immediately after each Item creation to ensure it exists
+			# Use savepoint to ensure this commit persists
+			frappe.db.commit()
+			
+			# Force refresh cache to ensure Item is visible
+			frappe.clear_cache(doctype="Item")
+			
+			# Verify Item exists after commit - use direct SQL query
+			item_exists = frappe.db.sql("SELECT name FROM `tabItem` WHERE name = %s", (item_code,))
+			if not item_exists:
+				# Try one more commit and check
+				frappe.db.commit()
+				item_exists = frappe.db.sql("SELECT name FROM `tabItem` WHERE name = %s", (item_code,))
+				if not item_exists:
+					# Log this critical issue
+					frappe.log_error(
+						f"CRITICAL: Item {item_code} was inserted but not found in database after commit. SQL check returned: {item_exists}",
+						"Item Creation Verification Failed"
+					)
+					raise frappe.ValidationError(
+						_("Item '{0}' was created but not found in database. This may indicate a transaction issue.").format(item_code)
+					)
+			
+			return item_doc
+		except frappe.ValidationError:
+			# Re-raise validation errors as-is
+			raise
+		except Exception as e:
+			# Log detailed error
+			import traceback
+			error_details = traceback.format_exc()
+			frappe.log_error(
+				f"Failed to insert Item {item_code}: {str(e)}\n{error_details}\nItem Group: {item_group}",
+				"Item Insert Failed"
+			)
+			# Re-raise with clear message
+			raise frappe.ValidationError(_("Failed to create Item '{0}': {1}").format(item_code, str(e)))
+	
+	def _get_or_create_item_group(self, model_name):
+		"""Get or create Item Group from model_name. Returns Item Group name."""
+		# First, ensure we have a parent Item Group - create "All Item Groups" if it doesn't exist
+		parent_item_group = "All Item Groups"
+		if not frappe.db.exists("Item Group", parent_item_group):
+			# Try to find any existing parent group
+			parent_item_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
+			if not parent_item_group:
+				# No parent group exists - create "All Item Groups"
+				try:
+					all_groups = frappe.get_doc({
+						"doctype": "Item Group",
+						"item_group_name": "All Item Groups",
+						"is_group": 1
+					})
+					all_groups.insert(ignore_permissions=True)
+					frappe.db.commit()
+					parent_item_group = "All Item Groups"
+				except Exception as e:
+					frappe.log_error(f"Failed to create 'All Item Groups': {str(e)}", "Item Group Creation Failed")
+					frappe.throw(_("No parent Item Group found and could not create 'All Item Groups'. Error: {0}").format(str(e)))
+		
+		# Use model_name as Item Group - create if it doesn't exist
+		if model_name and str(model_name).strip():
+			model_name = str(model_name).strip()
+			if frappe.db.exists("Item Group", model_name):
+				return model_name
+			
+			# Create Item Group from model_name
+			try:
+				new_item_group = frappe.get_doc({
+					"doctype": "Item Group",
+					"item_group_name": model_name,
+					"is_group": 0,
+					"parent_item_group": parent_item_group
+				})
+				new_item_group.insert(ignore_permissions=True)
+				frappe.db.commit()
+				return model_name
+			except Exception as e:
+				frappe.log_error(f"Failed to create Item Group '{model_name}': {str(e)}", "Item Group Creation Failed")
+				# Fall through to default
+		
+		# Fall back to "Two Wheeler Vehicle"
+		if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
+			return "Two Wheeler Vehicle"
+		
+		# Create "Two Wheeler Vehicle" as default
+		try:
+			default_group = frappe.get_doc({
+				"doctype": "Item Group",
+				"item_group_name": "Two Wheeler Vehicle",
+				"is_group": 0,
+				"parent_item_group": parent_item_group
+			})
+			default_group.insert(ignore_permissions=True)
+			frappe.db.commit()
+			return "Two Wheeler Vehicle"
+		except Exception as e:
+			# Last resort: get any available item group
+			any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
+			if any_group:
+				return any_group
+			frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
+	
+	def before_insert(self):
+		"""
+		Hook called before inserting new Load Dispatch document.
+		
+		Items should already be created in validate() method which runs before this hook.
+		This method serves as a final verification step to ensure all Items exist
+		before Frappe's link validation runs.
+		"""
+		if not self.items:
+			return
+		
+		# Final verification: Ensure all item_codes have corresponding Items
+		# This prevents link validation errors
+		missing_items = []
+		for item in self.items:
+			if item.item_code and str(item.item_code).strip():
+				item_code = str(item.item_code).strip()
+				if not frappe.db.exists("Item", item_code):
+					missing_items.append(f"Row #{getattr(item, 'idx', 'Unknown')}: {item_code}")
+		
+		if missing_items:
+			frappe.throw(
+				_("CRITICAL ERROR: {0} Item(s) are missing before insert:\n{1}\n\n"
+				  "Items should have been created in validate(). Please check Error Log.").format(
+					len(missing_items),
+					"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
+				),
+				title=_("Item Verification Failed")
+			)
+	
+	def validate(self):
+		"""
+		Validate Load Dispatch and ensure Items exist before link validation runs.
+		
+		This method processes each row in the child table (Load Dispatch Item):
+		1. Reads Model Serial No (which is the Item Code)
+		2. Checks if Item exists in tabItem
+		3. If not, creates new Item with:
+		   - item_code = Model Serial No
+		   - item_name = Model Variant
+		   - item_group = Model Name (created if doesn't exist)
+		   - stock_uom = "Nos"
+		   - is_stock_item = 1
+		4. Populates item_code Link field in child table
+		
+		This runs before insert() and _validate_links(), ensuring Items exist
+		before Frappe's link validation checks them.
+		"""
+		if not self.items:
+			return
+		
+		# Process each row in Load Dispatch Item child table
+		for item in self.items:
+			# Step 1: Get Model Serial No (this is the Item Code)
+			if not item.model_serial_no or not str(item.model_serial_no).strip():
+				# Skip rows without Model Serial No
+				continue
+			
+			item_code = str(item.model_serial_no).strip()
+			
+			# Step 2: Check if Item already exists (prevent duplicates)
+			if frappe.db.exists("Item", item_code):
+				# Item exists - just populate the Link field
+				item.item_code = item_code
+				continue
+			
+			# Step 3: Item doesn't exist - create it
+			try:
+				# Get or create Item Group from Model Name
+				item_group = self._get_or_create_item_group(item.model_name)
+				
+				# Create new Item document
+				item_doc = frappe.get_doc({
+					"doctype": "Item",
+					"item_code": item_code,  # Model Serial No
+					"item_name": item.model_variant or item_code,  # Model Variant
+					"item_group": item_group,  # Model Name (as Item Group)
+					"stock_uom": "Nos",
+					"is_stock_item": 1,
+					"has_serial_no": 1,
+				})
+				
+				# Insert Item (ignoring permissions as per requirement)
+				item_doc.insert(ignore_permissions=True)
+				
+				# Commit immediately to ensure Item exists before link validation
+				frappe.db.commit()
+				
+				# Verify Item was created
+				if not frappe.db.exists("Item", item_code):
+					frappe.throw(
+						_("Item '{0}' was not created for Row #{1}. Please check Error Log.").format(
+							item_code, getattr(item, 'idx', 'Unknown')
+						),
+						title=_("Item Creation Failed")
+					)
+				
+				# Step 4: Populate item_code Link field in child table
+				item.item_code = item_code
+				
+			except Exception as e:
+				# Log error for debugging
+				frappe.log_error(
+					f"Failed to create Item {item_code} for Row #{getattr(item, 'idx', 'Unknown')}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					"Item Creation Error in validate"
+				)
+				# Throw user-friendly error
+				frappe.throw(
+					_("Failed to create Item '{0}' for Row #{1}.\n\nError: {2}\n\nPlease check Error Log for details.").format(
+						item_code, getattr(item, 'idx', 'Unknown'), str(e)
+					),
+					title=_("Item Creation Failed")
+				)
+		
+		# Final verification: Ensure all item_codes have corresponding Items
+		# This prevents link validation errors
+		missing_items = []
+		for item in self.items:
+			if item.item_code and str(item.item_code).strip():
+				item_code = str(item.item_code).strip()
+				if not frappe.db.exists("Item", item_code):
+					missing_items.append(f"Row #{getattr(item, 'idx', 'Unknown')}: {item_code}")
+		
+		if missing_items:
+			frappe.throw(
+				_("CRITICAL ERROR: {0} Item(s) were not created:\n{1}\n\n"
+				  "This will cause link validation to fail. Please check Error Log.").format(
+					len(missing_items),
+					"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
+				),
+				title=_("Item Creation Verification Failed")
+			)
+	
 	def before_save(self):
 		"""Populate item_code from model_serial_no before saving and create Items if needed."""
-		# Only process items if Load Plan exists
-		if self.items and self.has_valid_load_plan():
+		# For existing documents, ensure Items exist and item_code is set
+		# For new documents, Items are created in validate() and before_insert()
+		if not self.is_new() and self.items:
+			# For existing documents, just ensure item_code is set
 			self.set_item_code()
+		
+		# Process additional operations if Load Plan exists
+		if self.items and self.has_valid_load_plan():
 			self.create_serial_nos()
 			self.set_fields_value()
 			self.update_item_pricing_fields()
@@ -39,9 +356,79 @@ class LoadDispatch(Document):
 			self.set_supplier()
 	def validate(self):
 		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
-		# Only process items if Load Plan exists
+		# CRITICAL: For new documents, create Items BEFORE link validation runs
+		# This must happen in validate() which runs before insert() -> _validate_links()
+		if not self.items:
+			# Calculate total dispatch quantity
+			self.calculate_total_dispatch_quantity()
+			return
+		
+		# For new documents, create Items before link validation
+		if self.is_new():
+			# Process each item: Check if Item exists, create if not, then populate item_code
+			for item in self.items:
+				if not item.model_serial_no or not str(item.model_serial_no).strip():
+					continue
+				
+				item_code = str(item.model_serial_no).strip()
+				
+				# Check if Item exists
+				if frappe.db.exists("Item", item_code):
+					# Item exists - just populate item_code
+					item.item_code = item_code
+					continue
+				
+				# Item doesn't exist - create it
+				try:
+					self._create_single_item_from_dispatch_item(item, item_code)
+					# Clear cache to ensure Item is visible
+					frappe.clear_cache(doctype="Item")
+					# Verify Item was created
+					if not frappe.db.exists("Item", item_code):
+						frappe.throw(
+							_("Item '{0}' was not created for Row #{1}. Please check Error Log.").format(
+								item_code, getattr(item, 'idx', 'Unknown')
+							),
+							title=_("Item Creation Failed")
+						)
+					# Populate item_code after Item is created
+					item.item_code = item_code
+				except Exception as e:
+					# Log error and throw
+					frappe.log_error(
+						f"Failed to create Item {item_code} for Row #{getattr(item, 'idx', 'Unknown')}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+						"Item Creation Error in validate"
+					)
+					frappe.throw(
+						_("Failed to create Item '{0}' for Row #{1}.\n\nError: {2}\n\nPlease check Error Log for details.").format(
+							item_code, getattr(item, 'idx', 'Unknown'), str(e)
+						),
+						title=_("Item Creation Failed")
+					)
+			
+			# Final commit to ensure all Items are in database
+			frappe.db.commit()
+			
+			# Final verification - ensure all Items exist
+			missing_items = []
+			for item in self.items:
+				if item.item_code and str(item.item_code).strip():
+					item_code = str(item.item_code).strip()
+					if not frappe.db.exists("Item", item_code):
+						missing_items.append(f"Row #{item.idx}: {item_code}")
+			
+			if missing_items:
+				frappe.throw(
+					_("CRITICAL ERROR: {0} Item(s) were not created:\n{1}\n\n"
+					  "This will cause link validation to fail. Please check Error Log.").format(
+						len(missing_items),
+						"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
+					),
+					title=_("Item Creation Verification Failed")
+				)
+		
+		# Process items if Load Plan exists (for additional operations)
 		if self.items and self.has_valid_load_plan():
-			self.set_item_code()
 			self.create_serial_nos()
 			self.set_fields_value()
 			self.update_item_pricing_fields()
@@ -225,18 +612,32 @@ class LoadDispatch(Document):
 	
 	def set_item_code(self):
 		"""Populate item_code from model_serial_no for all items."""
-		# Only set item_code if Load Plan exists
-		if not self.has_valid_load_plan():
+		# This works independently of Load Plan - Items are created from model_serial_no
+		if not self.items:
 			return
 		
-		if self.items:
-			for item in self.items:
-				if item.model_serial_no and str(item.model_serial_no).strip():
-					item_code = str(item.model_serial_no).strip()
-					# Check if Item exists, create if it doesn't
-					if not frappe.db.exists("Item", item_code):
-						self.create_items_from_dispatch_items()
-					# Set item_code on the child table item
+		for item in self.items:
+			if not item.model_serial_no or not str(item.model_serial_no).strip():
+				continue
+			
+			item_code = str(item.model_serial_no).strip()
+			
+			# Check if Item exists first
+			if frappe.db.exists("Item", item_code):
+				# Item exists - just populate item_code (no duplicate creation)
+				item.item_code = item_code
+			else:
+				# Item doesn't exist - create it first, then populate item_code
+				try:
+					self._create_single_item_from_dispatch_item(item, item_code)
+					# After Item is created, populate item_code
+					item.item_code = item_code
+				except Exception as e:
+					frappe.log_error(
+						f"Failed to create Item {item_code} in set_item_code: {str(e)}",
+						"Item Creation Error in set_item_code"
+					)
+					# Still set item_code even if creation failed (will fail validation later with clear error)
 					item.item_code = item_code
 	
 	def set_fields_value(self):
@@ -314,7 +715,6 @@ class LoadDispatch(Document):
 			if not hasattr(item, "print_name") or not item.print_name:
 				model_name = getattr(item, "model_name", None)
 				item.print_name = calculate_print_name(item.model_serial_no, model_name)
-
 			item_doc = frappe.get_doc("Item", item_code)
 			updated = False
 
@@ -478,37 +878,81 @@ class LoadDispatch(Document):
 					total_dispatch_quantity += 1
 		self.total_dispatch_quantity = total_dispatch_quantity
 	
+	def _ensure_default_item_group(self):
+		"""Ensure a default Item Group exists. Creates 'Two Wheeler Vehicle' if it doesn't exist."""
+		# Check if "Two Wheeler Vehicle" exists
+		if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
+			return "Two Wheeler Vehicle"
+		
+		# Check if "All Item Groups" exists (standard Frappe parent group)
+		parent_group = "All Item Groups"
+		if not frappe.db.exists("Item Group", parent_group):
+			# Try to find any group that can be a parent
+			parent_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
+			if not parent_group:
+				# No parent group exists - can't create Item Group
+				return None
+		
+		# Create "Two Wheeler Vehicle" Item Group
+		try:
+			default_group = frappe.get_doc({
+				"doctype": "Item Group",
+				"item_group_name": "Two Wheeler Vehicle",
+				"is_group": 0,
+				"parent_item_group": parent_group
+			})
+			default_group.insert(ignore_permissions=True)
+			frappe.db.commit()
+			return "Two Wheeler Vehicle"
+		except Exception as e:
+			# Log error but don't fail - will use fallback logic
+			frappe.log_error(f"Could not create default Item Group 'Two Wheeler Vehicle': {str(e)}", "Item Group Creation Failed")
+			return None
+	
 	def create_items_from_dispatch_items(self):
 		"""
 		Create Items in Item doctype for all load_dispatch_items that have model_serial_no.
 		Populates Supplier and HSN Code from RKG Settings.
+		Can work without Load Plan to allow saving documents before Load Plan is created.
 		"""
-		# Only create items if Load Plan exists
-		if not self.has_valid_load_plan():
-			return
-		
 		if not self.items:
 			return
 		
-		# Fetch RKG Settings data (single doctype)
+		# Ensure default Item Group exists if no Item Groups are found
+		self._ensure_default_item_group()
+		
+		# Fetch RKG Settings data (single doctype) - optional, use defaults if not found
+		rkg_settings = None
 		try:
 			rkg_settings = frappe.get_single("RKG Settings")
 		except frappe.DoesNotExistError:
-			frappe.throw(_("RKG Settings not found. Please create RKG Settings first before submitting Load Dispatch."))
+			# RKG Settings not found - continue with defaults (no supplier/HSN code)
+			pass
 		
 		created_items = []
 		updated_items = []
 		skipped_items = []
+		failed_items = []  # Track Items that failed to create
 		
 		for item in self.items:
-			# Use model_serial_no as the item code
+			# Use model_serial_no as the item code (primary source)
+			# Fall back to item_code if model_serial_no is not set
 			item_code = None
 			if item.model_serial_no and str(item.model_serial_no).strip():
 				item_code = str(item.model_serial_no).strip()
+			elif hasattr(item, 'item_code') and item.item_code and str(item.item_code).strip():
+				# Fallback: use item_code if model_serial_no is not available
+				item_code = str(item.item_code).strip()
 			
 			# Nothing to create if we still don't have a code
 			if not item_code:
 				continue
+			
+			# Ensure item_code is set on the item (in case we used model_serial_no)
+			# This ensures item_code is always set from model_serial_no when available
+			item.item_code = item_code
+			
+			# Note: item_code is set from model_serial_no or existing item_code
 			
 			# Ensure print_name is calculated before creating/updating Item
 			if not hasattr(item, "print_name") or not item.print_name:
@@ -545,24 +989,87 @@ class LoadDispatch(Document):
 						skipped_items.append(item_code)
 					continue
 
-				# Determine item_group - try model_name first, then fall back to parent group
+				# Determine item_group - use model_name as Item Group, create if it doesn't exist
 				item_group = None
-				if item.model_name:
-					# Check if model_name exists as an Item Group
-					if frappe.db.exists("Item Group", item.model_name):
-						item_group = item.model_name
 				
-				# Fall back to parent group "Two Wheeler Vehicle" if model_name not found
+				# First, ensure we have a parent Item Group to use
+				parent_item_group = "All Item Groups"
+				if not frappe.db.exists("Item Group", parent_item_group):
+					# Try to find any group that can be a parent
+					parent_item_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
+					if not parent_item_group:
+						# No parent group exists - this is a critical issue
+						error_msg = _(
+							"No parent Item Group found in the system. Items cannot be created without an Item Group structure.\n\n"
+							"Please ensure 'All Item Groups' exists or create a parent Item Group first."
+						)
+						frappe.log_error(
+							f"Item creation failed for {item_code}: No parent Item Group found",
+							"Item Creation - Missing Parent Item Group"
+						)
+						frappe.throw(error_msg, title=_("Item Group Structure Required"))
+				
+				# Use model_name as Item Group - create it if it doesn't exist
+				if item.model_name and str(item.model_name).strip():
+					model_name = str(item.model_name).strip()
+					if frappe.db.exists("Item Group", model_name):
+						item_group = model_name
+					else:
+						# Create Item Group from model_name
+						try:
+							new_item_group = frappe.get_doc({
+								"doctype": "Item Group",
+								"item_group_name": model_name,
+								"is_group": 0,
+								"parent_item_group": parent_item_group
+							})
+							new_item_group.insert(ignore_permissions=True)
+							frappe.db.commit()
+							item_group = model_name
+							frappe.log_error(
+								f"Created Item Group '{model_name}' for Item {item_code}",
+								"Item Group Auto-Creation"
+							)
+						except Exception as e:
+							# If creation fails, log and fall back to default
+							frappe.log_error(
+								f"Failed to create Item Group '{model_name}': {str(e)}",
+								"Item Group Creation Failed"
+							)
+							# Fall through to default Item Group
+				
+				# Fall back to "Two Wheeler Vehicle" if model_name not available or creation failed
 				if not item_group:
 					if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
 						item_group = "Two Wheeler Vehicle"
 					else:
-						# Last resort: get the first available item group
-						first_group = frappe.db.get_value("Item Group", {"is_group": 0}, "name", order_by="name")
-						if first_group:
-							item_group = first_group
-						else:
-							frappe.throw(_("No Item Group found. Please create an Item Group first."))
+						# Create "Two Wheeler Vehicle" as default
+						try:
+							default_group = frappe.get_doc({
+								"doctype": "Item Group",
+								"item_group_name": "Two Wheeler Vehicle",
+								"is_group": 0,
+								"parent_item_group": parent_item_group
+							})
+							default_group.insert(ignore_permissions=True)
+							frappe.db.commit()
+							item_group = "Two Wheeler Vehicle"
+						except Exception as e:
+							# Last resort: get any available item group
+							any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
+							if any_group:
+								item_group = any_group
+							else:
+								error_msg = _(
+									"Could not create or find an Item Group. Items cannot be created without an Item Group.\n\n"
+									"Error: {0}\n\n"
+									"Please create an Item Group manually and try again."
+								).format(str(e))
+								frappe.log_error(
+									f"Item creation failed for {item_code}: Could not create/find Item Group",
+									"Item Creation - Item Group Error"
+								)
+								frappe.throw(error_msg, title=_("Item Group Required"))
 				
 				# Create new Item
 				item_doc = frappe.get_doc({
@@ -577,7 +1084,7 @@ class LoadDispatch(Document):
 				})
 				
 				# Populate Supplier from RKG Settings (uses default_supplier on the single doctype)
-				if rkg_settings.get("default_supplier"):
+				if rkg_settings and rkg_settings.get("default_supplier"):
 					# Item uses Item Supplier child table
 					if hasattr(item_doc, "supplier_items"):
 						item_doc.append("supplier_items", {
@@ -589,7 +1096,7 @@ class LoadDispatch(Document):
 						item_doc.supplier = rkg_settings.default_supplier
 				
 				# Populate HSN Code from RKG Settings (uses default_hsn_code on the single doctype)
-				if rkg_settings.get("default_hsn_code"):
+				if rkg_settings and rkg_settings.get("default_hsn_code"):
 					# Try common field names for HSN Code
 					if hasattr(item_doc, "gst_hsn_code"):
 						item_doc.gst_hsn_code = rkg_settings.default_hsn_code
@@ -610,15 +1117,26 @@ class LoadDispatch(Document):
 					if hasattr(item_doc, "custom_print_name"):
 						item_doc.custom_print_name = item.print_name
 
+				# Insert Item - this will create the Item in the database
 				item_doc.insert(ignore_permissions=True)
 				created_items.append(item_code)
 				
 			except Exception as e:
+				# Log detailed error but continue creating other Items
+				import traceback
+				error_details = traceback.format_exc()
 				frappe.log_error(
-					f"Error creating Item {item_code}: {str(e)}", 
+					f"Error creating Item {item_code}: {str(e)}\n{error_details}", 
 					"Item Creation Error"
 				)
-				frappe.throw(_("Error creating Item '{0}': {1}").format(item_code, str(e)))
+				# Track failed Items instead of throwing immediately
+				# We'll throw at the end if any Items failed
+				failed_items.append({
+					"item_code": item_code,
+					"error": str(e),
+					"row": getattr(item, 'idx', 'Unknown')
+				})
+				continue  # Continue with next Item
 		
 		# Show summary message
 		if created_items:
@@ -649,6 +1167,27 @@ class LoadDispatch(Document):
 				),
 				indicator="orange",
 				alert=True
+			)
+		
+		# If any Items failed to create, throw comprehensive error
+		if failed_items:
+			failed_list = "\n".join([
+				f"Row #{f['row']}: {f['item_code']} - {f['error']}"
+				for f in failed_items[:20]
+			])
+			if len(failed_items) > 20:
+				failed_list += f"\n... and {len(failed_items) - 20} more"
+			
+			frappe.throw(
+				_("Failed to create {0} Item(s). Please check error logs for details:\n\n{1}\n\n"
+				  "Common causes:\n"
+				  "• Missing Item Group (ensure 'Two Wheeler Vehicle' Item Group exists)\n"
+				  "• Validation errors in Item creation\n"
+				  "• Database constraints").format(
+					len(failed_items),
+					failed_list
+				),
+				title=_("Item Creation Failed")
 			)
 
 
@@ -886,6 +1425,32 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			if not csv_headers:
 				frappe.throw(_("CSV file appears to have no headers. Please ensure the first row contains column headers."))
 			
+			# Detect if this is a Load Plan CSV file (has Load Plan headers)
+			load_plan_headers = [
+				"load reference no", "dispatch plan date", "payment plan date",
+				"model", "model name", "type", "variant", "color", "group color", "option", "quantity"
+			]
+			norm_found_headers = set(norm_csv_headers.keys())
+			load_plan_header_count = sum(1 for h in load_plan_headers if h in norm_found_headers)
+			
+			# If most Load Plan headers are present, this is likely a Load Plan CSV
+			if load_plan_header_count >= 5:
+				frappe.throw(
+					_("This appears to be a <b>Load Plan</b> CSV file, not a <b>Load Dispatch</b> CSV file.\n\n"
+					  "Load Dispatch requires different headers including:\n"
+					  "• HMSI Load Reference No\n"
+					  "• Invoice No\n"
+					  "• Dispatch Date\n"
+					  "• Frame No\n"
+					  "• Engine no\n"
+					  "• Key No\n"
+					  "• Model Serial No\n"
+					  "• Price/Unit\n"
+					  "• And other dispatch-specific fields\n\n"
+					  "<b>Please use a Load Dispatch CSV file</b> with the correct headers, or create a Load Plan first using this file."),
+					title=_("Wrong CSV File Type")
+				)
+			
 			# Check for missing headers using the chosen delimiter (case/space-insensitive)
 			missing_core_headers = []
 			for required_header in required_headers_core:
@@ -1058,7 +1623,8 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 					csv_load_ref = list(csv_load_reference_nos)[0]
 					if csv_load_ref != selected_load_reference_no:
 						frappe.throw(_("Load Reference Number mismatch! You have selected '{0}', but the CSV file contains '{1}'. Please ensure the CSV file matches the selected Load Reference Number.").format(selected_load_reference_no, csv_load_ref))
-			
+			print(rows)
+			print("\n\n")
 			return rows
 		finally:
 			if csvfile:
@@ -1526,3 +2092,400 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	
 	print(f"DEBUG: Load Dispatch '{load_dispatch_name}' updated successfully!")
 	print(f"{'='*60}\n")
+
+
+@frappe.whitelist()
+def process_tabular_file(file_url, selected_load_reference_no=None):
+	"""
+	Process CSV/Excel file and return tabular data.
+	
+	For each row:
+	1. Read Model Serial No (this is the Item Code)
+	2. Check if Item exists with that Item Code (model_serial_no)
+	3. If not, create the Item
+	4. Then set item_code in the row data
+	
+	Args:
+		file_url: URL of the attached file
+		selected_load_reference_no: Optional Load Reference No from form
+	
+	Returns:
+		List of dictionaries, each representing a row with item_code populated
+	"""
+	from frappe.utils import get_site_path
+	
+	try:
+		# Get file path from file_url
+		if file_url.startswith('/files/'):
+			file_path = get_site_path('public', file_url[1:])
+		elif file_url.startswith('/private/files/'):
+			file_path = get_site_path('private', 'files', file_url.split('/')[-1])
+		else:
+			file_path = get_site_path('public', 'files', file_url)
+		
+		# Read file based on extension
+		file_ext = os.path.splitext(file_path)[1].lower()
+		
+		rows = []
+		if file_ext == '.csv':
+			# Read CSV file using Python's csv module
+			with open(file_path, 'r', encoding='utf-8-sig') as f:
+				reader = csv.DictReader(f)
+				rows = list(reader)
+		elif file_ext in ['.xlsx', '.xls']:
+			# Read Excel file using pandas (if available)
+			try:
+				import pandas as pd
+				df = pd.read_excel(file_path)
+				rows = df.to_dict('records')
+			except ImportError:
+				frappe.throw(_("pandas library is required for Excel files. Please install it or use CSV format."))
+		else:
+			frappe.throw(_("Unsupported file format. Please upload CSV or Excel file."))
+		
+		# Normalize column names: create a mapping from various Excel column name formats to standard field names
+		# This handles case-insensitive matching and common variations
+		def normalize_column_name(col_name):
+			"""Normalize column name to handle case-insensitive matching and variations."""
+			if not col_name:
+				return None
+			# Convert to lowercase and strip whitespace
+			normalized = str(col_name).lower().strip()
+			# Remove special characters and normalize spaces
+			normalized = normalized.replace('.', '').replace('_', ' ').replace('-', ' ')
+			# Remove extra spaces
+			normalized = ' '.join(normalized.split())
+			return normalized
+		
+		# Helper function to check if value is empty/NaN
+		def is_empty_value(value):
+			"""Check if value is empty or NaN."""
+			if value is None:
+				return True
+			if isinstance(value, float):
+				try:
+					import math
+					return math.isnan(value)
+				except:
+					return False
+			if isinstance(value, str):
+				return not value.strip()
+			return False
+		
+		# Create mapping from normalized column names to field names
+		column_mapping = {
+			'model serial no': 'model_serial_no',
+			'model serial number': 'model_serial_no',
+			'modelvariant': 'model_variant',
+			'model variant': 'model_variant',
+			'modelname': 'model_name',
+			'model name': 'model_name',
+			'frameno': 'frame_no',
+			'frame no': 'frame_no',
+			'frame number': 'frame_no',
+			'engineno': 'engnie_no_motor_no',
+			'engine no': 'engnie_no_motor_no',
+			'engine number': 'engnie_no_motor_no',
+			'motor no': 'engnie_no_motor_no',
+			'motor number': 'engnie_no_motor_no',
+			'colorno': 'color_code',
+			'color no': 'color_code',
+			'color': 'color_code',
+			'colorcode': 'color_code',
+			'colourno': 'color_code',
+			'colour no': 'color_code',
+			'colour': 'color_code',
+			'colourcode': 'color_code',
+			'invoiceno': 'invoice_no',
+			'invoice no': 'invoice_no',
+			'invoice number': 'invoice_no',
+			'hsncode': 'hsn_code',
+			'hsn code': 'hsn_code',
+			'priceunit': 'price_unit',
+			'price unit': 'price_unit',
+			'price/unit': 'price_unit',
+			'taxrate': 'tax_rate',
+			'tax rate': 'tax_rate',
+			'dispatchdate': 'dispatch_date',
+			'dispatch date': 'dispatch_date',
+			'dor': 'dor',
+			'qty': 'qty',
+			'quantity': 'qty',
+			'unit': 'unit',
+			'keyno': 'key_no',
+			'key no': 'key_no',
+			'batteryno': 'battery_no',
+			'battery no': 'battery_no',
+			'printname': 'print_name',
+			'print name': 'print_name',
+			'hmsi load reference no': 'hmsi_load_reference_no',
+			'hmsi load reference number': 'hmsi_load_reference_no',
+			'load reference no': 'hmsi_load_reference_no',
+			'load reference number': 'hmsi_load_reference_no',
+		}
+		
+		# Helper function to parse and format dates
+		def parse_date(date_value):
+			"""Parse date from various formats and return YYYY-MM-DD format."""
+			if not date_value or is_empty_value(date_value):
+				return None
+			
+			# If already a date object, format it
+			if hasattr(date_value, 'strftime'):
+				return date_value.strftime('%Y-%m-%d')
+			
+			# Convert to string
+			date_str = str(date_value).strip()
+			if not date_str:
+				return None
+			
+			# Try parsing common date formats
+			from frappe.utils import getdate
+			try:
+				# Try Frappe's getdate which handles multiple formats
+				parsed_date = getdate(date_str)
+				return parsed_date.strftime('%Y-%m-%d')
+			except:
+				# If getdate fails, try manual parsing
+				try:
+					# Try MM/DD/YYYY or DD/MM/YYYY format
+					import re
+					# Match patterns like 12/11/2025, 12-11-2025, etc.
+					match = re.match(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', date_str)
+					if match:
+						month, day, year = match.groups()
+						# Assume MM/DD/YYYY format (US format)
+						# If day > 12, it's likely DD/MM/YYYY
+						if int(day) > 12:
+							day, month = month, day  # Swap for DD/MM/YYYY
+						return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+					
+					# Try YYYY-MM-DD format
+					match = re.match(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', date_str)
+					if match:
+						year, month, day = match.groups()
+						return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+				except:
+					pass
+			
+			# If all parsing fails, return None
+			frappe.log_error(f"Could not parse date: {date_str}", "Date Parsing Error")
+			return None
+		
+		# Process each row: Check if Item exists, create if not, then set item_code
+		processed_rows = []
+		for idx, row in enumerate(rows, start=1):
+			# Normalize the row data: map Excel column names to field names
+			normalized_row = {}
+			for excel_col, value in row.items():
+				if is_empty_value(value):
+					continue
+				normalized_col = normalize_column_name(excel_col)
+				if normalized_col and normalized_col in column_mapping:
+					field_name = column_mapping[normalized_col]
+					# Parse dates for date fields
+					if field_name in ['dispatch_date', 'dor']:
+						parsed_date = parse_date(value)
+						if parsed_date:
+							normalized_row[field_name] = parsed_date
+					else:
+						normalized_row[field_name] = value
+				else:
+					# Keep original column name if no mapping found
+					normalized_row[excel_col] = value
+			
+			# Step 1: Get Model Serial No (this is the Item Code)
+			# Try multiple variations
+			model_serial_no = (
+				normalized_row.get('model_serial_no') or
+				row.get('model_serial_no') or 
+				row.get('Model Serial No') or 
+				row.get('MODEL_SERIAL_NO') or
+				row.get('Model Serial No.') or
+				row.get('MODEL_SERIAL_NO.') or
+				row.get('Model Serial Number') or
+				row.get('MODEL_SERIAL_NUMBER')
+			)
+			
+			if not model_serial_no or not str(model_serial_no).strip():
+				# Skip rows without Model Serial No, but still add the normalized row
+				processed_rows.append(normalized_row)
+				continue
+			
+			item_code = str(model_serial_no).strip()
+			
+			# Ensure model_serial_no is in the normalized row
+			normalized_row['model_serial_no'] = item_code
+			
+			# Step 2: Check if Item exists with this Item Code (model_serial_no)
+			if not frappe.db.exists("Item", item_code):
+				# Step 3: Item doesn't exist - create it
+				try:
+					_create_item_from_row_data(normalized_row, item_code)
+					frappe.log_error(f"Created Item {item_code} from row {idx} in process_tabular_file", "Item Creation in process_tabular_file")
+				except Exception as e:
+					frappe.log_error(
+						f"Failed to create Item {item_code} from row {idx}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+						"Item Creation Error in process_tabular_file"
+					)
+					# Continue processing other rows even if one fails
+					# The error will be caught in validate() when saving
+			
+			# Step 4: Set item_code in the row data (this will be used to populate the Link field)
+			normalized_row['item_code'] = item_code
+			processed_rows.append(normalized_row)
+		
+		# Commit all Item creations
+		frappe.db.commit()
+		
+		return processed_rows
+		
+	except Exception as e:
+		frappe.log_error(
+			f"Error processing tabular file {file_url}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+			"process_tabular_file Error"
+		)
+		frappe.throw(_("Error processing file: {0}").format(str(e)))
+
+
+def _create_item_from_row_data(row_data, item_code):
+	"""
+	Create an Item from row data (dictionary from CSV/Excel).
+	
+	Args:
+		row_data: Dictionary containing row data from CSV/Excel
+		item_code: Item Code (from Model Serial No)
+	"""
+	# Get Model Variant (for item_name)
+	model_variant = (
+		row_data.get('model_variant') or 
+		row_data.get('Model Variant') or 
+		row_data.get('MODEL_VARIANT') or 
+		item_code
+	)
+	
+	# Get Model Name (for item_group)
+	model_name = (
+		row_data.get('model_name') or 
+		row_data.get('Model Name') or 
+		row_data.get('MODEL_NAME')
+	)
+	
+	# Get or create Item Group from Model Name
+	item_group = _get_or_create_item_group_from_name(model_name)
+	
+	# Fetch HSN Code from RKG Settings (REQUIRED)
+	rkg_settings = None
+	try:
+		rkg_settings = frappe.get_single("RKG Settings")
+	except frappe.DoesNotExistError:
+		frappe.throw(_("RKG Settings not found. Please create RKG Settings and set Default HSN Code."))
+	
+	hsn_code = rkg_settings.get("default_hsn_code")
+	if not hsn_code:
+		frappe.throw(_("Default HSN Code is not set in RKG Settings. Please set it before creating Items."))
+	
+	# Create Item document
+	item_doc = frappe.get_doc({
+		"doctype": "Item",
+		"item_code": item_code,
+		"item_name": str(model_variant).strip() if model_variant else item_code,
+		"item_group": item_group,
+		"stock_uom": "Nos",
+		"is_stock_item": 1,
+		"has_serial_no": 1,
+	})
+	
+	# Set HSN Code - try standard field first, then custom field
+	if hasattr(item_doc, "gst_hsn_code"):
+		item_doc.gst_hsn_code = hsn_code
+	elif hasattr(item_doc, "custom_gst_hsn_code"):
+		item_doc.custom_gst_hsn_code = hsn_code
+	else:
+		# If neither field exists, log warning but continue
+		frappe.log_error(f"HSN Code field not found in Item doctype. Tried: gst_hsn_code, custom_gst_hsn_code", "HSN Code Field Missing")
+	
+	# Insert Item (ignoring permissions as per requirement)
+	item_doc.insert(ignore_permissions=True)
+	
+	# Commit immediately to ensure Item exists
+	frappe.db.commit()
+	
+	# Verify Item was created
+	if not frappe.db.exists("Item", item_code):
+		raise frappe.ValidationError(_("Item '{0}' was not created. Please check Error Log.").format(item_code))
+	
+	return item_doc
+
+
+def _get_or_create_item_group_from_name(model_name):
+	"""
+	Get or create Item Group from Model Name.
+	
+	Args:
+		model_name: Model Name from row data
+	
+	Returns:
+		Item Group name (string)
+	"""
+	# First, ensure we have a parent Item Group
+	parent_item_group = "All Item Groups"
+	if not frappe.db.exists("Item Group", parent_item_group):
+		# Try to find any existing parent group
+		parent_item_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
+		if not parent_item_group:
+			# Create "All Item Groups" if it doesn't exist
+			try:
+				all_groups = frappe.get_doc({
+					"doctype": "Item Group",
+					"item_group_name": "All Item Groups",
+					"is_group": 1
+				})
+				all_groups.insert(ignore_permissions=True)
+				frappe.db.commit()
+				parent_item_group = "All Item Groups"
+			except Exception as e:
+				frappe.log_error(f"Failed to create 'All Item Groups': {str(e)}", "Item Group Creation Failed")
+	
+	# Use model_name as Item Group - create if it doesn't exist
+	if model_name and str(model_name).strip():
+		model_name = str(model_name).strip()
+		if frappe.db.exists("Item Group", model_name):
+			return model_name
+		
+		# Create Item Group from model_name
+		try:
+			new_item_group = frappe.get_doc({
+				"doctype": "Item Group",
+				"item_group_name": model_name,
+				"is_group": 0,
+				"parent_item_group": parent_item_group
+			})
+			new_item_group.insert(ignore_permissions=True)
+			frappe.db.commit()
+			return model_name
+		except Exception as e:
+			frappe.log_error(f"Failed to create Item Group '{model_name}': {str(e)}", "Item Group Creation Failed")
+			# Fall through to default
+	
+	# Fall back to "Two Wheeler Vehicle"
+	if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
+		return "Two Wheeler Vehicle"
+	
+	# Create "Two Wheeler Vehicle" as default
+	try:
+		default_group = frappe.get_doc({
+			"doctype": "Item Group",
+			"item_group_name": "Two Wheeler Vehicle",
+			"is_group": 0,
+			"parent_item_group": parent_item_group
+		})
+		default_group.insert(ignore_permissions=True)
+		frappe.db.commit()
+		return "Two Wheeler Vehicle"
+	except Exception as e:
+		# Last resort: get any available item group
+		any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
+		if any_group:
+			return any_group
+		frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
