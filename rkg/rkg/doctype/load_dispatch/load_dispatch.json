@@ -8,14 +8,15 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_885c",
-  "dispatch_no",
   "load_reference_no",
   "invoice_no",
   "amended_from",
-  "load_dispatch_file_attach",
   "column_break_jxwc",
+  "dispatch_no",
   "import_data_from_file",
   "status",
+  "column_break_pqyz",
+  "load_dispatch_file_attach",
   "section_break_bhgj",
   "items",
   "section_break_ugzt",
@@ -135,6 +136,10 @@
    "label": "Total Billed Quantity",
    "no_copy": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_pqyz",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
@@ -142,7 +147,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 3,
- "modified": "2025-12-16 12:58:10.322626",
+ "modified": "2025-12-16 16:40:00.381486",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch",

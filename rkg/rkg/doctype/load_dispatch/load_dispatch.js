@@ -27,7 +27,7 @@ frappe.ui.form.on("Load Dispatch", {
 					td[data-fieldname="rate"] input,
 					td[data-fieldname="rate"] .control-value {
 						font-size: 14px !important;
-						color: #d32f2f !important;
+						color: #2e7d32 !important;
 					}
 				`)
 				.appendTo('head');
