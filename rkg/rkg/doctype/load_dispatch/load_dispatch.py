@@ -210,30 +210,30 @@ class LoadDispatch(Document):
 		"""
 		Hook called before inserting new Load Dispatch document.
 		
-		Items should already be created in validate() method which runs before this hook.
-		This method serves as a final verification step to ensure all Items exist
-		before Frappe's link validation runs.
+		Note: Items are NOT created here - they are created on submit (on_submit hook).
+		This method only verifies that if item_code is set, the Item exists.
+		Rows without item_code will have Items created on submit.
 		"""
 		if not self.items:
 			return
 		
-		# Final verification: Ensure all item_codes have corresponding Items
+		# Final verification: Ensure all set item_codes have corresponding Items
 		# This prevents link validation errors
+		# Note: item_code can be None/blank - those will be handled on submit
 		missing_items = []
 		for item in self.items:
 			if item.item_code and str(item.item_code).strip():
 				item_code = str(item.item_code).strip()
 				if not frappe.db.exists("Item", item_code):
-					missing_items.append(f"Row #{getattr(item, 'idx', 'Unknown')}: {item_code}")
+					missing_items.append(f"Row #{getattr(item, 'idx', 'Unknown')}: Item '{item_code}' does not exist")
 		
 		if missing_items:
 			frappe.throw(
-				_("CRITICAL ERROR: {0} Item(s) are missing before insert:\n{1}\n\n"
-				  "Items should have been created in validate(). Please check Error Log.").format(
-					len(missing_items),
+				_("The following Items do not exist:\n{0}\n\n"
+				  "Items will be created on submit if they have Model Serial No.").format(
 					"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
 				),
-				title=_("Item Verification Failed")
+				title=_("Invalid Item Codes")
 			)
 	
 	def validate(self):
@@ -354,78 +354,95 @@ class LoadDispatch(Document):
 			self.update_item_pricing_fields()
 			self.set_item_group()
 			self.set_supplier()
+	
+	def on_submit(self):
+		"""
+		On submit, create Items for rows that don't have item_code but have model_serial_no.
+		Items are NOT created during Excel upload - only on submit.
+		"""
+		if not self.items:
+			return
+		
+		# Loop through all child table rows
+		for item in self.items:
+			# If item_code is already present → skip
+			if item.item_code and str(item.item_code).strip():
+				continue
+			
+			# If item_code is empty AND model_serial_no is present
+			if not item.model_serial_no or not str(item.model_serial_no).strip():
+				continue
+			
+			item_code = str(item.model_serial_no).strip()
+			
+			# Check if Item exists with item_code = model_serial_no
+			if frappe.db.exists("Item", item_code):
+				# Item exists → set item_code
+				item.item_code = item_code
+			else:
+				# Item does NOT exist → create Item
+				try:
+					self._create_single_item_from_dispatch_item(item, item_code)
+					# Clear cache and commit
+					frappe.clear_cache(doctype="Item")
+					frappe.db.commit()
+					
+					# Verify Item was created
+					if frappe.db.exists("Item", item_code):
+						# Set item_code after Item is created
+						item.item_code = item_code
+					else:
+						frappe.throw(
+							_("Item '{0}' was not created for Row #{1} on submit. Please check Error Log.").format(
+								item_code, getattr(item, 'idx', 'Unknown')
+							),
+							title=_("Item Creation Failed on Submit")
+						)
+				except Exception as e:
+					# Log error and throw
+					frappe.log_error(
+						f"Failed to create Item {item_code} for Row #{getattr(item, 'idx', 'Unknown')} on submit: {str(e)}\nTraceback: {frappe.get_traceback()}",
+						"Item Creation Error on Submit"
+					)
+					frappe.throw(
+						_("Failed to create Item '{0}' for Row #{1} on submit.\n\nError: {2}\n\nPlease check Error Log for details.").format(
+							item_code, getattr(item, 'idx', 'Unknown'), str(e)
+						),
+						title=_("Item Creation Failed on Submit")
+					)
+		
+		# Final verification: Ensure all rows with model_serial_no have item_code
+		missing_items = []
+		for item in self.items:
+			if item.model_serial_no and str(item.model_serial_no).strip():
+				item_code = str(item.model_serial_no).strip()
+				if not item.item_code or not str(item.item_code).strip():
+					missing_items.append(f"Row #{getattr(item, 'idx', 'Unknown')}: Model Serial No '{item_code}'")
+		
+		if missing_items:
+			frappe.throw(
+				_("CRITICAL ERROR: {0} row(s) have Model Serial No but no Item Code after submit:\n{1}\n\n"
+				  "Items should have been created. Please check Error Log.").format(
+					len(missing_items),
+					"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
+				),
+				title=_("Item Code Missing After Submit")
+			)
+	
 	def validate(self):
-		"""Ensure linked Load Plan exists and is submitted before creating Load Dispatch."""
-		# CRITICAL: For new documents, create Items BEFORE link validation runs
-		# This must happen in validate() which runs before insert() -> _validate_links()
+		"""
+		Validate Load Dispatch.
+		Note: Items are NOT created here - they are created on submit (on_submit hook).
+		During Excel upload, item_code is only set if Item already exists.
+		"""
 		if not self.items:
 			# Calculate total dispatch quantity
 			self.calculate_total_dispatch_quantity()
 			return
 		
-		# For new documents, create Items before link validation
-		if self.is_new():
-			# Process each item: Check if Item exists, create if not, then populate item_code
-			for item in self.items:
-				if not item.model_serial_no or not str(item.model_serial_no).strip():
-					continue
-				
-				item_code = str(item.model_serial_no).strip()
-				
-				# Check if Item exists
-				if frappe.db.exists("Item", item_code):
-					# Item exists - just populate item_code
-					item.item_code = item_code
-					continue
-				
-				# Item doesn't exist - create it
-				try:
-					self._create_single_item_from_dispatch_item(item, item_code)
-					# Clear cache to ensure Item is visible
-					frappe.clear_cache(doctype="Item")
-					# Verify Item was created
-					if not frappe.db.exists("Item", item_code):
-						frappe.throw(
-							_("Item '{0}' was not created for Row #{1}. Please check Error Log.").format(
-								item_code, getattr(item, 'idx', 'Unknown')
-							),
-							title=_("Item Creation Failed")
-						)
-					# Populate item_code after Item is created
-					item.item_code = item_code
-				except Exception as e:
-					# Log error and throw
-					frappe.log_error(
-						f"Failed to create Item {item_code} for Row #{getattr(item, 'idx', 'Unknown')}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-						"Item Creation Error in validate"
-					)
-					frappe.throw(
-						_("Failed to create Item '{0}' for Row #{1}.\n\nError: {2}\n\nPlease check Error Log for details.").format(
-							item_code, getattr(item, 'idx', 'Unknown'), str(e)
-						),
-						title=_("Item Creation Failed")
-					)
-			
-			# Final commit to ensure all Items are in database
-			frappe.db.commit()
-			
-			# Final verification - ensure all Items exist
-			missing_items = []
-			for item in self.items:
-				if item.item_code and str(item.item_code).strip():
-					item_code = str(item.item_code).strip()
-					if not frappe.db.exists("Item", item_code):
-						missing_items.append(f"Row #{item.idx}: {item_code}")
-			
-			if missing_items:
-				frappe.throw(
-					_("CRITICAL ERROR: {0} Item(s) were not created:\n{1}\n\n"
-					  "This will cause link validation to fail. Please check Error Log.").format(
-						len(missing_items),
-						"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
-					),
-					title=_("Item Creation Verification Failed")
-				)
+		# For rows with item_code set, verify the Item exists (link validation will handle this)
+		# For rows without item_code, they will be handled on submit
+		# No Item creation happens here - only validation of existing item_codes
 		
 		# Process items if Load Plan exists (for additional operations)
 		if self.items and self.has_valid_load_plan():
@@ -2318,25 +2335,36 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			normalized_row['model_serial_no'] = item_code
 			
 			# Step 2: Check if Item exists with this Item Code (model_serial_no)
-			if not frappe.db.exists("Item", item_code):
-				# Step 3: Item doesn't exist - create it
+			if frappe.db.exists("Item", item_code):
+				# Item exists - set item_code in the row data
+				normalized_row['item_code'] = item_code
+			else:
+				# Item does NOT exist - create it now
 				try:
+					# Create Item from row data
 					_create_item_from_row_data(normalized_row, item_code)
-					frappe.log_error(f"Created Item {item_code} from row {idx} in process_tabular_file", "Item Creation in process_tabular_file")
+					# Clear cache to ensure Item is visible
+					frappe.clear_cache(doctype="Item")
+					# Verify Item was created
+					if frappe.db.exists("Item", item_code):
+						# Item created successfully - set item_code in the row data
+						normalized_row['item_code'] = item_code
+					else:
+						# Item creation failed - log error but continue
+						frappe.log_error(
+							f"Item '{item_code}' was not created after calling _create_item_from_row_data. Row index: {idx}",
+							"Item Creation Failed in process_tabular_file"
+						)
+						normalized_row['item_code'] = None
 				except Exception as e:
+					# Log error but continue processing other rows
 					frappe.log_error(
-						f"Failed to create Item {item_code} from row {idx}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+						f"Failed to create Item '{item_code}' for row {idx}: {str(e)}\nTraceback: {frappe.get_traceback()}",
 						"Item Creation Error in process_tabular_file"
 					)
-					# Continue processing other rows even if one fails
-					# The error will be caught in validate() when saving
+					normalized_row['item_code'] = None
 			
-			# Step 4: Set item_code in the row data (this will be used to populate the Link field)
-			normalized_row['item_code'] = item_code
 			processed_rows.append(normalized_row)
-		
-		# Commit all Item creations
-		frappe.db.commit()
 		
 		return processed_rows
 		
