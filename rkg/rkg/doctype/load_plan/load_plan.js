@@ -95,7 +95,8 @@ function handle_load_plan_file_import(frm, file_url) {
 					},
 					function() {
 						// No - Use single Load Plan (current form)
-						_populate_single_load_plan(frm, r.message);
+						// Ask user which Load Reference Number to use
+						_select_load_reference_for_single_plan(frm, r.message, Array.from(unique_load_refs));
 					}
 				);
 			} else {
@@ -174,6 +175,49 @@ function _create_load_plans_from_file(frm, file_url, create_multiple) {
 			}, 5);
 		}
 	});
+}
+
+function _select_load_reference_for_single_plan(frm, rows, load_reference_list) {
+	// Show dialog to select which Load Reference Number to use
+	const dialog = new frappe.ui.Dialog({
+		title: __("Select Load Reference Number"),
+		fields: [
+			{
+				label: __("Load Reference Number"),
+				fieldname: "selected_load_ref",
+				fieldtype: "Select",
+				options: load_reference_list.join("\n"),
+				reqd: 1,
+				default: load_reference_list[0] // Default to first one
+			}
+		],
+		primary_action_label: __("Import"),
+		primary_action(values) {
+			const selected_load_ref = values.selected_load_ref;
+			// Filter rows to only include the selected Load Reference Number
+			const filtered_rows = rows.filter(function(row) {
+				return row.load_reference_no && String(row.load_reference_no).trim() === String(selected_load_ref).trim();
+			});
+			
+			console.log("Load Plan Import: Selected Load Reference Number =", selected_load_ref);
+			console.log("Load Plan Import: Filtered rows count =", filtered_rows.length, "out of", rows.length);
+			
+			if (filtered_rows.length === 0) {
+				frappe.msgprint({
+					title: __("No Data Found"),
+					message: __("No rows found for Load Reference Number: {0}", [selected_load_ref]),
+					indicator: "orange"
+				});
+				dialog.hide();
+				return;
+			}
+			
+			dialog.hide();
+			_populate_single_load_plan(frm, filtered_rows);
+		}
+	});
+	
+	dialog.show();
 }
 
 function _populate_single_load_plan(frm, rows) {
