@@ -7,10 +7,39 @@ frappe.ui.form.on("Load Dispatch", {
 			frm._original_load_reference_no = frm.doc.load_reference_no;
 		}
 		
+		// Add custom CSS stylesheet if not already added
+		if (!$('#load-dispatch-custom-styles').length) {
+			$('<style id="load-dispatch-custom-styles">')
+				.text(`
+					/* Custom styling for Load Dispatch Item fields */
+					[data-fieldname="print_name"] input,
+					[data-fieldname="print_name"] .control-value,
+					[data-fieldname="print_name"] .grid-value,
+					td[data-fieldname="print_name"] input,
+					td[data-fieldname="print_name"] .control-value {
+						font-size: 14px !important;
+						color: #2e7d32 !important;
+					}
+					
+					[data-fieldname="rate"] input,
+					[data-fieldname="rate"] .control-value,
+					[data-fieldname="rate"] .grid-value,
+					td[data-fieldname="rate"] input,
+					td[data-fieldname="rate"] .control-value {
+						font-size: 14px !important;
+						color: #d32f2f !important;
+					}
+				`)
+				.appendTo('head');
+		}
+		
 		// Show item_code field - it will be populated on save
 		if (frm.fields_dict.items && frm.fields_dict.items.grid) {
 			// Always show the field (it will be populated from model_serial_no on save)
 			frm.fields_dict.items.grid.update_docfield_property("item_code", "hidden", false);
+			
+			// Apply custom styling to print_name and rate fields in child table
+			apply_custom_field_styling(frm);
 		}
 		if(frm.doc.docstatus==1){
 			frm.add_custom_button(__("Purchase Order"),frm.cscript["Create Purchase Order"], __("Create"));
@@ -88,6 +117,9 @@ frappe.ui.form.on("Load Dispatch", {
 								});
 								
 								frm.refresh_field("items");
+								
+								// Apply custom styling to print_name and rate fields after import
+								setTimeout(() => apply_custom_field_styling(frm), 200);
 								
 								// Map values from first imported row to parent fields
 								const first_row = r.message[0] || {};
@@ -176,6 +208,49 @@ function calculate_total_dispatch_quantity(frm) {
 	frm.set_value("total_dispatch_quantity", total_dispatch_quantity);
 }
 
+// Apply custom CSS styling to print_name and rate fields in child table
+// Note: CSS stylesheet is added in refresh() function, this function ensures styling is applied after grid renders
+function apply_custom_field_styling(frm) {
+	if (!frm.fields_dict.items || !frm.fields_dict.items.grid) {
+		return;
+	}
+	
+	const grid = frm.fields_dict.items.grid;
+	
+	// Function to force re-application of styles (CSS should handle most of it, but this ensures it works)
+	const ensureStyling = function() {
+		// The CSS stylesheet should handle styling, but we can add classes or force style if needed
+		$(grid.wrapper).find('[data-fieldname="print_name"]').addClass('custom-print-name');
+		$(grid.wrapper).find('[data-fieldname="rate"]').addClass('custom-rate');
+	};
+	
+	// Apply with delays to catch grid rendering at different stages
+	setTimeout(ensureStyling, 100);
+	setTimeout(ensureStyling, 300);
+	setTimeout(ensureStyling, 500);
+	
+	// Apply styling when grid is refreshed/re-rendered
+	if (grid.wrapper) {
+		grid.wrapper.on('render', function() {
+			setTimeout(ensureStyling, 100);
+		});
+	}
+	
+	// Use MutationObserver to watch for DOM changes in the grid
+	if (typeof MutationObserver !== 'undefined' && grid.wrapper && grid.wrapper[0]) {
+		const observer = new MutationObserver(function(mutations) {
+			ensureStyling();
+		});
+		
+		observer.observe(grid.wrapper[0], {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeFilter: ['class', 'data-fieldname']
+		});
+	}
+}
+
 // Recalculate when frame_no changes in child table
 frappe.ui.form.on("Load Dispatch Item", {
 	frame_no: function(frm) {
@@ -203,6 +278,8 @@ frappe.ui.form.on("Load Dispatch Item", {
 			row.rate = 0;
 			frm.refresh_field("rate", row.name, "items");
 		}
+		// Reapply styling after rate field refresh
+		setTimeout(() => apply_custom_field_styling(frm), 50);
 	},
 	model_serial_no: function(frm, cdt, cdn) {
 		// Set item_code from model_serial_no and calculate print_name when model_serial_no changes
@@ -221,6 +298,8 @@ frappe.ui.form.on("Load Dispatch Item", {
 			row.item_code = "";
 			frm.refresh_field("item_code", row.name, "items");
 		}
+		// Reapply styling after field refresh
+		setTimeout(() => apply_custom_field_styling(frm), 50);
 	},
 	model_name: function(frm, cdt, cdn) {
 		// Recalculate print_name when model_name changes
@@ -229,6 +308,8 @@ frappe.ui.form.on("Load Dispatch Item", {
 			row.print_name = calculate_print_name_from_model_serial(row.model_serial_no, row.model_name);
 			frm.refresh_field("print_name", row.name, "items");
 		}
+		// Reapply styling after field refresh
+		setTimeout(() => apply_custom_field_styling(frm), 50);
 	},
 	items_remove: function(frm) {
 		calculate_total_dispatch_quantity(frm);
