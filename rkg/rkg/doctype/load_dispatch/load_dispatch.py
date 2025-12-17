@@ -1790,15 +1790,38 @@ def preserve_purchase_order_uom(doc, method=None):
 	Preserve UOM from Load Dispatch Item's unit field when Purchase Order is validated.
 	This ensures UOM doesn't get converted to Item's stock_uom during validation.
 	"""
+	preserve_uom_from_load_dispatch(doc, "Purchase Order")
+
+@frappe.whitelist()
+def preserve_purchase_receipt_uom(doc, method=None):
+	"""
+	Preserve UOM from Load Dispatch Item's unit field when Purchase Receipt is validated.
+	This ensures UOM doesn't get converted to Item's stock_uom during validation.
+	"""
+	preserve_uom_from_load_dispatch(doc, "Purchase Receipt")
+
+@frappe.whitelist()
+def preserve_purchase_invoice_uom(doc, method=None):
+	"""
+	Preserve UOM from Load Dispatch Item's unit field when Purchase Invoice is validated.
+	This ensures UOM doesn't get converted to Item's stock_uom during validation.
+	"""
+	preserve_uom_from_load_dispatch(doc, "Purchase Invoice")
+
+def preserve_uom_from_load_dispatch(doc, doctype_name):
+	"""
+	Generic function to preserve UOM from Load Dispatch Item's unit field.
+	Works for Purchase Order, Purchase Receipt, and Purchase Invoice.
+	"""
 	if not doc.items:
 		return
 	
-	# Check if Purchase Order was created from Load Dispatch
+	# Check if document was created from Load Dispatch
 	load_dispatch_name = None
 	if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch:
 		load_dispatch_name = doc.custom_load_dispatch
-	elif frappe.db.has_column("Purchase Order", "custom_load_dispatch"):
-		load_dispatch_name = frappe.db.get_value("Purchase Order", doc.name, "custom_load_dispatch")
+	elif frappe.db.has_column(doctype_name, "custom_load_dispatch"):
+		load_dispatch_name = frappe.db.get_value(doctype_name, doc.name, "custom_load_dispatch")
 	
 	if not load_dispatch_name:
 		return
@@ -1816,16 +1839,16 @@ def preserve_purchase_order_uom(doc, method=None):
 			if ld_item.item_code and hasattr(ld_item, "unit") and ld_item.unit:
 				item_uom_map[ld_item.item_code] = str(ld_item.unit).strip()
 	
-	# Update Purchase Order Items with UOM from Load Dispatch
+	# Update document Items with UOM from Load Dispatch
 	if item_uom_map:
-		for po_item in doc.items:
-			if po_item.item_code and po_item.item_code in item_uom_map:
-				uom_value = item_uom_map[po_item.item_code]
+		for doc_item in doc.items:
+			if doc_item.item_code and doc_item.item_code in item_uom_map:
+				uom_value = item_uom_map[doc_item.item_code]
 				# Set UOM if it's different from what's currently set
-				if hasattr(po_item, "uom") and po_item.uom != uom_value:
-					po_item.uom = uom_value
-				if hasattr(po_item, "stock_uom") and po_item.stock_uom != uom_value:
-					po_item.stock_uom = uom_value
+				if hasattr(doc_item, "uom") and doc_item.uom != uom_value:
+					doc_item.uom = uom_value
+				if hasattr(doc_item, "stock_uom") and doc_item.stock_uom != uom_value:
+					doc_item.stock_uom = uom_value
 
 @frappe.whitelist()
 def create_purchase_receipt(source_name, target_doc=None):
@@ -1836,6 +1859,12 @@ def create_purchase_receipt(source_name, target_doc=None):
 		target.flags.ignore_permissions = True
 		# Set load_reference_no from source
 		target.custom_load_reference_no = source.load_reference_no
+		
+		# Set custom_load_dispatch on Purchase Receipt so it can be tracked
+		if hasattr(target, "custom_load_dispatch"):
+			target.custom_load_dispatch = source_name
+		elif frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
+			target.db_set("custom_load_dispatch", source_name)
 		
 		# Set supplier and gst_hsn_code from RKG Settings on parent document
 		try:
@@ -1860,14 +1889,22 @@ def create_purchase_receipt(source_name, target_doc=None):
 		# Set quantity to 1
 		target.qty = 1
 		
-		# Ensure UOM matches the Item's stock UOM
-		if target.item_code:
-			stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
-			if stock_uom:
-				if hasattr(target, "uom"):
-					target.uom = stock_uom
-				if hasattr(target, "stock_uom"):
-					target.stock_uom = stock_uom
+		# Get UOM from Load Dispatch Item's unit field (prioritize this), or from Item's stock_uom, default to "Pcs"
+		uom_value = "Pcs"  # Default
+		if hasattr(source, "unit") and source.unit:
+			# Prioritize Load Dispatch Item's unit field
+			uom_value = str(source.unit).strip()
+		elif target.item_code:
+			# Fallback to Item's stock_uom if unit is not set in Load Dispatch Item
+			item_stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
+			if item_stock_uom:
+				uom_value = item_stock_uom
+		
+		# Set UOM for Purchase Receipt Item - set both uom and stock_uom to ensure consistency
+		if hasattr(target, "uom"):
+			target.uom = uom_value
+		if hasattr(target, "stock_uom"):
+			target.stock_uom = uom_value
 		
 		# Set item_group from source if available, otherwise get from Item
 		if source.item_group:
@@ -1920,6 +1957,12 @@ def create_purchase_invoice(source_name, target_doc=None):
 		# Set load_reference_no from source
 		target.custom_load_reference_no = source.load_reference_no
 		
+		# Set custom_load_dispatch on Purchase Invoice so it can be tracked
+		if hasattr(target, "custom_load_dispatch"):
+			target.custom_load_dispatch = source_name
+		elif frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
+			target.db_set("custom_load_dispatch", source_name)
+		
 		# Set supplier and gst_hsn_code from RKG Settings on parent document
 		try:
 			rkg_settings = frappe.get_single("RKG Settings")
@@ -1943,14 +1986,22 @@ def create_purchase_invoice(source_name, target_doc=None):
 		# Set quantity to 1
 		target.qty = 1
 		
-		# Ensure UOM matches the Item's stock UOM
-		if target.item_code:
-			stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
-			if stock_uom:
-				if hasattr(target, "uom"):
-					target.uom = stock_uom
-				if hasattr(target, "stock_uom"):
-					target.stock_uom = stock_uom
+		# Get UOM from Load Dispatch Item's unit field (prioritize this), or from Item's stock_uom, default to "Pcs"
+		uom_value = "Pcs"  # Default
+		if hasattr(source, "unit") and source.unit:
+			# Prioritize Load Dispatch Item's unit field
+			uom_value = str(source.unit).strip()
+		elif target.item_code:
+			# Fallback to Item's stock_uom if unit is not set in Load Dispatch Item
+			item_stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
+			if item_stock_uom:
+				uom_value = item_stock_uom
+		
+		# Set UOM for Purchase Invoice Item - set both uom and stock_uom to ensure consistency
+		if hasattr(target, "uom"):
+			target.uom = uom_value
+		if hasattr(target, "stock_uom"):
+			target.stock_uom = uom_value
 		
 		# Set item_group from source if available, otherwise get from Item
 		if source.item_group:

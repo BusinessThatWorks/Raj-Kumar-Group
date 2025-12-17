@@ -144,6 +144,9 @@ doc_events = {
         ]
     },
     "Purchase Receipt": {
+        "validate": [
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_receipt_uom"
+        ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
@@ -153,6 +156,9 @@ doc_events = {
         ]
     },
     "Purchase Invoice": {
+        "validate": [
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_uom"
+        ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
