@@ -42,8 +42,6 @@ frappe.ui.form.on("Load Dispatch", {
 			apply_custom_field_styling(frm);
 		}
 		if(frm.doc.docstatus==1){
-			frm.add_custom_button(__("Purchase Order"),frm.cscript["Create Purchase Order"], __("Create"));
-			frm.page.set_inner_btn_group_as_primary(__("Create"));
 			frm.add_custom_button(__("Purchase Receipt"),frm.cscript["Create Purchase Receipt"], __("Create"));
 			frm.page.set_inner_btn_group_as_primary(__("Create"));
 			frm.add_custom_button(__("Purchase Invoice"),frm.cscript["Create Purchase Invoice"], __("Create"));
@@ -365,12 +363,6 @@ function calculate_print_name_from_model_serial(model_serial_no, model_name) {
 	
 	// If no model_name, just use serial_part
 	return `${serial_part} (BS-VI)`;
-}
-cur_frm.cscript["Create Purchase Order"] = function(){
-	frappe.model.open_mapped_doc({
-		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_order",
-		frm: cur_frm
-	});
 }
 
 cur_frm.cscript["Create Purchase Receipt"] = function(){

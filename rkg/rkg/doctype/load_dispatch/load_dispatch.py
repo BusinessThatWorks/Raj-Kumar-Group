@@ -1675,124 +1675,6 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 		frappe.log_error(f"Error processing CSV file: {str(e)}", "CSV Import Error")
 		frappe.throw(f"Error processing CSV file: {str(e)}")
 @frappe.whitelist()
-def create_purchase_order(source_name, target_doc=None):
-	"""Create Purchase Order from Load Dispatch"""
-	from frappe.model.mapper import get_mapped_doc
-	
-	def set_missing_values(source, target):
-		target.flags.ignore_permissions = True
-		# Set load_reference_no from source
-		target.custom_load_reference_no = source.load_reference_no
-		
-		# Set custom_load_dispatch on Purchase Order so Purchase Invoices created from PO can be tracked
-		if hasattr(target, "custom_load_dispatch"):
-			target.custom_load_dispatch = source_name
-		elif frappe.db.has_column("Purchase Order", "custom_load_dispatch"):
-			target.db_set("custom_load_dispatch", source_name)
-		
-		# Set supplier and gst_hsn_code from RKG Settings on parent document
-		try:
-			rkg_settings = frappe.get_single("RKG Settings")
-			if rkg_settings.get("default_supplier"):
-				target.supplier = rkg_settings.default_supplier
-			
-			# Set gst_hsn_code from RKG Settings on parent document
-			if rkg_settings.get("default_hsn_code"):
-				# Set gst_hsn_code on Purchase Order
-				if hasattr(target, "gst_hsn_code"):
-					target.gst_hsn_code = rkg_settings.default_hsn_code
-				elif hasattr(target, "custom_gst_hsn_code"):
-					target.custom_gst_hsn_code = rkg_settings.default_hsn_code
-		except frappe.DoesNotExistError:
-			# RKG Settings not found, skip setting supplier and gst_hsn_code
-			pass
-	
-	def update_item(source, target, source_parent):
-		# Map item_code from Load Dispatch Item to Purchase Order Item
-		target.item_code = source.item_code
-		# Set quantity to 1
-		target.qty = 1
-		
-		# Get UOM from Load Dispatch Item's unit field (prioritize this), or from Item's stock_uom, default to "Pcs"
-		uom_value = "Pcs"  # Default
-		if hasattr(source, "unit") and source.unit:
-			# Prioritize Load Dispatch Item's unit field
-			uom_value = str(source.unit).strip()
-		elif target.item_code:
-			# Fallback to Item's stock_uom if unit is not set in Load Dispatch Item
-			item_stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
-			if item_stock_uom:
-				uom_value = item_stock_uom
-		
-		# Set UOM for Purchase Order Item - set both uom and stock_uom to ensure consistency
-		if hasattr(target, "uom"):
-			target.uom = uom_value
-		if hasattr(target, "stock_uom"):
-			target.stock_uom = uom_value
-		
-		# Set a flag to prevent Frappe from overriding the UOM during validation
-		if not hasattr(target, 'flags'):
-			target.flags = type('Flags', (), {})()
-		target.flags.ignore_uom_validation = True
-		
-		# Map rate from Load Dispatch Item to Purchase Order Item
-		if hasattr(source, "rate") and source.rate:
-			target.rate = flt(source.rate)
-		elif hasattr(source, "price_unit") and source.price_unit:
-			# If rate is not set, calculate from price_unit (excluding 18% GST)
-			target.rate = flt(source.price_unit) / 1.18
-		
-		# Set item_group from source if available, otherwise get from Item
-		if source.item_group:
-			# If Purchase Order Item has item_group field, set it
-			if hasattr(target, "item_group"):
-				target.item_group = source.item_group
-		elif target.item_code:
-			# Get item_group from Item doctype
-			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
-			if item_group and hasattr(target, "item_group"):
-				target.item_group = item_group
-
-	doc = get_mapped_doc(
-		"Load Dispatch",  # Source doctype
-		source_name,
-		{
-			"Load Dispatch": {
-				"doctype": "Purchase Order",
-				"validation": {
-					"docstatus": ["=", 1],
-				},
-				"field_map": {
-					"load_reference_no": "load_reference_no"
-				}
-			},
-			"Load Dispatch Item": {
-				"doctype": "Purchase Order Item",
-				"field_map": {
-					"item_code": "item_code",
-					"model_variant": "item_name",
-					"frame_no": "serial_no",
-					"item_group": "item_group",
-					"rate": "rate",
-				},
-				"postprocess": update_item
-			},
-		},
-		target_doc,
-		set_missing_values
-	)
-	
-	return doc
-
-@frappe.whitelist()
-def preserve_purchase_order_uom(doc, method=None):
-	"""
-	Preserve UOM from Load Dispatch Item's unit field when Purchase Order is validated.
-	This ensures UOM doesn't get converted to Item's stock_uom during validation.
-	"""
-	preserve_uom_from_load_dispatch(doc, "Purchase Order")
-
-@frappe.whitelist()
 def preserve_purchase_receipt_uom(doc, method=None):
 	"""
 	Preserve UOM from Load Dispatch Item's unit field when Purchase Receipt is validated.
@@ -1811,7 +1693,7 @@ def preserve_purchase_invoice_uom(doc, method=None):
 def preserve_uom_from_load_dispatch(doc, doctype_name):
 	"""
 	Generic function to preserve UOM from Load Dispatch Item's unit field.
-	Works for Purchase Order, Purchase Receipt, and Purchase Invoice.
+	Works for Purchase Receipt and Purchase Invoice.
 	"""
 	if not doc.items:
 		return
@@ -1851,6 +1733,27 @@ def preserve_uom_from_load_dispatch(doc, doctype_name):
 					doc_item.stock_uom = uom_value
 
 @frappe.whitelist()
+def set_purchase_receipt_serial_batch_fields_readonly(doc, method=None):
+	"""
+	Set "Use Serial No / Batch Fields" to checked on child table items
+	for Purchase Receipts created from Load Dispatch.
+	"""
+	# Check if this Purchase Receipt was created from Load Dispatch
+	load_dispatch_name = None
+	if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch:
+		load_dispatch_name = doc.custom_load_dispatch
+	elif frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
+		load_dispatch_name = frappe.db.get_value("Purchase Receipt", doc.name, "custom_load_dispatch")
+	
+	# Only apply if created from Load Dispatch
+	if load_dispatch_name and doc.items:
+		# Set use_serial_batch_fields to 1 (checked) on all child table items
+		for item in doc.items:
+			if hasattr(item, "use_serial_batch_fields"):
+				if not item.use_serial_batch_fields:
+					item.use_serial_batch_fields = 1
+
+@frappe.whitelist()
 def create_purchase_receipt(source_name, target_doc=None):
 	"""Create Purchase Receipt from Load Dispatch"""
 	from frappe.model.mapper import get_mapped_doc
@@ -1888,6 +1791,10 @@ def create_purchase_receipt(source_name, target_doc=None):
 		target.item_code = source.item_code
 		# Set quantity to 1
 		target.qty = 1
+		
+		# Set "Use Serial No / Batch Fields" to checked by default on child table item
+		if hasattr(target, "use_serial_batch_fields"):
+			target.use_serial_batch_fields = 1
 		
 		# Get UOM from Load Dispatch Item's unit field (prioritize this), or from Item's stock_uom, default to "Pcs"
 		uom_value = "Pcs"  # Default
@@ -2158,37 +2065,6 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		)
 		
 		print(f"DEBUG: Found {len(pi_list)} submitted Purchase Invoice(s) with custom_load_dispatch = {load_dispatch_name}")
-		
-		# Method 2: Also find Purchase Invoices created from Purchase Orders that have custom_load_dispatch
-		# Get Purchase Orders with this Load Dispatch
-		if frappe.db.has_column("Purchase Order", "custom_load_dispatch"):
-			po_list = frappe.get_all(
-				"Purchase Order",
-				filters={
-					"docstatus": 1,
-					"custom_load_dispatch": load_dispatch_name
-				},
-				fields=["name"]
-			)
-			
-			if po_list:
-				po_names = [po.name for po in po_list]
-				# Find Purchase Invoices linked to these Purchase Orders via purchase_order field in items
-				pi_from_po = frappe.db.sql("""
-					SELECT DISTINCT pi.name, pi.total_qty
-					FROM `tabPurchase Invoice` pi
-					INNER JOIN `tabPurchase Invoice Item` pii ON pii.parent = pi.name
-					WHERE pi.docstatus = 1
-					AND pii.purchase_order IN %(po_names)s
-					AND (pi.custom_load_dispatch IS NULL OR pi.custom_load_dispatch = '')
-				""", {"po_names": po_names}, as_dict=True)
-				
-				# Add to pi_list if not already there
-				existing_pi_names = {pi.name for pi in pi_list}
-				for pi_po in pi_from_po:
-					if pi_po.name not in existing_pi_names:
-						pi_list.append(pi_po)
-						print(f"DEBUG: Found Purchase Invoice {pi_po.name} linked via Purchase Order")
 		
 		# Sum total_qty from ALL Purchase Invoices (billing should count all Purchase Invoices)
 		for pi in pi_list:

@@ -43,7 +43,9 @@ app_include_js = "/assets/rkg/js/rkg.js"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {}
+doctype_js = {
+	"Purchase Receipt": "public/js/purchase_receipt.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -138,14 +140,10 @@ doctype_js = {}
 # Hook on document methods and events
 
 doc_events = {
-    "Purchase Order": {
-        "validate": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_order_uom"
-        ]
-    },
     "Purchase Receipt": {
         "validate": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_receipt_uom"
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_receipt_uom",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.set_purchase_receipt_serial_batch_fields_readonly"
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
