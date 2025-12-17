@@ -53,13 +53,21 @@ class LoadDispatch(Document):
 		except frappe.DoesNotExistError:
 			pass
 		
+		# Get UOM from Load Dispatch Item's unit field, default to "Pcs" if not set
+		stock_uom = "Pcs"  # Default to "Pcs"
+		if hasattr(dispatch_item, "unit") and dispatch_item.unit:
+			stock_uom = str(dispatch_item.unit).strip()
+		elif hasattr(dispatch_item, "unit") and not dispatch_item.unit:
+			# If unit field exists but is empty, use default "Pcs"
+			stock_uom = "Pcs"
+		
 		# Create new Item
 		item_doc = frappe.get_doc({
 			"doctype": "Item",
 			"item_code": item_code,
 			"item_name": dispatch_item.model_variant or item_code,
 			"item_group": item_group,
-			"stock_uom": "Nos",
+			"stock_uom": stock_uom,
 			"is_stock_item": 1,
 			"has_serial_no": 1,
 		})
@@ -277,13 +285,21 @@ class LoadDispatch(Document):
 				# Get or create Item Group from Model Name
 				item_group = self._get_or_create_item_group(item.model_name)
 				
+				# Get UOM from Load Dispatch Item's unit field, default to "Pcs" if not set
+				stock_uom = "Pcs"  # Default to "Pcs"
+				if hasattr(item, "unit") and item.unit:
+					stock_uom = str(item.unit).strip()
+				elif hasattr(item, "unit") and not item.unit:
+					# If unit field exists but is empty, use default "Pcs"
+					stock_uom = "Pcs"
+				
 				# Create new Item document
 				item_doc = frappe.get_doc({
 					"doctype": "Item",
 					"item_code": item_code,  # Model Serial No
 					"item_name": item.model_variant or item_code,  # Model Variant
 					"item_group": item_group,  # Model Name (as Item Group)
-					"stock_uom": "Nos",
+					"stock_uom": stock_uom,
 					"is_stock_item": 1,
 					"has_serial_no": 1,
 				})
@@ -1088,13 +1104,21 @@ class LoadDispatch(Document):
 								)
 								frappe.throw(error_msg, title=_("Item Group Required"))
 				
+				# Get UOM from Load Dispatch Item's unit field, default to "Pcs" if not set
+				stock_uom = "Pcs"  # Default to "Pcs"
+				if hasattr(item, "unit") and item.unit:
+					stock_uom = str(item.unit).strip()
+				elif hasattr(item, "unit") and not item.unit:
+					# If unit field exists but is empty, use default "Pcs"
+					stock_uom = "Pcs"
+				
 				# Create new Item
 				item_doc = frappe.get_doc({
 					"doctype": "Item",
 					"item_code": item_code,
 					"item_name": item.model_variant or item_code,
 					"item_group": item_group,
-					"stock_uom": "Nos",  # Adjust as needed
+					"stock_uom": stock_uom,
 					"is_stock_item": 1,
 					"has_serial_no": 1,
 
@@ -1689,11 +1713,27 @@ def create_purchase_order(source_name, target_doc=None):
 		# Set quantity to 1
 		target.qty = 1
 		
-		# Set UOM to "Pcs" for Purchase Order
+		# Get UOM from Load Dispatch Item's unit field (prioritize this), or from Item's stock_uom, default to "Pcs"
+		uom_value = "Pcs"  # Default
+		if hasattr(source, "unit") and source.unit:
+			# Prioritize Load Dispatch Item's unit field
+			uom_value = str(source.unit).strip()
+		elif target.item_code:
+			# Fallback to Item's stock_uom if unit is not set in Load Dispatch Item
+			item_stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
+			if item_stock_uom:
+				uom_value = item_stock_uom
+		
+		# Set UOM for Purchase Order Item - set both uom and stock_uom to ensure consistency
 		if hasattr(target, "uom"):
-			target.uom = "Pcs"
+			target.uom = uom_value
 		if hasattr(target, "stock_uom"):
-			target.stock_uom = "Pcs"
+			target.stock_uom = uom_value
+		
+		# Set a flag to prevent Frappe from overriding the UOM during validation
+		if not hasattr(target, 'flags'):
+			target.flags = type('Flags', (), {})()
+		target.flags.ignore_uom_validation = True
 		
 		# Map rate from Load Dispatch Item to Purchase Order Item
 		if hasattr(source, "rate") and source.rate:
@@ -1743,6 +1783,49 @@ def create_purchase_order(source_name, target_doc=None):
 	)
 	
 	return doc
+
+@frappe.whitelist()
+def preserve_purchase_order_uom(doc, method=None):
+	"""
+	Preserve UOM from Load Dispatch Item's unit field when Purchase Order is validated.
+	This ensures UOM doesn't get converted to Item's stock_uom during validation.
+	"""
+	if not doc.items:
+		return
+	
+	# Check if Purchase Order was created from Load Dispatch
+	load_dispatch_name = None
+	if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch:
+		load_dispatch_name = doc.custom_load_dispatch
+	elif frappe.db.has_column("Purchase Order", "custom_load_dispatch"):
+		load_dispatch_name = frappe.db.get_value("Purchase Order", doc.name, "custom_load_dispatch")
+	
+	if not load_dispatch_name:
+		return
+	
+	# Get Load Dispatch document
+	try:
+		load_dispatch = frappe.get_doc("Load Dispatch", load_dispatch_name)
+	except frappe.DoesNotExistError:
+		return
+	
+	# Create a mapping of item_code to unit from Load Dispatch Items
+	item_uom_map = {}
+	if load_dispatch.items:
+		for ld_item in load_dispatch.items:
+			if ld_item.item_code and hasattr(ld_item, "unit") and ld_item.unit:
+				item_uom_map[ld_item.item_code] = str(ld_item.unit).strip()
+	
+	# Update Purchase Order Items with UOM from Load Dispatch
+	if item_uom_map:
+		for po_item in doc.items:
+			if po_item.item_code and po_item.item_code in item_uom_map:
+				uom_value = item_uom_map[po_item.item_code]
+				# Set UOM if it's different from what's currently set
+				if hasattr(po_item, "uom") and po_item.uom != uom_value:
+					po_item.uom = uom_value
+				if hasattr(po_item, "stock_uom") and po_item.stock_uom != uom_value:
+					po_item.stock_uom = uom_value
 
 @frappe.whitelist()
 def create_purchase_receipt(source_name, target_doc=None):
@@ -2413,13 +2496,18 @@ def _create_item_from_row_data(row_data, item_code):
 	if not hsn_code:
 		frappe.throw(_("Default HSN Code is not set in RKG Settings. Please set it before creating Items."))
 	
+	# Get UOM from row data's unit field, default to "Pcs" if not set
+	stock_uom = "Pcs"  # Default to "Pcs"
+	if row_data.get('unit'):
+		stock_uom = str(row_data.get('unit')).strip()
+	
 	# Create Item document
 	item_doc = frappe.get_doc({
 		"doctype": "Item",
 		"item_code": item_code,
 		"item_name": str(model_variant).strip() if model_variant else item_code,
 		"item_group": item_group,
-		"stock_uom": "Nos",
+		"stock_uom": stock_uom,
 		"is_stock_item": 1,
 		"has_serial_no": 1,
 	})

@@ -138,6 +138,11 @@ doctype_js = {}
 # Hook on document methods and events
 
 doc_events = {
+    "Purchase Order": {
+        "validate": [
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_order_uom"
+        ]
+    },
     "Purchase Receipt": {
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
