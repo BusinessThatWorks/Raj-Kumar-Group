@@ -320,7 +320,7 @@ class SerialBatchVisual {
 					<div class="summary-card serials">
 						<div class="card-icon"><i class="fa fa-barcode"></i></div>
 						<div class="card-value" id="total-serials">0</div>
-						<div class="card-label">Serial Numbers</div>
+						<div class="card-label">Frame Number</div>
 					</div>
 					<div class="summary-card warehouses">
 						<div class="card-icon"><i class="fa fa-warehouse"></i></div>
