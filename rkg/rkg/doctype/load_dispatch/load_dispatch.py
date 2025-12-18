@@ -1737,33 +1737,44 @@ def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
 	Preserve serial_no from Purchase Receipt Item when creating Purchase Invoice from Purchase Receipt.
 	This ensures the serial_no field is populated when Purchase Invoice is created from Purchase Receipt.
 	"""
-	if not doc.items or not doc.purchase_receipt:
+	if not doc.items:
 		return
 	
-	# Get the source Purchase Receipt document
-	try:
-		purchase_receipt = frappe.get_doc("Purchase Receipt", doc.purchase_receipt)
-	except frappe.DoesNotExistError:
-		return
+	# Get unique purchase receipts from items
+	purchase_receipts = set()
+	for item in doc.items:
+		if hasattr(item, "purchase_receipt") and item.purchase_receipt:
+			purchase_receipts.add(item.purchase_receipt)
 	
-	if not purchase_receipt.items:
+	if not purchase_receipts:
 		return
 	
 	# Create a mapping of item_code and idx to serial_no from Purchase Receipt Items
 	# We use both item_code and idx to match items correctly
 	receipt_item_map = {}
-	for pr_item in purchase_receipt.items:
-		if pr_item.item_code and hasattr(pr_item, "serial_no") and pr_item.serial_no:
-			# Use item_code and idx as key to match items
-			key = (pr_item.item_code, pr_item.idx)
-			receipt_item_map[key] = pr_item.serial_no
+	
+	# Process each purchase receipt
+	for pr_name in purchase_receipts:
+		try:
+			purchase_receipt = frappe.get_doc("Purchase Receipt", pr_name)
+			if not purchase_receipt.items:
+				continue
+			
+			for pr_item in purchase_receipt.items:
+				if pr_item.item_code and hasattr(pr_item, "serial_no") and pr_item.serial_no:
+					# Use purchase_receipt, item_code and idx as key to match items
+					key = (pr_name, pr_item.item_code, pr_item.idx)
+					receipt_item_map[key] = pr_item.serial_no
+		except frappe.DoesNotExistError:
+			continue
 	
 	# Update Purchase Invoice Items with serial_no from Purchase Receipt
 	if receipt_item_map:
 		for pi_item in doc.items:
-			if pi_item.item_code:
-				# Try to match by item_code and idx first
-				key = (pi_item.item_code, pi_item.idx)
+			if pi_item.item_code and hasattr(pi_item, "purchase_receipt") and pi_item.purchase_receipt:
+				pr_name = pi_item.purchase_receipt
+				# Try to match by purchase_receipt, item_code and idx first
+				key = (pr_name, pi_item.item_code, pi_item.idx)
 				if key in receipt_item_map:
 					serial_no_value = receipt_item_map[key]
 					if serial_no_value:
@@ -1774,17 +1785,31 @@ def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
 						if hasattr(pi_item, "serial_no"):
 							pi_item.serial_no = serial_no_value
 				else:
-					# Fallback: match by item_code only (first match)
-					for (item_code, idx), serial_no_value in receipt_item_map.items():
-						if item_code == pi_item.item_code:
-							if hasattr(pi_item, "use_serial_batch_fields") and not pi_item.use_serial_batch_fields:
-								pi_item.use_serial_batch_fields = 1
-							if hasattr(pi_item, "serial_no"):
-								pi_item.serial_no = serial_no_value
+					# Fallback: match by purchase_receipt and item_code only (first match)
+					for (pr_key, item_code, idx), serial_no_value in receipt_item_map.items():
+						if pr_key == pr_name and item_code == pi_item.item_code:
+							if serial_no_value:
+								# Set use_serial_batch_fields if not already set
+								if hasattr(pi_item, "use_serial_batch_fields") and not pi_item.use_serial_batch_fields:
+									pi_item.use_serial_batch_fields = 1
+								# Set serial_no
+								if hasattr(pi_item, "serial_no"):
+									pi_item.serial_no = serial_no_value
 							break
 	
-	# Also ensure update_stock is set to 1 if not already set
-	if hasattr(doc, "update_stock") and not doc.update_stock:
+	# Only set update_stock to 1 if the Purchase Invoice is NOT created from a Purchase Receipt
+	# If it's created from PR, stock was already updated and we shouldn't update again
+	# This prevents the validation error: "Stock cannot be updated against Purchase Receipt"
+	has_purchase_receipt = False
+	if doc.items:
+		for item in doc.items:
+			if hasattr(item, "purchase_receipt") and item.purchase_receipt:
+				has_purchase_receipt = True
+				break
+	
+	if not has_purchase_receipt and hasattr(doc, "update_stock") and not doc.update_stock:
+		# Set update_stock to 1 only if not created from Purchase Receipt
+		# This ensures serial_no field is visible when creating directly from Load Dispatch
 		doc.update_stock = 1
 
 @frappe.whitelist()
@@ -1823,6 +1848,20 @@ def create_purchase_receipt(source_name, target_doc=None):
 			target.custom_load_dispatch = source_name
 		elif frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
 			target.db_set("custom_load_dispatch", source_name)
+		
+		# Only set update_stock to 1 if the Purchase Receipt is NOT created from a Purchase Receipt
+		# If it's created from PR, stock was already updated and we shouldn't update again
+		has_purchase_receipt = False
+		if hasattr(target, "items") and target.items:
+			for item in target.items:
+				if hasattr(item, "purchase_receipt") and item.purchase_receipt:
+					has_purchase_receipt = True
+					break
+		
+		if not has_purchase_receipt and hasattr(target, "update_stock"):
+			# Set update_stock to 1 only if not created from Purchase Receipt
+			# This ensures serial_no field is visible when creating directly from Load Dispatch
+			target.update_stock = 1
 		
 		# Set supplier and gst_hsn_code from RKG Settings on parent document
 		try:
@@ -1950,9 +1989,19 @@ def create_purchase_invoice(source_name, target_doc=None):
 		elif frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
 			target.db_set("custom_load_dispatch", source_name)
 		
-		# Set update_stock to 1 to ensure serial_no field is visible
-		# This is required for the depends_on condition: parent.update_stock === 1
-		if hasattr(target, "update_stock"):
+		# Only set update_stock to 1 if the Purchase Invoice is NOT created from a Purchase Receipt
+		# If it's created from PR, stock was already updated and we shouldn't update again
+		# This prevents the validation error: "Stock cannot be updated against Purchase Receipt"
+		has_purchase_receipt = False
+		if hasattr(target, "items") and target.items:
+			for item in target.items:
+				if hasattr(item, "purchase_receipt") and item.purchase_receipt:
+					has_purchase_receipt = True
+					break
+		
+		if not has_purchase_receipt and hasattr(target, "update_stock"):
+			# Set update_stock to 1 only if not created from Purchase Receipt
+			# This ensures serial_no field is visible when creating directly from Load Dispatch
 			target.update_stock = 1
 		
 		# Set supplier and gst_hsn_code from RKG Settings on parent document
