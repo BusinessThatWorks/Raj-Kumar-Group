@@ -44,7 +44,8 @@ app_include_js = "/assets/rkg/js/rkg.js"
 
 # include js in doctype views
 doctype_js = {
-	"Purchase Receipt": "public/js/purchase_receipt.js"
+	"Purchase Receipt": "public/js/purchase_receipt.js",
+	"Purchase Invoice": "public/js/purchase_invoice.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -155,7 +156,8 @@ doc_events = {
     },
     "Purchase Invoice": {
         "validate": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_uom"
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_uom",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_serial_no_from_receipt"
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
