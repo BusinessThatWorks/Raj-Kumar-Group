@@ -503,6 +503,10 @@ class LoadDispatch(Document):
 		# Note: Load Plan validation is done in before_submit to allow saving without Load Plan
 		# This enables importing CSV data first, then creating/submitting Load Plan later
 		
+		# Check for duplicate frame numbers in Serial No doctype from submitted Load Dispatch documents
+		# and skip those items
+		self._filter_duplicate_frame_numbers()
+		
 		# Calculate total dispatch quantity from child table
 		self.calculate_total_dispatch_quantity()
 	
@@ -910,6 +914,109 @@ class LoadDispatch(Document):
 				if item.frame_no and str(item.frame_no).strip():
 					total_dispatch_quantity += 1
 		self.total_dispatch_quantity = total_dispatch_quantity
+	
+	def _filter_duplicate_frame_numbers(self):
+		"""
+		Filter out Load Dispatch Items that have frame numbers already existing 
+		in Serial No doctype from submitted Load Dispatch documents.
+		Shows a message for each skipped item.
+		"""
+		if not self.items:
+			return
+		
+		items_to_remove = []
+		skipped_items = []
+		
+		for item in self.items:
+			# Only check if frame_no and item_code are provided
+			if not item.frame_no:
+				continue
+			
+			frame_no = str(item.frame_no).strip()
+			if not frame_no:
+				continue
+			
+			# Get item_code from model_serial_no or item_code field
+			item_code = None
+			if item.model_serial_no and str(item.model_serial_no).strip():
+				item_code = str(item.model_serial_no).strip()
+			elif hasattr(item, 'item_code') and item.item_code and str(item.item_code).strip():
+				item_code = str(item.item_code).strip()
+			
+			if not item_code:
+				continue
+			
+			# Check if frame number (Serial No) already exists using frappe.db.exists
+			if frappe.db.exists("Serial No", frame_no):
+				# Frame number exists in Serial No doctype
+				# Now check if it's from a submitted Load Dispatch document
+				# We need to find which Load Dispatch Item has this frame_no
+				# and check if the parent Load Dispatch is submitted
+				# Exclude the current document if it exists
+				if self.name:
+					# Existing document - exclude it from the check
+					existing_load_dispatch_item = frappe.db.sql("""
+						SELECT 
+							ldi.name,
+							ldi.frame_no,
+							ldi.item_code,
+							ld.name as load_dispatch_name,
+							ld.docstatus
+						FROM `tabLoad Dispatch Item` ldi
+						INNER JOIN `tabLoad Dispatch` ld ON ldi.parent = ld.name
+						WHERE ldi.frame_no = %s
+							AND ldi.item_code = %s
+							AND ld.docstatus = 1
+							AND ld.name != %s
+					""", (frame_no, item_code, self.name), as_dict=True)
+				else:
+					# New document - check all submitted Load Dispatch documents
+					existing_load_dispatch_item = frappe.db.sql("""
+						SELECT 
+							ldi.name,
+							ldi.frame_no,
+							ldi.item_code,
+							ld.name as load_dispatch_name,
+							ld.docstatus
+						FROM `tabLoad Dispatch Item` ldi
+						INNER JOIN `tabLoad Dispatch` ld ON ldi.parent = ld.name
+						WHERE ldi.frame_no = %s
+							AND ldi.item_code = %s
+							AND ld.docstatus = 1
+					""", (frame_no, item_code), as_dict=True)
+				
+				if existing_load_dispatch_item:
+					# Frame number exists in a submitted Load Dispatch document
+					existing_doc_name = existing_load_dispatch_item[0].get('load_dispatch_name', 'Unknown')
+					items_to_remove.append(item)
+					skipped_items.append({
+						'frame_no': frame_no,
+						'item_code': item_code,
+						'existing_doc': existing_doc_name
+					})
+		
+		# Remove duplicate items from the items list
+		if items_to_remove:
+			for item in items_to_remove:
+				self.remove(item)
+			
+			# Show message for skipped items
+			skipped_messages = []
+			for skipped in skipped_items:
+				skipped_messages.append(
+					_("Frame Number {0} already exists for Item Code {1} in submitted Load Dispatch {2}").format(
+						skipped['frame_no'], skipped['item_code'], skipped['existing_doc']
+					)
+				)
+			
+			frappe.msgprint(
+				_("Skipped {0} item(s) with duplicate frame numbers:\n{1}").format(
+					len(skipped_items),
+					"\n".join(skipped_messages[:10]) + ("\n..." if len(skipped_messages) > 10 else "")
+				),
+				indicator="orange",
+				alert=True
+			)
 	
 	def _ensure_default_item_group(self):
 		"""Ensure a default Item Group exists. Creates 'Two Wheeler Vehicle' if it doesn't exist."""
