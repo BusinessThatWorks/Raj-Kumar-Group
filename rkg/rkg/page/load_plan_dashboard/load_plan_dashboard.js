@@ -139,37 +139,6 @@ class LoadPlanDashboard {
 							<div class="card-value" id="total-billed-qty">0</div>
 							<div class="card-label">Billed Qty</div>
 						</div>
-						<div class="summary-card receive-completion">
-							<div class="card-icon"><i class="fa fa-percentage"></i></div>
-							<div class="card-value" id="receive-completion">0%</div>
-							<div class="card-label">Receive Completion</div>
-						</div>
-						<div class="summary-card bill-completion">
-							<div class="card-icon"><i class="fa fa-percentage"></i></div>
-							<div class="card-value" id="bill-completion">0%</div>
-							<div class="card-label">Bill Completion</div>
-						</div>
-					</div>
-
-					<div class="charts-section">
-						<div class="chart-container">
-							<div class="chart-title">
-								<i class="fa fa-pie-chart"></i> Status Distribution
-							</div>
-							<div id="dispatch-status-chart"></div>
-						</div>
-						<div class="chart-container">
-							<div class="chart-title">
-								<i class="fa fa-chart-line"></i> Dispatch vs Received vs Billed
-							</div>
-							<div id="dispatch-chart"></div>
-						</div>
-						<div class="chart-container">
-							<div class="chart-title">
-								<i class="fa fa-bar-chart"></i> Top Dispatched Models
-							</div>
-							<div id="dispatch-models-chart"></div>
-						</div>
 					</div>
 
 					<div class="dispatches-section">
@@ -317,9 +286,6 @@ class LoadPlanDashboard {
 			callback: (r) => {
 				if (r.message) {
 					this.render_dispatch_summary(r.message.summary || {});
-					this.render_dispatch_status_chart(r.message.status_chart);
-					this.render_dispatch_chart(r.message.dispatch_vs_received);
-					this.render_dispatch_models_chart(r.message.top_models);
 					this.render_dispatch_list(r.message.dispatches);
 				}
 			},
@@ -475,8 +441,6 @@ class LoadPlanDashboard {
 		this.wrapper.find("#total-dispatch-qty").text(format_number(summary.total_dispatch_qty || 0, 0));
 		this.wrapper.find("#total-received-qty").text(format_number(summary.total_received_qty || 0, 0));
 		this.wrapper.find("#total-billed-qty").text(format_number(summary.total_billed_qty || 0, 0));
-		this.wrapper.find("#receive-completion").text(`${format_number(summary.receive_completion || 0, 1)}%`);
-		this.wrapper.find("#bill-completion").text(`${format_number(summary.bill_completion || 0, 1)}%`);
 	}
 
 	render_dispatch_status_chart(data) {
@@ -755,7 +719,7 @@ function add_styles() {
 		.plans-section { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
 		.section-header { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
 		#plan-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-		.plan-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; background: var(--control-bg); box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+		.plan-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; background: var(--control-bg); box-shadow: 0 1px 4px rgba(0,0,0,0.04); margin: 10px; }
 		.plan-card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 		.plan-ref { font-weight: 700; color: var(--heading-color); }
 		.plan-dates { color: var(--text-muted); font-size: 12px; }
