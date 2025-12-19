@@ -100,6 +100,21 @@ def get_load_plan_data(where_clause, params):
 	total_planned_qty = sum(flt(p.total_quantity) for p in plans)
 	total_dispatched_qty = sum(flt(p.load_dispatch_quantity) for p in plans)
 	dispatch_completion = min(flt((total_dispatched_qty / total_planned_qty) * 100) if total_planned_qty else 0, 100)
+	
+	# Get total dispatch quantities and count from submitted Load Dispatch records
+	dispatch_stats = frappe.db.sql(
+		"""
+		SELECT 
+			COUNT(*) as total_submitted_dispatches,
+			COALESCE(SUM(total_dispatch_quantity), 0) as total_dispatch_qty_sum
+		FROM `tabLoad Dispatch`
+		WHERE docstatus = 1
+		""",
+		as_dict=True,
+	)
+	
+	total_submitted_dispatches = dispatch_stats[0].get("total_submitted_dispatches", 0) if dispatch_stats else 0
+	total_dispatch_qty_sum = flt(dispatch_stats[0].get("total_dispatch_qty_sum", 0)) if dispatch_stats else 0
 
 	# Status distribution
 	status_rows = frappe.db.sql(
@@ -192,6 +207,8 @@ def get_load_plan_data(where_clause, params):
 			"total_planned_qty": total_planned_qty,
 			"total_dispatched_qty": total_dispatched_qty,
 			"dispatch_completion": round(dispatch_completion, 1),
+			"total_dispatch_qty_sum": total_dispatch_qty_sum,
+			"total_submitted_dispatches": total_submitted_dispatches,
 		},
 		"status_chart": status_chart,
 		"plan_vs_dispatch": plan_vs_dispatch,

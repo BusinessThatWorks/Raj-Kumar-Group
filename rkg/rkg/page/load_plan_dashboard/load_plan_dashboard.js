@@ -85,15 +85,15 @@ class LoadPlanDashboard {
 						<div class="card-value" id="total-plans">0</div>
 						<div class="card-label">Load Plans</div>
 					</div>
-					<div class="summary-card dispatched">
+					<div class="summary-card dispatched-count">
 						<div class="card-icon"><i class="fa fa-truck-loading"></i></div>
-						<div class="card-value" id="total-dispatched">0</div>
-						<div class="card-label">Dispatched Qty</div>
+						<div class="card-value" id="total-submitted-dispatches">0</div>
+						<div class="card-label">Dispatch</div>
 					</div>
-					<div class="summary-card completion">
-						<div class="card-icon"><i class="fa fa-percentage"></i></div>
-						<div class="card-value" id="dispatch-completion">0%</div>
-						<div class="card-label">Dispatch Completion</div>
+					<div class="summary-card dispatched">
+						<div class="card-icon"><i class="fa fa-cubes"></i></div>
+						<div class="card-value" id="total-dispatch-qty-sum">0</div>
+						<div class="card-label">Total Frames</div>
 					</div>
 				</div>
 
@@ -331,8 +331,8 @@ class LoadPlanDashboard {
 
 	render_summary(summary) {
 		this.wrapper.find("#total-plans").text(summary.total_plans || 0);
-		this.wrapper.find("#total-dispatched").text(format_number(summary.total_dispatched_qty || 0, 0));
-		this.wrapper.find("#dispatch-completion").text(`${format_number(summary.dispatch_completion || 0, 1)}%`);
+		this.wrapper.find("#total-dispatch-qty-sum").text(format_number(summary.total_dispatch_qty_sum || 0, 0));
+		this.wrapper.find("#total-submitted-dispatches").text(summary.total_submitted_dispatches || 0);
 	}
 
 	render_status_chart(data) {
@@ -745,6 +745,7 @@ function add_styles() {
 		.summary-card.plans { border-left-color: #5e64ff; }
 		.summary-card.planned { border-left-color: #26c6da; }
 		.summary-card.dispatched { border-left-color: #00d4aa; }
+		.summary-card.dispatched-count { border-left-color: #ffa726; }
 		.summary-card.completion { border-left-color: #ffa726; }
 
 		.charts-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 20px; }
