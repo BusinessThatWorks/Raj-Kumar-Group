@@ -213,6 +213,39 @@ def update_load_plan_status_from_document(doc, method=None):
 
 
 @frappe.whitelist()
+def get_first_row_for_mandatory_fields(file_url):
+	"""
+	Quickly get the first row from the file to populate mandatory fields immediately.
+	Returns only the first row with parent fields (load_reference_no, dispatch_plan_date, payment_plan_date).
+	This is called immediately when file is attached to prevent validation errors.
+	"""
+	if not file_url:
+		return None
+	
+	try:
+		# Reuse the existing process_tabular_file but only get first row
+		# This ensures consistency with the main processing logic
+		all_rows = process_tabular_file(file_url)
+		if all_rows and len(all_rows) > 0:
+			first_row = all_rows[0]
+			# Return only the mandatory parent fields
+			result = {}
+			if first_row.get("load_reference_no"):
+				result["load_reference_no"] = first_row["load_reference_no"]
+			if first_row.get("dispatch_plan_date"):
+				result["dispatch_plan_date"] = first_row["dispatch_plan_date"]
+			if first_row.get("payment_plan_date"):
+				result["payment_plan_date"] = first_row["payment_plan_date"]
+			return result if result else None
+	except Exception as e:
+		# If processing fails, return None - full processing will handle the error
+		frappe.log_error(f"Error getting first row: {str(e)}", "Load Plan First Row Error")
+		return None
+	
+	return None
+
+
+@frappe.whitelist()
 def process_tabular_file(file_url):
 	"""
 	Read the attached file row-wise (CSV or Excel) and map it to Load Plan Item fields.

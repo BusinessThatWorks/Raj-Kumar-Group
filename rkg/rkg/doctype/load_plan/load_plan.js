@@ -50,12 +50,80 @@ function handle_load_plan_file_import(frm, file_url) {
 		return;
 	}
 
+	// IMMEDIATELY: Make mandatory fields non-mandatory to prevent validation errors
+	// Store original values to restore later
+	if (!frm._original_reqd_storage) {
+		frm._original_reqd_storage = {};
+	}
+	const mandatory_fields = ['load_reference_no', 'dispatch_plan_date', 'payment_plan_date'];
+	mandatory_fields.forEach(function(fieldname) {
+		if (frm.fields_dict[fieldname]) {
+			// Store original reqd value if not already stored
+			if (frm._original_reqd_storage[fieldname] === undefined) {
+				frm._original_reqd_storage[fieldname] = frm.fields_dict[fieldname].df.reqd;
+			}
+			// Make field non-mandatory immediately
+			frm.set_df_property(fieldname, "reqd", 0);
+		}
+	});
+
 	frappe.show_alert({
 		message: __("Processing attached file..."),
 		indicator: "blue"
 	}, 3);
 
-	// First, check if file has multiple Load Reference Numbers
+	// FIRST: Quickly get the first row to populate mandatory fields immediately
+	// This prevents validation errors when file is attached
+	frappe.call({
+		method: "rkg.rkg.doctype.load_plan.load_plan.get_first_row_for_mandatory_fields",
+		args: {
+			file_url: file_url
+		},
+		callback: function(first_row_response) {
+			// Set mandatory fields immediately from first row
+			if (first_row_response && first_row_response.message) {
+				const first_row = first_row_response.message;
+				if (first_row.load_reference_no) {
+					frm.set_value("load_reference_no", first_row.load_reference_no);
+				}
+				if (first_row.dispatch_plan_date) {
+					frm.set_value("dispatch_plan_date", first_row.dispatch_plan_date);
+				}
+				if (first_row.payment_plan_date) {
+					frm.set_value("payment_plan_date", first_row.payment_plan_date);
+				}
+			}
+			
+			// Restore mandatory properties after setting values
+			_restore_mandatory_fields(frm);
+			
+			// NOW: Process the full file
+			_process_full_file(frm, file_url);
+		},
+		error: function(err) {
+			// Restore mandatory properties even on error
+			_restore_mandatory_fields(frm);
+			// Even if first row fails, try full processing
+			_process_full_file(frm, file_url);
+		}
+	});
+}
+
+// Restore mandatory fields after file processing
+function _restore_mandatory_fields(frm) {
+	if (!frm._original_reqd_storage) {
+		return;
+	}
+	
+	Object.keys(frm._original_reqd_storage).forEach(function(fieldname) {
+		if (frm.fields_dict[fieldname] && frm._original_reqd_storage[fieldname] !== undefined) {
+			frm.set_df_property(fieldname, "reqd", frm._original_reqd_storage[fieldname]);
+		}
+	});
+}
+
+function _process_full_file(frm, file_url) {
+	// Process the full file to get all rows
 	frappe.call({
 		method: "rkg.rkg.doctype.load_plan.load_plan.process_tabular_file",
 		args: {
@@ -105,6 +173,8 @@ function handle_load_plan_file_import(frm, file_url) {
 			}
 		},
 		error: function(err) {
+			// Restore mandatory fields on error
+			_restore_mandatory_fields(frm);
 			frappe.show_alert({
 				message: __("Error processing file: {0}", [err.message || "Unknown error"]),
 				indicator: "red"
