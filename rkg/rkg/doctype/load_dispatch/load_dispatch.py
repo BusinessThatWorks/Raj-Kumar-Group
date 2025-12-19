@@ -6,16 +6,7 @@ from frappe import _
 from frappe.utils import flt
 
 # Canonical list of Item custom fieldnames that must be populated.
-ITEM_CUSTOM_FIELDS = [
-	"net_dealer_price",
-	"ex_showroom_price",
-	"dealer_billing_price",
-	"credit_of_gst",
-	"cgst_amount",
-	"sgst_amount",
-	"igst_amount",
-	"gstin",
-]
+ITEM_CUSTOM_FIELDS = []
 
 
 class LoadDispatch(Document):
@@ -729,16 +720,7 @@ class LoadDispatch(Document):
 			print(
 				f"DEBUG pricing sync: row frame={getattr(item, 'frame_no', None)}, "
 				f"item_code={getattr(item, 'item_code', None)}, "
-				f"model_serial_no={getattr(item, 'model_serial_no', None)}, "
-				f"values={{"
-				f"ndp={getattr(item, 'net_dealer_price', None)}, "
-				f"cogst={getattr(item, 'credit_of_gst', None)}, "
-				f"dbp={getattr(item, 'dealer_billing_price', None)}, "
-				f"cgst={getattr(item, 'cgst_amount', None)}, "
-				f"sgst={getattr(item, 'sgst_amount', None)}, "
-				f"igst={getattr(item, 'igst_amount', None)}, "
-				f"exs={getattr(item, 'ex_showroom_price', None)}, "
-				f"gstin={getattr(item, 'gstin', None)}}}"
+				f"model_serial_no={getattr(item, 'model_serial_no', None)}"
 			)
 			item_code = (item.model_serial_no or "").strip()
 			if not item_code:
