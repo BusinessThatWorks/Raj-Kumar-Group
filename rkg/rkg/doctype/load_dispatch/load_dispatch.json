@@ -10,24 +10,25 @@
   "section_break_885c",
   "load_dispatch_file_attach",
   "load_reference_no",
-  "status",
-  "amended_from",
   "column_break_schd",
   "dispatch_no",
   "invoice_no",
-  "section_break_bhgj",
-  "items",
   "section_break_ugzt",
-  "total_dispatch_quantity",
   "total_load_quantity",
+  "total_dispatch_quantity",
   "column_break_sdhz",
   "total_received_quantity",
-  "total_billed_quantity"
+  "total_billed_quantity",
+  "section_break_bhgj",
+  "items",
+  "status",
+  "amended_from"
  ],
  "fields": [
   {
    "fieldname": "section_break_885c",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
   },
   {
    "fieldname": "amended_from",
@@ -59,7 +60,8 @@
   },
   {
    "fieldname": "section_break_bhgj",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Items"
   },
   {
    "fieldname": "items",
@@ -76,7 +78,8 @@
   },
   {
    "fieldname": "section_break_ugzt",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Quantity Summary"
   },
   {
    "bold": 1,
