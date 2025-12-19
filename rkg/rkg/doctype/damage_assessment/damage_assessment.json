@@ -9,8 +9,7 @@
   "basic_info_section",
   "date",
   "column_break_basic",
-  "workflow_state",
-  "amended_from",
+  "load_plan_reference_no",
   "warehouse_section",
   "from_warehouse",
   "stock_entry_type",
@@ -20,10 +19,8 @@
   "damage_items_section",
   "damage_assessment_item",
   "estimation_section",
-  "estimation_date",
-  "column_break_estimation",
   "total_estimated_cost",
-  "estimation_remarks"
+  "amended_from"
  ],
  "fields": [
   {
@@ -44,23 +41,12 @@
    "fieldtype": "Column Break"
   },
   {
-   "allow_on_submit": 1,
-   "fieldname": "workflow_state",
+   "fieldname": "load_plan_reference_no",
    "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Workflow State",
-   "options": "Workflow State",
-   "read_only": 1
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Damage Assessment",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
+   "in_list_view": 1,
+   "label": "Load Plan Reference No",
+   "options": "Load Plan",
+   "reqd": 1
   },
   {
    "collapsible": 1,
@@ -73,13 +59,15 @@
    "fieldname": "from_warehouse",
    "fieldtype": "Link",
    "label": "From Warehouse",
-   "options": "Warehouse"
+   "options": "Warehouse",
+   "reqd": 1
   },
   {
    "fieldname": "stock_entry_type",
    "fieldtype": "Link",
    "label": "Stock Entry Type",
-   "options": "Stock Entry Type"
+   "options": "Stock Entry Type",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_warehouse",
@@ -90,7 +78,8 @@
    "fieldname": "to_warehouse",
    "fieldtype": "Link",
    "label": "To Warehouse",
-   "options": "Warehouse"
+   "options": "Warehouse",
+   "reqd": 1
   },
   {
    "fieldname": "stock_entry",
@@ -114,16 +103,7 @@
   {
    "fieldname": "estimation_section",
    "fieldtype": "Section Break",
-   "label": "Cost Estimation (By Sales Manager)"
-  },
-  {
-   "fieldname": "estimation_date",
-   "fieldtype": "Date",
-   "label": "Estimation Date"
-  },
-  {
-   "fieldname": "column_break_estimation",
-   "fieldtype": "Column Break"
+   "label": "Cost Summary"
   },
   {
    "fieldname": "total_estimated_cost",
@@ -132,15 +112,20 @@
    "read_only": 1
   },
   {
-   "fieldname": "estimation_remarks",
-   "fieldtype": "Small Text",
-   "label": "Estimation Remarks"
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Damage Assessment",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-08 12:40:00.000000",
+ "modified": "2025-12-19 15:33:16.223423",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Damage Assessment",

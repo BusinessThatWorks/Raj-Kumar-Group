@@ -1,7 +1,7 @@
 import frappe
 from frappe.model.document import Document
 from frappe import _
-from frappe.utils import flt, nowdate, now_datetime
+from frappe.utils import flt
 
 
 class DamageAssessment(Document):
@@ -19,7 +19,7 @@ class DamageAssessment(Document):
 	
 	def on_submit(self):
 		"""Actions on submit."""
-		# Only create stock entry if warehouses are specified
+		# Create stock entry if warehouses are specified
 		if self.from_warehouse and self.to_warehouse and self.stock_entry_type:
 			self.create_stock_entry()
 	
@@ -40,13 +40,18 @@ class DamageAssessment(Document):
 		stock_entry.posting_date = self.date or frappe.utils.today()
 		
 		for item in self.damage_assessment_item:
-			if not item.item_code:
+			if not item.serial_no:
 				continue
 			
+			# Get item_code from Serial No
+			item_code = frappe.db.get_value("Serial No", item.serial_no, "item_code")
+			if not item_code:
+				frappe.throw(_("Item Code not found for Serial No: {0}").format(item.serial_no))
+			
 			stock_entry.append("items", {
-				"item_code": item.item_code,
+				"item_code": item_code,
 				"custom_serial_no": item.serial_no,
-				"qty": item.damaged_qty or 1,
+				"qty": 1,
 				"s_warehouse": self.from_warehouse,
 				"t_warehouse": self.to_warehouse,
 			})
@@ -89,141 +94,6 @@ class DamageAssessment(Document):
 			alert=True,
 			indicator="orange"
 		)
-
-
-@frappe.whitelist()
-def force_cancel_damage_assessment(docname):
-	"""
-	Force cancel a Damage Assessment and all its linked documents.
-	Use this when normal cancellation fails.
-	
-	This function:
-	1. Clears references on the Damage Assessment
-	2. Cancels linked Stock Entries
-	3. Cancels the Damage Assessment
-	
-	Args:
-		docname: Name of the Damage Assessment to cancel
-	
-	Returns:
-		dict with status and message
-	"""
-	if not frappe.has_permission("Damage Assessment", "cancel"):
-		frappe.throw(_("Not permitted to cancel Damage Assessment"))
-	
-	doc = frappe.get_doc("Damage Assessment", docname)
-	
-	if doc.docstatus == 2:
-		return {"status": "info", "message": _("Document is already cancelled")}
-	
-	if doc.docstatus == 0:
-		return {"status": "info", "message": _("Document is in draft state, cannot cancel")}
-	
-	try:
-		# Step 1: Get list of Stock Entries to cancel
-		linked_stock_entries = []
-		if doc.stock_entry:
-			linked_stock_entries.append(doc.stock_entry)
-		
-		# Step 2: Clear references on the Damage Assessment side (in DB directly to avoid validation)
-		frappe.db.set_value(
-			"Damage Assessment", docname,
-			{"stock_entry": None},
-			update_modified=False
-		)
-		
-		frappe.db.commit()
-		
-		# Step 3: Cancel Stock Entries (with ignore_links flag)
-		cancelled_entries = []
-		for se_name in linked_stock_entries:
-			if frappe.db.exists("Stock Entry", se_name):
-				se_doc = frappe.get_doc("Stock Entry", se_name)
-				if se_doc.docstatus == 1:
-					se_doc.flags.ignore_links = True
-					se_doc.cancel()
-					cancelled_entries.append(se_name)
-		
-		# Step 4: Cancel the Damage Assessment
-		doc.reload()
-		doc.flags.ignore_links = True
-		doc.cancel()
-		
-		msg = _("Successfully cancelled Damage Assessment {0}").format(docname)
-		if cancelled_entries:
-			msg += _(". Also cancelled Stock Entries: {0}").format(", ".join(cancelled_entries))
-		
-		frappe.msgprint(msg, alert=True, indicator="green")
-		
-		return {"status": "success", "message": msg, "cancelled_stock_entries": cancelled_entries}
-		
-	except Exception as e:
-		frappe.db.rollback()
-		frappe.log_error(
-			message=f"Force cancel failed for {docname}: {str(e)}\n{frappe.get_traceback()}",
-			title="Damage Assessment Force Cancel Error"
-		)
-		return {"status": "error", "message": str(e)}
-
-
-@frappe.whitelist()
-def force_delete_damage_assessment(docname):
-	"""
-	Force delete a Damage Assessment and clean up all linked documents.
-	Use this as a last resort when even force_cancel fails.
-	
-	WARNING: This will permanently delete the document.
-	
-	Args:
-		docname: Name of the Damage Assessment to delete
-	
-	Returns:
-		dict with status and message
-	"""
-	if not frappe.has_permission("Damage Assessment", "delete"):
-		frappe.throw(_("Not permitted to delete Damage Assessment"))
-	
-	if not frappe.db.exists("Damage Assessment", docname):
-		return {"status": "error", "message": _("Document does not exist")}
-	
-	try:
-		# Get the document and delete
-		doc = frappe.get_doc("Damage Assessment", docname)
-		doc.flags.ignore_links = True
-		doc.flags.ignore_permissions = True
-		
-		# If submitted, cancel first
-		if doc.docstatus == 1:
-			doc.cancel()
-			doc.reload()
-		
-		# Delete the document
-		frappe.delete_doc(
-			"Damage Assessment", docname,
-			force=True,
-			ignore_permissions=True,
-			delete_permanently=True
-		)
-		
-		return {"status": "success", "message": _("Damage Assessment {0} deleted").format(docname)}
-		
-	except Exception as e:
-		frappe.db.rollback()
-		frappe.log_error(
-			message=f"Force delete failed for {docname}: {str(e)}\n{frappe.get_traceback()}",
-			title="Damage Assessment Force Delete Error"
-		)
-		return {"status": "error", "message": str(e)}
-
-
-@frappe.whitelist()
-def get_serial_no_count(item_code):
-	"""Get total count of Serial Nos for a given item_code."""
-	if not item_code:
-		return 0
-	
-	count = frappe.db.count("Serial No", filters={"item_code": item_code})
-	return count or 0
 
 
 @frappe.whitelist()

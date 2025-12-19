@@ -6,34 +6,23 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "item_code",
   "serial_no",
   "load_dispatch",
   "column_break_item",
   "type_of_damage",
+  "date_of_arrival_of_frame",
   "damage_description",
   "damage_image",
-  "section_break_qty",
-  "total_qty_received",
-  "damaged_qty",
   "column_break_cost",
   "estimated_cost",
   "item_remarks"
  ],
  "fields": [
   {
-   "fieldname": "item_code",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Item Code",
-   "options": "Item",
-   "reqd": 1
-  },
-  {
    "fieldname": "serial_no",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Frame No (Serial No)",
+   "label": "Frame No",
    "options": "Serial No",
    "reqd": 1
   },
@@ -59,6 +48,11 @@
    "reqd": 1
   },
   {
+   "fieldname": "date_of_arrival_of_frame",
+   "fieldtype": "Date",
+   "label": "Date of Arrival of the Frame"
+  },
+  {
    "fieldname": "damage_description",
    "fieldtype": "Small Text",
    "label": "Damage Description"
@@ -67,23 +61,6 @@
    "fieldname": "damage_image",
    "fieldtype": "Attach Image",
    "label": "Damage Image"
-  },
-  {
-   "fieldname": "section_break_qty",
-   "fieldtype": "Section Break"
-  },
-  {
-   "default": "1",
-   "fieldname": "total_qty_received",
-   "fieldtype": "Int",
-   "label": "Total Qty Received"
-  },
-  {
-   "default": "1",
-   "fieldname": "damaged_qty",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Damaged Qty"
   },
   {
    "fieldname": "column_break_cost",
