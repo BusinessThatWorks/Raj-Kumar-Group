@@ -2,21 +2,19 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "format: LD-{load_reference_no}",
+ "autoname": "format: LD-{load_reference_no}-{##}",
  "creation": "2025-11-28 16:14:35.505427",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_885c",
-  "load_reference_no",
-  "invoice_no",
-  "amended_from",
-  "column_break_jxwc",
-  "dispatch_no",
-  "import_data_from_file",
-  "status",
-  "column_break_pqyz",
   "load_dispatch_file_attach",
+  "load_reference_no",
+  "status",
+  "amended_from",
+  "column_break_schd",
+  "dispatch_no",
+  "invoice_no",
   "section_break_bhgj",
   "items",
   "section_break_ugzt",
@@ -60,10 +58,6 @@
    "label": "Invoice No"
   },
   {
-   "fieldname": "column_break_jxwc",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "section_break_bhgj",
    "fieldtype": "Section Break"
   },
@@ -79,11 +73,6 @@
    "in_list_view": 1,
    "label": "Load Dispatch File Attach",
    "reqd": 1
-  },
-  {
-   "fieldname": "import_data_from_file",
-   "fieldtype": "Button",
-   "label": "Import Data From File"
   },
   {
    "fieldname": "section_break_ugzt",
@@ -116,6 +105,7 @@
    "allow_on_submit": 1,
    "fieldname": "status",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Status",
    "no_copy": 1,
    "options": "In-Transit\nReceived",
@@ -138,7 +128,7 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_pqyz",
+   "fieldname": "column_break_schd",
    "fieldtype": "Column Break"
   }
  ],
@@ -147,7 +137,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 3,
- "modified": "2025-12-17 17:19:04.858686",
+ "modified": "2025-12-19 12:33:36.907417",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch",

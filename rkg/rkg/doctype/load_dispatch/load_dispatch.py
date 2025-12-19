@@ -1946,30 +1946,30 @@ def create_purchase_receipt(source_name, target_doc=None):
 		set_missing_values
 	)
 	
-	# After document creation, ensure serial_no is set on all items
-	# This is needed because the field might not have been visible during mapping
-	if doc and hasattr(doc, "items"):
-		# Get the source Load Dispatch document to map frame_no to serial_no
-		source_doc = frappe.get_doc("Load Dispatch", source_name)
-		if source_doc and hasattr(source_doc, "items"):
-			# Create a mapping of item_code to frame_no from source
-			item_to_frame = {}
-			for dispatch_item in source_doc.items:
-				if (hasattr(dispatch_item, "item_code") and dispatch_item.item_code and
-					hasattr(dispatch_item, "frame_no") and dispatch_item.frame_no):
-					item_to_frame[dispatch_item.item_code] = str(dispatch_item.frame_no).strip()
+	# # After document creation, ensure serial_no is set on all items
+	# # This is needed because the field might not have been visible during mapping
+	# if doc and hasattr(doc, "items"):
+	# 	# Get the source Load Dispatch document to map frame_no to serial_no
+	# 	source_doc = frappe.get_doc("Load Dispatch", source_name)
+	# 	if source_doc and hasattr(source_doc, "items"):
+	# 		# Create a mapping of item_code to frame_no from source
+	# 		item_to_frame = {}
+	# 		for dispatch_item in source_doc.items:
+	# 			if (hasattr(dispatch_item, "item_code") and dispatch_item.item_code and
+	# 				hasattr(dispatch_item, "frame_no") and dispatch_item.frame_no):
+	# 				item_to_frame[dispatch_item.item_code] = str(dispatch_item.frame_no).strip()
 			
-			# Set serial_no on Purchase Invoice Items
-			for item in doc.items:
-				if hasattr(item, "item_code") and item.item_code and item.item_code in item_to_frame:
-					frame_no_value = item_to_frame[item.item_code]
-					if frame_no_value:
-						# Set serial_no using multiple methods to ensure it works
-						if hasattr(item, "serial_no"):
-							item.serial_no = frame_no_value
-						# Also set directly in __dict__ as fallback
-						if hasattr(item, "__dict__"):
-							item.__dict__["serial_no"] = frame_no_value
+	# 		# Set serial_no on Purchase Invoice Items
+	# 		for item in doc.items:
+	# 			if hasattr(item, "item_code") and item.item_code and item.item_code in item_to_frame:
+	# 				frame_no_value = item_to_frame[item.item_code]
+	# 				if frame_no_value:
+	# 					# Set serial_no using multiple methods to ensure it works
+	# 					if hasattr(item, "serial_no"):
+	# 						item.serial_no = frame_no_value
+	# 					# Also set directly in __dict__ as fallback
+	# 					if hasattr(item, "__dict__"):
+	# 						item.__dict__["serial_no"] = frame_no_value
 	
 	return doc
 
