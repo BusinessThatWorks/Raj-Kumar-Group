@@ -5,7 +5,7 @@
  "creation": "2025-12-03 14:57:35.192329",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
+  "field_order": [
   "basic_info_section",
   "date",
   "column_break_basic",
@@ -44,7 +44,7 @@
    "fieldname": "load_plan_reference_no",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Load Plan Reference No",
+   "label": "Load Reference No",
    "options": "Load Plan",
    "reqd": 1
   },
@@ -52,41 +52,17 @@
    "collapsible": 1,
    "fieldname": "warehouse_section",
    "fieldtype": "Section Break",
-   "label": "Warehouse Transfer Details"
+   "label": "Stock Entry Settings"
   },
   {
-   "description": "Source warehouse for this transfer",
-   "fieldname": "from_warehouse",
-   "fieldtype": "Link",
-   "label": "From Warehouse",
-   "options": "Warehouse",
-   "reqd": 1
-  },
-  {
+   "default": "Material Transfer",
+   "description": "Stock entry type is always Material Transfer for damage assessments.",
    "fieldname": "stock_entry_type",
    "fieldtype": "Link",
    "label": "Stock Entry Type",
    "options": "Stock Entry Type",
+   "read_only": 1,
    "reqd": 1
-  },
-  {
-   "fieldname": "column_break_warehouse",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Destination warehouse for this transfer",
-   "fieldname": "to_warehouse",
-   "fieldtype": "Link",
-   "label": "To Warehouse",
-   "options": "Warehouse",
-   "reqd": 1
-  },
-  {
-   "fieldname": "stock_entry",
-   "fieldtype": "Link",
-   "label": "Stock Entry (Transfer)",
-   "options": "Stock Entry",
-   "read_only": 1
   },
   {
    "fieldname": "damage_items_section",

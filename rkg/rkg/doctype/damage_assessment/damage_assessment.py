@@ -7,7 +7,43 @@ from frappe.utils import flt
 class DamageAssessment(Document):
 	def validate(self):
 		"""Validate and calculate totals."""
+		self.set_stock_entry_type()
+		self.validate_damage_items()
 		self.calculate_total_estimated_cost()
+	
+	def set_stock_entry_type(self):
+		"""Set Stock Entry Type to Material Transfer if not already set."""
+		# Check if Material Transfer exists, if not use Material Transfer (for Manufacture) as fallback
+		material_transfer = "Material Transfer"
+		
+		if not frappe.db.exists("Stock Entry Type", material_transfer):
+			# Try alternative name
+			alternative = "Material Transfer (for Manufacture)"
+			if frappe.db.exists("Stock Entry Type", alternative):
+				material_transfer = alternative
+			else:
+				# If neither exists, throw error
+				frappe.throw(_("Stock Entry Type 'Material Transfer' not found. Please create it in Stock Entry Type master."))
+		
+		if not self.stock_entry_type:
+			self.stock_entry_type = material_transfer
+		elif self.stock_entry_type != material_transfer:
+			# Force it to Material Transfer
+			self.stock_entry_type = material_transfer
+	
+	def validate_damage_items(self):
+		"""Validate that Not OK items have damage/issue, estimated cost, and warehouses."""
+		if self.damage_assessment_item:
+			for item in self.damage_assessment_item:
+				if item.status == "Not OK":
+					if not item.type_of_damage:
+						frappe.throw(_("Damage/Issue is required for frame {0} marked as Not OK").format(item.serial_no or ""))
+					if not item.estimated_cost:
+						frappe.throw(_("Estimated Amount is required for frame {0} marked as Not OK").format(item.serial_no or ""))
+					if not item.from_warehouse:
+						frappe.throw(_("From Warehouse is required for frame {0} marked as Not OK").format(item.serial_no or ""))
+					if not item.to_warehouse:
+						frappe.throw(_("To Warehouse (Damage Godown) is required for frame {0} marked as Not OK").format(item.serial_no or ""))
 	
 	def calculate_total_estimated_cost(self):
 		"""Calculate total estimated cost from child table items."""
@@ -19,62 +55,122 @@ class DamageAssessment(Document):
 	
 	def on_submit(self):
 		"""Actions on submit."""
-		# Create stock entry if warehouses are specified
-		if self.from_warehouse and self.to_warehouse and self.stock_entry_type:
-			self.create_stock_entry()
+		# Create stock entries for damaged frames (grouped by warehouse pairs)
+		if self.stock_entry_type:
+			self.create_stock_entries()
 	
 	def on_cancel(self):
 		"""Cancel linked Stock Entries when Damage Assessment is cancelled."""
-		if self.stock_entry:
-			self.cancel_stock_entry(self.stock_entry)
+		# Try to get stock entries linked to this Damage Assessment via custom field
+		# If custom field doesn't exist, this will return empty list
+		try:
+			stock_entries = frappe.get_all(
+				"Stock Entry",
+				filters={
+					"custom_damage_assessment": self.name,
+					"docstatus": 1  # Only cancel submitted entries
+				},
+				fields=["name"]
+			)
+			
+			for se in stock_entries:
+				self.cancel_stock_entry(se.name)
+		except Exception:
+			# Custom field may not exist, or there might be other issues
+			# Log the error but don't fail the cancel operation
+			frappe.log_error(
+				f"Error cancelling stock entries for Damage Assessment {self.name}",
+				"Damage Assessment Cancel Error"
+			)
 	
-	def create_stock_entry(self):
-		"""Create a Stock Entry to move items to Damage Godown."""
+	def create_stock_entries(self):
+		"""
+		Create Stock Entries to move damaged items to Damage Godowns.
+		Groups items by warehouse pairs (from_warehouse, to_warehouse) and creates
+		separate stock entries for each unique warehouse combination.
+		"""
 		if not self.damage_assessment_item:
-			frappe.throw(_("Please add at least one item to create Stock Entry"))
+			return
 		
-		stock_entry = frappe.new_doc("Stock Entry")
-		stock_entry.stock_entry_type = self.stock_entry_type
-		stock_entry.from_warehouse = self.from_warehouse
-		stock_entry.to_warehouse = self.to_warehouse
-		stock_entry.posting_date = self.date or frappe.utils.today()
+		if not self.stock_entry_type:
+			frappe.throw(_("Stock Entry Type is required to create Stock Entries"))
 		
-		for item in self.damage_assessment_item:
-			if not item.serial_no:
+		# Group damaged items by warehouse pairs
+		warehouse_groups = {}
+		damaged_items = [item for item in self.damage_assessment_item if item.status == "Not OK"]
+		
+		if not damaged_items:
+			return  # No damaged items, no stock entries needed
+		
+		for item in damaged_items:
+			if not item.serial_no or not item.from_warehouse or not item.to_warehouse:
 				continue
 			
-			# Get item_code from Serial No
-			item_code = frappe.db.get_value("Serial No", item.serial_no, "item_code")
-			if not item_code:
-				frappe.throw(_("Item Code not found for Serial No: {0}").format(item.serial_no))
+			# Create a key for grouping by warehouse pair
+			warehouse_key = (item.from_warehouse, item.to_warehouse)
 			
-			stock_entry.append("items", {
-				"item_code": item_code,
-				"custom_serial_no": item.serial_no,
-				"qty": 1,
-				"s_warehouse": self.from_warehouse,
-				"t_warehouse": self.to_warehouse,
-			})
+			if warehouse_key not in warehouse_groups:
+				warehouse_groups[warehouse_key] = []
+			
+			warehouse_groups[warehouse_key].append(item)
 		
-		if not stock_entry.items:
-			frappe.throw(_("No valid items to create Stock Entry"))
+		if not warehouse_groups:
+			return
 		
-		stock_entry.insert(ignore_permissions=True)
-		stock_entry.submit()
+		# Create a stock entry for each warehouse pair
+		created_stock_entries = []
+		for (from_wh, to_wh), items in warehouse_groups.items():
+			stock_entry = frappe.new_doc("Stock Entry")
+			stock_entry.stock_entry_type = self.stock_entry_type
+			stock_entry.posting_date = self.date or frappe.utils.today()
+			
+			# Add custom field to link back to Damage Assessment
+			# Note: This assumes you have a custom field 'custom_damage_assessment' in Stock Entry
+			# If not, you may need to add it or use a different method to track
+			try:
+				stock_entry.custom_damage_assessment = self.name
+			except AttributeError:
+				pass  # Custom field may not exist, continue without it
+			
+			for item in items:
+				# Get item_code from Serial No
+				item_code = frappe.db.get_value("Serial No", item.serial_no, "item_code")
+				if not item_code:
+					frappe.throw(_("Item Code not found for Serial No: {0}").format(item.serial_no))
+				
+				stock_entry.append("items", {
+					"item_code": item_code,
+					"custom_serial_no": item.serial_no,
+					"qty": 1,
+					"s_warehouse": from_wh,
+					"t_warehouse": to_wh,
+				})
+			
+			if stock_entry.items:
+				stock_entry.insert(ignore_permissions=True)
+				stock_entry.submit()
+				created_stock_entries.append(stock_entry.name)
 		
-		# Store reference to the created Stock Entry
-		try:
-			self.db_set("stock_entry", stock_entry.name, update_modified=False)
-		except Exception:
-			pass
-		
-		frappe.msgprint(
-			_("Stock Entry {0} created - Items moved to Damage Godown").format(
-				frappe.utils.get_link_to_form("Stock Entry", stock_entry.name)
-			),
-			alert=True,
-			indicator="green"
-		)
+		if created_stock_entries:
+			# Show message with links to created stock entries
+			if len(created_stock_entries) == 1:
+				frappe.msgprint(
+					_("Stock Entry {0} created - Items moved to Damage Godown").format(
+						frappe.utils.get_link_to_form("Stock Entry", created_stock_entries[0])
+					),
+					alert=True,
+					indicator="green"
+				)
+			else:
+				links = ", ".join([
+					frappe.utils.get_link_to_form("Stock Entry", se_name)
+					for se_name in created_stock_entries
+				])
+				frappe.msgprint(
+					_("Created {0} Stock Entries: {1}").format(len(created_stock_entries), links),
+					alert=True,
+					indicator="green"
+				)
 	
 	def cancel_stock_entry(self, stock_entry_name):
 		"""Cancel a linked Stock Entry."""
@@ -126,3 +222,68 @@ def get_load_dispatch_from_serial_no(serial_no):
 		return {"load_dispatch": load_dispatch_item.parent}
 	
 	return {"load_dispatch": None}
+
+
+@frappe.whitelist()
+def get_frames_from_load_plan(load_plan_reference_no):
+	"""
+	Get all frames (frame_no) from all Load Dispatch documents linked to a Load Plan.
+	
+	Args:
+		load_plan_reference_no: The Load Plan Reference No (Load Plan name)
+	
+	Returns:
+		list of dicts with frame_no and related information
+	"""
+	if not load_plan_reference_no:
+		return []
+	
+	if not frappe.db.exists("Load Plan", load_plan_reference_no):
+		return []
+	
+	# Get all Load Dispatch documents linked to this Load Plan
+	load_dispatches = frappe.db.get_all(
+		"Load Dispatch",
+		filters={
+			"load_reference_no": load_plan_reference_no
+		},
+		fields=["name"],
+		order_by="name"
+	)
+	
+	if not load_dispatches:
+		return []
+	
+	# Get all Load Dispatch Item names from all Load Dispatches
+	load_dispatch_names = [ld.name for ld in load_dispatches]
+	
+	# Get all Load Dispatch Items with frame_no from all these Load Dispatches
+	frames = frappe.db.get_all(
+		"Load Dispatch Item",
+		filters={
+			"parent": ["in", load_dispatch_names],
+			"frame_no": ["!=", ""]
+		},
+		fields=["frame_no", "item_code", "model_name", "model_serial_no", "parent"],
+		order_by="parent, idx"
+	)
+	
+	# Return list of frame information
+	result = []
+	seen_frames = set()  # To avoid duplicates if same frame appears in multiple dispatches
+	for frame in frames:
+		if frame.frame_no and str(frame.frame_no).strip():
+			frame_no = str(frame.frame_no).strip()
+			# Only add if we haven't seen this frame_no before
+			if frame_no not in seen_frames:
+				seen_frames.add(frame_no)
+				result.append({
+					"frame_no": frame_no,
+					"serial_no": frame_no,  # frame_no is the serial_no name
+					"item_code": frame.item_code,
+					"model_name": frame.model_name,
+					"model_serial_no": frame.model_serial_no,
+					"load_dispatch": frame.parent
+				})
+	
+	return result
