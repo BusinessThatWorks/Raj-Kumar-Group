@@ -351,21 +351,12 @@ class LoadDispatch(Document):
 		if self.items:
 			has_purchase_date = frappe.db.has_column("Serial No", "purchase_date")
 			for item in self.items:
-				# Debug: Print all relevant field values
-				print(f"=== DEBUG: Processing Load Dispatch Item ===")
-				print(f"model_serial_no: {getattr(item, 'model_serial_no', None)}")
-				print(f"frame_no: {item.frame_no}")
-				print(f"engnie_no_motor_no: {getattr(item, 'engnie_no_motor_no', None)}")
-				print(f"key_no: {getattr(item, 'key_no', None)}")
-				print(f"key_no type: {type(getattr(item, 'key_no', None))}")
-				
 				item_code = str(item.model_serial_no).strip() if item.model_serial_no else ""
 				if item_code and item.frame_no:
 					serial_no_name = str(item.frame_no).strip()
 
 					# Check if Serial No already exists
 					if not frappe.db.exists("Serial No", serial_no_name):
-						print(f"=== DEBUG: Creating NEW Serial No: {serial_no_name} ===")
 						try:
 							# IMPORTANT:
 							# - Serial No doctype still has a mandatory standard field `serial_no`
@@ -381,19 +372,14 @@ class LoadDispatch(Document):
 							# Map Engine No / Motor No from Load Dispatch Item to Serial No custom field
 							# Assumes Serial No has a custom field named `custom_engine_number`
 							if getattr(item, "engnie_no_motor_no", None):
-								print(f"=== DEBUG: Setting custom_engine_number to: {item.engnie_no_motor_no} ===")
 								setattr(serial_no, "custom_engine_number", item.engnie_no_motor_no)
 
 							# Map Key No from Load Dispatch Item to Serial No custom field
 							# Assumes Serial No has a custom field named `custom_key_no`
 							# Use 'is not None' check since key_no is Int and 0 is a valid value
 							key_no_value = getattr(item, "key_no", None)
-							print(f"=== DEBUG: key_no_value = {key_no_value}, type = {type(key_no_value)} ===")
 							if key_no_value is not None and str(key_no_value).strip():
-								print(f"=== DEBUG: Setting custom_key_no to: {str(key_no_value)} ===")
 								setattr(serial_no, "custom_key_no", str(key_no_value))
-							else:
-								print(f"=== DEBUG: key_no is None or empty, NOT setting custom_key_no ===")
 
 							# Map purchase_date for aging (prefer dispatch_date -> planned_arrival_date -> parent.dispatch_date) when column exists
 							if has_purchase_date:
@@ -406,22 +392,16 @@ class LoadDispatch(Document):
 									try:
 										from frappe.utils import getdate
 										setattr(serial_no, "purchase_date", getdate(purchase_date))
-										print(f"=== DEBUG: Setting purchase_date to: {purchase_date} ===")
 									except Exception:
-										print(f"=== DEBUG: purchase_date parsing failed for value: {purchase_date}")
+										pass
 
 							serial_no.insert(ignore_permissions=True)
-							print(f"=== DEBUG: Serial No created successfully ===")
-							print(serial_no.as_dict())
 						except Exception as e:
-							print(f"=== DEBUG: Error creating Serial No: {str(e)} ===")
 							frappe.log_error(f"Error creating Serial No {serial_no_name}: {str(e)}", "Serial No Creation Error")
 					else:
-						print(f"=== DEBUG: Serial No already exists: {serial_no_name}, UPDATING ===")
 						# If Serial No already exists, update the custom engine number if provided
 						if getattr(item, "engnie_no_motor_no", None):
 							try:
-								print(f"=== DEBUG: Updating custom_engine_number to: {item.engnie_no_motor_no} ===")
 								frappe.db.set_value(
 									"Serial No",
 									serial_no_name,
@@ -436,10 +416,8 @@ class LoadDispatch(Document):
 						# If Serial No already exists, update the custom key no if provided
 						# Use 'is not None' check since key_no is Int and 0 is a valid value
 						key_no_value = getattr(item, "key_no", None)
-						print(f"=== DEBUG: (update) key_no_value = {key_no_value}, type = {type(key_no_value)} ===")
 						if key_no_value is not None and str(key_no_value).strip():
 							try:
-								print(f"=== DEBUG: Updating custom_key_no to: {str(key_no_value)} ===")
 								frappe.db.set_value(
 									"Serial No",
 									serial_no_name,
@@ -447,13 +425,10 @@ class LoadDispatch(Document):
 									str(key_no_value),
 								)
 							except Exception as e:
-								print(f"=== DEBUG: Error updating custom_key_no: {str(e)} ===")
 								frappe.log_error(
 									f"Error updating custom_key_no for Serial No {serial_no_name}: {str(e)}",
 									"Serial No Update Error",
 								)
-						else:
-							print(f"=== DEBUG: (update) key_no is None or empty, NOT updating custom_key_no ===")
 
 						# Backfill purchase_date when missing to support aging buckets (only if column exists)
 						if has_purchase_date:
@@ -471,9 +446,7 @@ class LoadDispatch(Document):
 										"purchase_date",
 										getdate(purchase_date),
 									)
-									print(f"=== DEBUG: (update) purchase_date set to: {purchase_date} ===")
 								except Exception as e:
-									print(f"=== DEBUG: Error setting purchase_date: {str(e)} ===")
 									frappe.log_error(
 										f"Error setting purchase_date for Serial No {serial_no_name}: {str(e)}",
 										"Serial No Update Error",
@@ -553,17 +526,10 @@ class LoadDispatch(Document):
 		custom_field_map = {field: field for field in ITEM_CUSTOM_FIELDS}
 
 		for item in self.items:
-			print(
-				f"DEBUG pricing sync: row frame={getattr(item, 'frame_no', None)}, "
-				f"item_code={getattr(item, 'item_code', None)}, "
-				f"model_serial_no={getattr(item, 'model_serial_no', None)}"
-			)
 			item_code = (item.model_serial_no or "").strip()
 			if not item_code:
-				print("DEBUG pricing sync: skip row (no item_code/model_serial_no)", getattr(item, "frame_no", None))
 				continue
 			if not frappe.db.exists("Item", item_code):
-				print(f"DEBUG pricing sync: Item {item_code} not found; skipping")
 				continue
 			
 			# Ensure print_name is calculated before updating Item
@@ -579,30 +545,17 @@ class LoadDispatch(Document):
 					# Allow zero/falsey numeric values to flow through; skip only if None or empty string
 					if child_value is not None and child_value != "":
 						if hasattr(item_doc, item_field):
-							print(f"DEBUG pricing sync: setting {item_code}.{item_field} = {child_value}")
 							setattr(item_doc, item_field, child_value)
 							updated = True
-						else:
-							print(f"DEBUG pricing sync: Item field {item_field} missing on {item_code}")
-					else:
-						print(f"DEBUG pricing sync: empty value for {child_field} on row {getattr(item, 'frame_no', None)}")
-				else:
-					print(f"DEBUG pricing sync: child field {child_field} not on row {getattr(item, 'frame_no', None)}")
 			
 			# Update custom_print_name from Load Dispatch Item's print_name
 			if hasattr(item, "print_name") and item.print_name:
 				if hasattr(item_doc, "custom_print_name"):
-					print(f"DEBUG pricing sync: setting {item_code}.custom_print_name = {item.print_name}")
 					item_doc.custom_print_name = item.print_name
 					updated = True
-				else:
-					print(f"DEBUG pricing sync: Item field custom_print_name missing on {item_code}")
 
 			if updated:
 				item_doc.save(ignore_permissions=True)
-				print(f"DEBUG pricing sync: saved Item {item_code}")
-			else:
-				print(f"DEBUG pricing sync: no updates applied for Item {item_code}")
 	
 	def set_item_group(self):
 		"""Set item_group for Load Dispatch Items based on model_name or default."""
@@ -2165,14 +2118,6 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		doc: Purchase Receipt or Purchase Invoice document
 		method: Hook method name (optional)
 	"""
-	print(f"\n{'='*60}")
-	print(f"DEBUG: update_load_dispatch_totals_from_document called")
-	print(f"DEBUG: Document Type: {doc.doctype}")
-	print(f"DEBUG: Document Name: {doc.name}")
-	print(f"DEBUG: Document Status: {doc.docstatus}")
-	print(f"DEBUG: Method: {method}")
-	print(f"{'='*60}\n")
-	
 	# For Purchase Invoice, we always update billing totals regardless of update_stock
 	# The update_stock check only affects whether we update received quantity
 	# Billing should always be counted from Purchase Invoices
@@ -2183,23 +2128,15 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	# Try to get custom_load_dispatch from the document
 	if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch:
 		load_dispatch_name = doc.custom_load_dispatch
-		print(f"DEBUG: Found custom_load_dispatch from doc attribute: {load_dispatch_name}")
 	elif frappe.db.has_column(doc.doctype, "custom_load_dispatch"):
 		load_dispatch_name = frappe.db.get_value(doc.doctype, doc.name, "custom_load_dispatch")
-		print(f"DEBUG: Found custom_load_dispatch from DB: {load_dispatch_name}")
 
 	if not load_dispatch_name:
-		print(f"DEBUG: No custom_load_dispatch field found or empty. Exiting.")
 		return
-
-	print(f"DEBUG: Load Dispatch Name/ID from custom_load_dispatch: {load_dispatch_name}")
 
 	# STEP 1: Verify Load Dispatch document exists with this name/ID
 	if not frappe.db.exists("Load Dispatch", load_dispatch_name):
-		print(f"DEBUG: Load Dispatch document with name '{load_dispatch_name}' does not exist. Exiting.")
 		return
-	
-	print(f"DEBUG: ✓ Load Dispatch document '{load_dispatch_name}' found. Proceeding...")
 
 	# Initialize totals
 	total_received_qty = 0
@@ -2207,10 +2144,7 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 
 	# Case 1: Purchase Receipt
 	if doc.doctype == "Purchase Receipt":
-		print(f"\nDEBUG: ===== Processing Purchase Receipt =====")
-		
 		if not frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
-			print(f"DEBUG: custom_load_dispatch field does not exist. Exiting.")
 			return
 		
 		# Find all submitted Purchase Receipts (docstatus=1) with this Load Dispatch
@@ -2224,12 +2158,9 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 			fields=["name", "total_qty"]
 		)
 		
-		print(f"DEBUG: Found {len(pr_list)} submitted Purchase Receipt(s) with custom_load_dispatch = {load_dispatch_name}")
-		
 		# Sum total_qty from all submitted Purchase Receipts
 		for pr in pr_list:
 			pr_qty = flt(pr.get("total_qty")) or 0
-			print(f"DEBUG: Purchase Receipt {pr.name} - total_qty: {pr_qty}")
 			
 			if pr_qty == 0:
 				pr_doc = frappe.get_doc("Purchase Receipt", pr.name)
@@ -2238,20 +2169,13 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
 						for item in pr_doc.items
 					)
-					print(f"DEBUG: Purchase Receipt {pr.name} - calculated from items: {pr_qty}")
 			
 			# From PR we only update RECEIVED quantity; billed qty comes from Purchase Invoices only
 			total_received_qty += pr_qty
-		
-		print(f"DEBUG: Total Received Qty = {total_received_qty}")
-		print(f"DEBUG: Total Billed Qty = {total_billed_qty}")
 
 	# Case 2: Purchase Invoice
 	elif doc.doctype == "Purchase Invoice":
-		print(f"\nDEBUG: ===== Processing Purchase Invoice =====")
-		
 		if not frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
-			print(f"DEBUG: custom_load_dispatch field does not exist. Exiting.")
 			return
 		
 		# Find all submitted Purchase Invoices (docstatus=1) with this Load Dispatch
@@ -2265,12 +2189,9 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 			fields=["name", "total_qty"]
 		)
 		
-		print(f"DEBUG: Found {len(pi_list)} submitted Purchase Invoice(s) with custom_load_dispatch = {load_dispatch_name}")
-		
 		# Sum total_qty from ALL Purchase Invoices (billing should count all Purchase Invoices)
 		for pi in pi_list:
 			pi_qty = flt(pi.get("total_qty")) or 0
-			print(f"DEBUG: Purchase Invoice {pi.name} - total_qty: {pi_qty}")
 			
 			if pi_qty == 0:
 				pi_doc = frappe.get_doc("Purchase Invoice", pi.name)
@@ -2279,14 +2200,10 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
 						for item in pi_doc.items
 					)
-					print(f"DEBUG: Purchase Invoice {pi.name} - calculated from items: {pi_qty}")
 			
 			# From Purchase Invoice we only update BILLED quantity (not received quantity)
 			# Received quantity comes from Purchase Receipts only
 			total_billed_qty += pi_qty
-		
-		print(f"DEBUG: Total Received Qty = {total_received_qty}")
-		print(f"DEBUG: Total Billed Qty = {total_billed_qty}")
 		
 	
 
@@ -2303,9 +2220,6 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	else:
 		new_status = "In-Transit"
 	
-	print(f"DEBUG: total_dispatch_quantity = {total_dispatch_qty}")
-	print(f"DEBUG: Setting status = {new_status}")
-	
 	frappe.db.set_value(
 		"Load Dispatch",
 		load_dispatch_name,
@@ -2316,9 +2230,7 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		},
 		update_modified=False
 	)
-	frappe.db.commit()	
-	print(f"DEBUG: Load Dispatch '{load_dispatch_name}' updated successfully!")
-	print(f"{'='*60}\n")
+	frappe.db.commit()
 
 
 @frappe.whitelist()

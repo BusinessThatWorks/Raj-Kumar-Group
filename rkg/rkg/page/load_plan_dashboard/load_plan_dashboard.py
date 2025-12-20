@@ -94,7 +94,6 @@ def get_load_plan_data(where_clause, params):
 		if calculated_qty != stored_qty and plan.get("name"):
 			frappe.db.set_value("Load Plan", plan.name, "total_quantity", calculated_qty, update_modified=False)
 			plan["total_quantity"] = calculated_qty
-			print(f"DEBUG: Fixed Load Plan {plan.name} - updated total_quantity from {stored_qty} to {calculated_qty}")
 
 	total_plans = len(plans)
 	total_planned_qty = sum(flt(p.total_quantity) for p in plans)
