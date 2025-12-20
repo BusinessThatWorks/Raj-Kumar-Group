@@ -13,12 +13,24 @@ frappe.ui.form.on("Load Plan", {
 		calculate_total_quantity(frm);
 	},
 
+	before_save(frm) {
+		// Block saving during file upload to prevent validation errors
+		if (frm._from_file_upload) {
+			frappe.validated = false;
+			return false;
+		}
+	},
+
 	// Attachment handler (custom field)
 	custom_attach_load_plan(frm) {
+		// Set flag immediately to prevent any auto-save triggers
+		frm._from_file_upload = true;
 		handle_load_plan_file_import(frm, frm.doc.custom_attach_load_plan);
 	},
 	// Fallback handler in case the field is named "attach_load_plan"
 	attach_load_plan(frm) {
+		// Set flag immediately to prevent any auto-save triggers
+		frm._from_file_upload = true;
 		handle_load_plan_file_import(frm, frm.doc.attach_load_plan);
 	},
 });
@@ -50,6 +62,9 @@ function handle_load_plan_file_import(frm, file_url) {
 		return;
 	}
 
+	// Set flag to bypass validation during file upload
+	frm._from_file_upload = true;
+
 	// IMMEDIATELY: Make mandatory fields non-mandatory to prevent validation errors
 	// Store original values to restore later
 	if (!frm._original_reqd_storage) {
@@ -72,41 +87,9 @@ function handle_load_plan_file_import(frm, file_url) {
 		indicator: "blue"
 	}, 3);
 
-	// FIRST: Quickly get the first row to populate mandatory fields immediately
-	// This prevents validation errors when file is attached
-	frappe.call({
-		method: "rkg.rkg.doctype.load_plan.load_plan.get_first_row_for_mandatory_fields",
-		args: {
-			file_url: file_url
-		},
-		callback: function(first_row_response) {
-			// Set mandatory fields immediately from first row
-			if (first_row_response && first_row_response.message) {
-				const first_row = first_row_response.message;
-				if (first_row.load_reference_no) {
-					frm.set_value("load_reference_no", first_row.load_reference_no);
-				}
-				if (first_row.dispatch_plan_date) {
-					frm.set_value("dispatch_plan_date", first_row.dispatch_plan_date);
-				}
-				if (first_row.payment_plan_date) {
-					frm.set_value("payment_plan_date", first_row.payment_plan_date);
-				}
-			}
-			
-			// Restore mandatory properties after setting values
-			_restore_mandatory_fields(frm);
-			
-			// NOW: Process the full file
-			_process_full_file(frm, file_url);
-		},
-		error: function(err) {
-			// Restore mandatory properties even on error
-			_restore_mandatory_fields(frm);
-			// Even if first row fails, try full processing
-			_process_full_file(frm, file_url);
-		}
-	});
+	// FIRST: Check for multiple Load Reference Numbers BEFORE creating anything
+	// Only create Load Plan(s) after user confirmation
+	_process_full_file(frm, file_url);
 }
 
 // Restore mandatory fields after file processing
@@ -173,7 +156,8 @@ function _process_full_file(frm, file_url) {
 			}
 		},
 		error: function(err) {
-			// Restore mandatory fields on error
+			// Clear file upload flag and restore mandatory fields on error
+			frm._from_file_upload = false;
 			_restore_mandatory_fields(frm);
 			frappe.show_alert({
 				message: __("Error processing file: {0}", [err.message || "Unknown error"]),
@@ -230,6 +214,10 @@ function _create_load_plans_from_file(frm, file_url, create_multiple) {
 				indicator: result.total_errors > 0 ? "orange" : "green"
 			});
 
+			// Clear file upload flag and restore mandatory fields
+			frm._from_file_upload = false;
+			_restore_mandatory_fields(frm);
+
 			// If only one Load Plan was created, redirect to it
 			if (result.total_created === 1 && result.created_load_plans.length > 0) {
 				frappe.set_route("Form", "Load Plan", result.created_load_plans[0].name);
@@ -239,6 +227,9 @@ function _create_load_plans_from_file(frm, file_url, create_multiple) {
 			}
 		},
 		error: function(err) {
+			// Clear file upload flag and restore mandatory fields on error
+			frm._from_file_upload = false;
+			_restore_mandatory_fields(frm);
 			frappe.show_alert({
 				message: __("Error creating Load Plans: {0}", [err.message || "Unknown error"]),
 				indicator: "red"
@@ -393,4 +384,8 @@ function _populate_single_load_plan(frm, rows) {
 			indicator: "orange"
 		}, 5);
 	}
+	
+	// Clear file upload flag and restore mandatory fields after population
+	frm._from_file_upload = false;
+	_restore_mandatory_fields(frm);
 }

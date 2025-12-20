@@ -15,6 +15,18 @@ class LoadPlan(Document):
 	
 	def validate(self):
 		"""Calculate total quantity from child table items and clean invalid fields."""
+		# Skip mandatory validation during file upload - validation happens after Load Plans are created
+		if self.flags.get("from_file_upload") or self.flags.get("ignore_mandatory"):
+			pass
+		else:
+			# Normal validation - check mandatory fields
+			if not self.load_reference_no:
+				frappe.throw(_("Load Reference No is required"))
+			if not self.dispatch_plan_date:
+				frappe.throw(_("Dispatch Plan Date is required"))
+			if not self.payment_plan_date:
+				frappe.throw(_("Payment Plan Date is required"))
+		
 		self.clean_child_table_fields()
 		self.calculate_total_quantity()
 	
@@ -215,8 +227,8 @@ def update_load_plan_status_from_document(doc, method=None):
 @frappe.whitelist()
 def get_first_row_for_mandatory_fields(file_url):
 	"""
-	Quickly get the first row from the file to populate mandatory fields immediately.
-	Returns only the first row with parent fields (load_reference_no, dispatch_plan_date, payment_plan_date).
+	Quickly get the first row from the file to populate mandatory fields and child table immediately.
+	Returns the first row with parent fields and child table data.
 	This is called immediately when file is attached to prevent validation errors.
 	"""
 	if not file_url:
@@ -228,14 +240,22 @@ def get_first_row_for_mandatory_fields(file_url):
 		all_rows = process_tabular_file(file_url)
 		if all_rows and len(all_rows) > 0:
 			first_row = all_rows[0]
-			# Return only the mandatory parent fields
+			# Return all fields including parent and child fields
 			result = {}
+			# Parent fields
 			if first_row.get("load_reference_no"):
 				result["load_reference_no"] = first_row["load_reference_no"]
 			if first_row.get("dispatch_plan_date"):
 				result["dispatch_plan_date"] = first_row["dispatch_plan_date"]
 			if first_row.get("payment_plan_date"):
 				result["payment_plan_date"] = first_row["payment_plan_date"]
+			# Child table fields
+			child_fields = ["model", "model_name", "model_type", "model_variant", 
+			               "model_color", "group_color", "option", "quantity"]
+			result["child_row"] = {}
+			for field in child_fields:
+				if field in first_row:
+					result["child_row"][field] = first_row[field]
 			return result if result else None
 	except Exception as e:
 		# If processing fails, return None - full processing will handle the error
@@ -400,9 +420,6 @@ def _process_tabular_rows(data, column_mapping, required_headers, optional_heade
 
 	rows = []
 	for row in data[1:]:
-		if not any(row):
-			continue
-
 		row_data = {}
 		for csv_col, fieldname in column_mapping.items():
 			actual_col = norm_csv_headers.get(norm_func(csv_col))
@@ -417,23 +434,27 @@ def _process_tabular_rows(data, column_mapping, required_headers, optional_heade
 			raw_value = row[col_idx] if col_idx < len(row) else ""
 			value = raw_value.strip() if isinstance(raw_value, str) else raw_value
 
-			if value or value == 0:
-				if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+			if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+				if value:
 					try:
 						from frappe.utils import getdate
 						row_data[fieldname] = getdate(value)
 					except Exception:
 						row_data[fieldname] = value
-				elif fieldname == "quantity":
+				else:
+					row_data[fieldname] = None
+			elif fieldname == "quantity":
+				if value or value == 0:
 					try:
-						row_data[fieldname] = int(float(value)) if value or value == 0 else None
+						row_data[fieldname] = int(float(value))
 					except Exception:
 						row_data[fieldname] = value
 				else:
-					row_data[fieldname] = value
+					row_data[fieldname] = None
+			else:
+				row_data[fieldname] = value
 
-		if row_data:
-			rows.append(row_data)
+		rows.append(row_data)
 
 	child_fields = {
 		"model",
@@ -469,8 +490,6 @@ def _process_tabular_rows(data, column_mapping, required_headers, optional_heade
 			"quantity",
 		]
 		for row in data[1:]:
-			if not any(row):
-				continue
 			row_data = {}
 			for idx, key in enumerate(expected_order):
 				if idx >= len(row):
@@ -478,22 +497,26 @@ def _process_tabular_rows(data, column_mapping, required_headers, optional_heade
 				raw_value = row[idx]
 				value = raw_value.strip() if isinstance(raw_value, str) else raw_value
 				fieldname = column_mapping.get(key, key)
-				if value or value == 0:
-					if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+				if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+					if value:
 						try:
 							from frappe.utils import getdate
 							row_data[fieldname] = getdate(value)
 						except Exception:
 							row_data[fieldname] = value
-					elif fieldname == "quantity":
+					else:
+						row_data[fieldname] = None
+				elif fieldname == "quantity":
+					if value or value == 0:
 						try:
-							row_data[fieldname] = int(float(value)) if value or value == 0 else None
+							row_data[fieldname] = int(float(value))
 						except Exception:
 							row_data[fieldname] = value
 					else:
-						row_data[fieldname] = value
-			if row_data:
-				rows.append(row_data)
+						row_data[fieldname] = None
+				else:
+					row_data[fieldname] = value
+			rows.append(row_data)
 
 	# Filter out invalid fields that don't exist in Load Plan Item doctype
 	valid_child_fields = {
@@ -506,8 +529,7 @@ def _process_tabular_rows(data, column_mapping, required_headers, optional_heade
 	filtered_rows = []
 	for row in rows:
 		filtered_row = {k: v for k, v in row.items() if k in valid_child_fields}
-		if filtered_row:
-			filtered_rows.append(filtered_row)
+		filtered_rows.append(filtered_row)
 	
 	return filtered_rows
 
@@ -604,9 +626,6 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 
 		rows = []
 		for csv_row in reader:
-			if not any(csv_row.values()):
-				continue
-
 			row_data = {}
 			for csv_col, fieldname in column_mapping.items():
 				actual_col = norm_csv_headers.get(_norm_header(csv_col))
@@ -616,23 +635,27 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 				raw_value = csv_row.get(actual_col, "")
 				value = raw_value.strip() if isinstance(raw_value, str) else raw_value
 
-				if value or value == 0:
-					if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+				if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+					if value:
 						try:
 							from frappe.utils import getdate
 							row_data[fieldname] = getdate(value)
 						except Exception:
 							row_data[fieldname] = value
-					elif fieldname == "quantity":
+					else:
+						row_data[fieldname] = None
+				elif fieldname == "quantity":
+					if value or value == 0:
 						try:
-							row_data[fieldname] = int(float(value)) if value or value == 0 else None
+							row_data[fieldname] = int(float(value))
 						except Exception:
 							row_data[fieldname] = value
 					else:
-						row_data[fieldname] = value
+						row_data[fieldname] = None
+				else:
+					row_data[fieldname] = value
 
-			if row_data:
-				rows.append(row_data)
+			rows.append(row_data)
 
 		child_fields = {
 			"model",
@@ -668,8 +691,6 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 					"quantity",
 				]
 				for raw_row in raw_reader:
-					if not any(raw_row):
-						continue
 					row_data = {}
 					for idx, key in enumerate(expected_order):
 						if idx >= len(raw_row):
@@ -677,22 +698,26 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 						raw_value = raw_row[idx]
 						value = raw_value.strip() if isinstance(raw_value, str) else raw_value
 						fieldname = column_mapping.get(key, key)
-						if value or value == 0:
-							if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+						if fieldname in ["dispatch_plan_date", "payment_plan_date"]:
+							if value:
 								try:
 									from frappe.utils import getdate
 									row_data[fieldname] = getdate(value)
 								except Exception:
 									row_data[fieldname] = value
-							elif fieldname == "quantity":
+							else:
+								row_data[fieldname] = None
+						elif fieldname == "quantity":
+							if value or value == 0:
 								try:
-									row_data[fieldname] = int(float(value)) if value or value == 0 else None
+									row_data[fieldname] = int(float(value))
 								except Exception:
 									row_data[fieldname] = value
 							else:
-								row_data[fieldname] = value
-					if row_data:
-						rows.append(row_data)
+								row_data[fieldname] = None
+						else:
+							row_data[fieldname] = value
+					rows.append(row_data)
 			except Exception:
 				pass
 
@@ -707,8 +732,7 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 		filtered_rows = []
 		for row in rows:
 			filtered_row = {k: v for k, v in row.items() if k in valid_child_fields}
-			if filtered_row:
-				filtered_rows.append(filtered_row)
+			filtered_rows.append(filtered_row)
 		
 		return filtered_rows
 	finally:
@@ -741,7 +765,7 @@ def create_load_plans_from_file(file_url, create_multiple=True):
 	
 	# Group rows by load_reference_no
 	grouped_data = {}
-	for row in all_rows:
+	for idx, row in enumerate(all_rows):
 		load_ref = row.get("load_reference_no")
 		if not load_ref:
 			# Skip rows without load_reference_no
@@ -757,15 +781,16 @@ def create_load_plans_from_file(file_url, create_multiple=True):
 			}
 		
 		# Add child table row (exclude parent fields)
-		child_row = {}
+		# Extract all child fields from the row - ALWAYS include all child fields
 		child_fields = ["model", "model_name", "model_type", "model_variant", 
 		               "model_color", "group_color", "option", "quantity"]
+		child_row = {}
 		for field in child_fields:
-			if field in row:
-				child_row[field] = row[field]
+			# Always include field - use value from row if exists, otherwise None
+			child_row[field] = row.get(field)
 		
-		if child_row:
-			grouped_data[load_ref]["rows"].append(child_row)
+		# ALWAYS append child_row for every row with load_reference_no
+		grouped_data[load_ref]["rows"].append(child_row)
 	
 	if not grouped_data:
 		frappe.throw(_("No valid Load Reference Numbers found in the file"))
@@ -857,14 +882,26 @@ def _create_single_load_plan(load_reference_no, dispatch_plan_date, payment_plan
 	Returns:
 		Created LoadPlan document
 	"""
+	# Filter to only include valid child fieldnames - never filter by values
+	valid_child_fields = {
+		"model", "model_name", "model_type", "model_variant",
+		"model_color", "group_color", "option", "quantity"
+	}
+	
+	# Build child table rows - filter ONLY by fieldname, append ALL rows
+	child_table_rows = []
+	for row_data in child_rows:
+		filtered_row = {k: v for k, v in row_data.items() if k in valid_child_fields}
+		child_table_rows.append(filtered_row)
+	
 	# Check if Load Plan already exists
 	if frappe.db.exists("Load Plan", load_reference_no):
-		# Update existing Load Plan
+		# Update existing Load Plan - fully rebuild to handle pre-created documents
 		load_plan = frappe.get_doc("Load Plan", load_reference_no)
 		load_plan.dispatch_plan_date = dispatch_plan_date or load_plan.dispatch_plan_date
 		load_plan.payment_plan_date = payment_plan_date or load_plan.payment_plan_date
 		load_plan.attach_load_plan = file_url
-		# Clear existing child table
+		# Clear ALL existing child table rows completely
 		load_plan.table_tezh = []
 	else:
 		# Create new Load Plan
@@ -876,17 +913,13 @@ def _create_single_load_plan(load_reference_no, dispatch_plan_date, payment_plan
 			"attach_load_plan": file_url
 		})
 	
-	# Add child table rows - filter to only include valid fields
-	valid_child_fields = {
-		"model", "model_name", "model_type", "model_variant",
-		"model_color", "group_color", "option", "quantity"
-	}
+	# Add all rows to the child table - ALWAYS append ALL rows
+	for filtered_row in child_table_rows:
+		load_plan.append("table_tezh", filtered_row)
 	
-	for row_data in child_rows:
-		# Filter row_data to only include valid fields
-		filtered_row = {k: v for k, v in row_data.items() if k in valid_child_fields}
-		if filtered_row:  # Only append if there's at least one valid field
-			load_plan.append("table_tezh", filtered_row)
+	# Set flags to bypass mandatory validation during file upload
+	load_plan.flags.from_file_upload = True
+	load_plan.flags.ignore_mandatory = True
 	
 	# Save the document
 	load_plan.save(ignore_permissions=True)
