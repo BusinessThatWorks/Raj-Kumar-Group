@@ -35,13 +35,21 @@ class DamageAssessmentDashboard {
 				<div class="filters-section">
 					<div class="filters-grid">
 						<div class="filter-group">
-							<label>Load Plan Reference</label>
+							<label>Load Reference No</label>
 							<select class="form-control filter-load-plan">
 								<option value="">All Load Plans</option>
 							</select>
 						</div>
 						<div class="filter-group">
-							<label>Current Warehouse</label>
+							<label>Status</label>
+							<select class="form-control filter-status">
+								<option value="">All Status</option>
+								<option value="Not OK">Not OK (Damaged)</option>
+								<option value="OK">OK</option>
+							</select>
+						</div>
+						<div class="filter-group">
+							<label>Warehouse</label>
 							<select class="form-control filter-warehouse">
 								<option value="">All Warehouses</option>
 							</select>
@@ -58,33 +66,49 @@ class DamageAssessmentDashboard {
 				</div>
 
 				<div class="summary-cards">
-					<div class="summary-card frames">
+					<div class="summary-card total">
 						<div class="card-icon"><i class="fa fa-cubes"></i></div>
 						<div class="card-value" id="total-frames">0</div>
-						<div class="card-label">Total Damaged Frames</div>
+						<div class="card-label">Total Frames</div>
+					</div>
+					<div class="summary-card ok">
+						<div class="card-icon"><i class="fa fa-check-circle"></i></div>
+						<div class="card-value" id="ok-frames">0</div>
+						<div class="card-label">OK Frames</div>
+					</div>
+					<div class="summary-card not-ok">
+						<div class="card-icon"><i class="fa fa-exclamation-triangle"></i></div>
+						<div class="card-value" id="not-ok-frames">0</div>
+						<div class="card-label">Damaged Frames</div>
+					</div>
+					<div class="summary-card cost">
+						<div class="card-icon"><i class="fa fa-rupee"></i></div>
+						<div class="card-value" id="total-cost">₹0</div>
+						<div class="card-label">Total Estimated Cost</div>
 					</div>
 				</div>
 
 				<div class="frames-section">
 					<div class="section-header">
-						<span><i class="fa fa-list"></i> Damaged Frames</span>
+						<span><i class="fa fa-list"></i> Frames Assessment</span>
 					</div>
 					<div class="table-container">
 						<table class="table table-bordered frames-table">
 							<thead>
 								<tr>
 									<th>Frame No</th>
-									<th>Load Plan Reference</th>
+									<th>Status</th>
+									<th>Load Reference No</th>
+									<th>Load Dispatch</th>
 									<th>From Warehouse</th>
-									<th>To Warehouse</th>
-									<th>Current Warehouse</th>
-									<th>Type of Damage</th>
-									<th>Estimated Cost</th>
+									<th>To Warehouse (Damage Godown)</th>
+									<th>Damage/Issue</th>
+									<th>Estimated Amount</th>
 									<th>Assessment Date</th>
 								</tr>
 							</thead>
 							<tbody id="frames-list">
-								<tr><td colspan="8" class="text-center">Loading...</td></tr>
+								<tr><td colspan="9" class="text-center">Loading...</td></tr>
 							</tbody>
 						</table>
 					</div>
@@ -97,6 +121,7 @@ class DamageAssessmentDashboard {
 		this.wrapper.find(".btn-refresh").on("click", () => this.refresh());
 		this.wrapper.find(".btn-clear").on("click", () => {
 			this.wrapper.find(".filter-load-plan").val("");
+			this.wrapper.find(".filter-status").val("");
 			this.wrapper.find(".filter-warehouse").val("");
 			this.refresh();
 		});
@@ -131,6 +156,7 @@ class DamageAssessmentDashboard {
 	refresh() {
 		const filters = {
 			load_plan_reference: this.wrapper.find(".filter-load-plan").val(),
+			status: this.wrapper.find(".filter-status").val(),
 			warehouse: this.wrapper.find(".filter-warehouse").val(),
 		};
 
@@ -157,6 +183,16 @@ class DamageAssessmentDashboard {
 
 	render_summary(summary) {
 		this.wrapper.find("#total-frames").text(summary.total_frames || 0);
+		this.wrapper.find("#ok-frames").text(summary.ok_frames || 0);
+		this.wrapper.find("#not-ok-frames").text(summary.not_ok_frames || 0);
+		
+		// Format currency - simple manual formatting to avoid HTML rendering issues
+		const totalCost = flt(summary.total_cost || 0);
+		const formattedCost = "₹ " + totalCost.toLocaleString('en-IN', { 
+			minimumFractionDigits: 2, 
+			maximumFractionDigits: 2 
+		});
+		this.wrapper.find("#total-cost").text(formattedCost);
 	}
 
 	render_frames_table(frames) {
@@ -164,25 +200,36 @@ class DamageAssessmentDashboard {
 		tbody.empty();
 
 		if (!frames || frames.length === 0) {
-			tbody.html(`<tr><td colspan="8" class="text-center">No damaged frames found for the selected filters.</td></tr>`);
+			tbody.html(`<tr><td colspan="9" class="text-center">No frames found for the selected filters.</td></tr>`);
 			return;
 		}
 
 		const rows = frames.map((frame) => {
+			const status = frame.status || "OK";
+			const statusClass = status === "Not OK" ? "status-not-ok" : "status-ok";
+			const statusIcon = status === "Not OK" ? "fa-exclamation-triangle" : "fa-check-circle";
+			
 			return `
-				<tr>
+				<tr class="${statusClass}">
 					<td>
 						${frame.serial_no ? `<a href="/app/serial-no/${frame.serial_no}" target="_blank">${frame.serial_no}</a>` : "-"}
 					</td>
 					<td>
+						<span class="status-badge ${statusClass}">
+							<i class="fa ${statusIcon}"></i> ${status}
+						</span>
+					</td>
+					<td>
 						${frame.load_plan_reference_no ? `<a href="/app/load-plan/${frame.load_plan_reference_no}" target="_blank">${frame.load_plan_reference_no}</a>` : "-"}
+					</td>
+					<td>
+						${frame.load_dispatch ? `<a href="/app/load-dispatch/${frame.load_dispatch}" target="_blank">${frame.load_dispatch}</a>` : "-"}
 					</td>
 					<td>${frame.from_warehouse || "-"}</td>
 					<td>${frame.to_warehouse || "-"}</td>
-					<td>${frame.current_warehouse || "-"}</td>
 					<td>${frame.type_of_damage || "-"}</td>
 					<td>${frappe.format(frame.estimated_cost || 0, { fieldtype: "Currency" })}</td>
-					<td>${frame.assessment_date || "-"}</td>
+					<td>${frame.assessment_date ? frappe.datetime.str_to_user(frame.assessment_date) : "-"}</td>
 				</tr>
 			`;
 		}).join("");
@@ -204,7 +251,16 @@ function add_styles() {
 		.summary-card .card-icon { font-size: 24px; color: var(--primary); margin-bottom: 8px; }
 		.summary-card .card-value { font-size: 30px; font-weight: 700; color: var(--heading-color); }
 		.summary-card .card-label { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
-		.summary-card.frames { border-left-color: #ff6b6b; }
+		.summary-card.total { border-left-color: #4dabf7; }
+		.summary-card.ok { border-left-color: #51cf66; }
+		.summary-card.not-ok { border-left-color: #ff6b6b; }
+		.summary-card.cost { border-left-color: #ffd43b; }
+		
+		.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+		.status-badge.status-ok { background: #d3f9d8; color: #2b8a3e; }
+		.status-badge.status-not-ok { background: #ffe0e0; color: #c92a2a; }
+		.frames-table tbody tr.status-not-ok { background: #fff5f5; }
+		.frames-table tbody tr.status-ok { background: #f8fff9; }
 
 		.frames-section { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
 		.section-header { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
