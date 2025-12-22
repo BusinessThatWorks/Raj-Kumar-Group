@@ -45,7 +45,6 @@ class DamageAssessmentDashboard {
 							<select class="form-control filter-status">
 								<option value="">All Status</option>
 								<option value="Not OK">Not OK (Damaged)</option>
-								<option value="OK">OK</option>
 							</select>
 						</div>
 						<div class="filter-group">
@@ -70,11 +69,6 @@ class DamageAssessmentDashboard {
 						<div class="card-icon"><i class="fa fa-cubes"></i></div>
 						<div class="card-value" id="total-frames">0</div>
 						<div class="card-label">Total Frames</div>
-					</div>
-					<div class="summary-card ok">
-						<div class="card-icon"><i class="fa fa-check-circle"></i></div>
-						<div class="card-value" id="ok-frames">0</div>
-						<div class="card-label">OK Frames</div>
 					</div>
 					<div class="summary-card not-ok">
 						<div class="card-icon"><i class="fa fa-exclamation-triangle"></i></div>
@@ -183,7 +177,6 @@ class DamageAssessmentDashboard {
 
 	render_summary(summary) {
 		this.wrapper.find("#total-frames").text(summary.total_frames || 0);
-		this.wrapper.find("#ok-frames").text(summary.ok_frames || 0);
 		this.wrapper.find("#not-ok-frames").text(summary.not_ok_frames || 0);
 		
 		// Format currency - simple manual formatting to avoid HTML rendering issues
@@ -252,7 +245,6 @@ function add_styles() {
 		.summary-card .card-value { font-size: 30px; font-weight: 700; color: var(--heading-color); }
 		.summary-card .card-label { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 		.summary-card.total { border-left-color: #4dabf7; }
-		.summary-card.ok { border-left-color: #51cf66; }
 		.summary-card.not-ok { border-left-color: #ff6b6b; }
 		.summary-card.cost { border-left-color: #ffd43b; }
 		
