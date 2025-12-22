@@ -1811,6 +1811,22 @@ def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_
 	from frappe.model.mapper import get_mapped_doc
 	import json
 	
+	# Check if Purchase Receipt already exists for this Load Dispatch
+	if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
+		existing_pr = frappe.get_all(
+			"Purchase Receipt",
+			filters={
+				"custom_load_dispatch": source_name
+			},
+			fields=["name"],
+			limit=1
+		)
+		
+		if existing_pr:
+			frappe.throw(
+				__("Purchase Receipt {0} already exists for this Load Dispatch. Cannot create another Purchase Receipt.", [existing_pr[0].name])
+			)
+	
 	# Build frame to warehouse mapping dictionary
 	frame_warehouse_map = {}
 	selected_warehouse = None
@@ -2004,6 +2020,22 @@ def create_purchase_invoice(source_name, target_doc=None, warehouse=None, frame_
 	"""Create Purchase Invoice from Load Dispatch"""
 	from frappe.model.mapper import get_mapped_doc
 	import json
+	
+	# Check if Purchase Invoice already exists for this Load Dispatch
+	if frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
+		existing_pi = frappe.get_all(
+			"Purchase Invoice",
+			filters={
+				"custom_load_dispatch": source_name
+			},
+			fields=["name"],
+			limit=1
+		)
+		
+		if existing_pi:
+			frappe.throw(
+				__("Purchase Invoice {0} already exists for this Load Dispatch. Cannot create another Purchase Invoice.", [existing_pi[0].name])
+			)
 	
 	# Build frame to warehouse mapping dictionary
 	frame_warehouse_map = {}
@@ -2410,6 +2442,65 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		update_modified=False
 	)
 	frappe.db.commit()
+
+
+@frappe.whitelist()
+def check_existing_documents(load_dispatch_name):
+	"""
+	Check if Purchase Receipt or Purchase Invoice already exists for a Load Dispatch.
+	
+	Args:
+		load_dispatch_name: Name of the Load Dispatch document
+		
+	Returns:
+		dict: {
+			"has_purchase_receipt": bool,
+			"has_purchase_invoice": bool,
+			"purchase_receipt_name": str or None,
+			"purchase_invoice_name": str or None
+		}
+	"""
+	result = {
+		"has_purchase_receipt": False,
+		"has_purchase_invoice": False,
+		"purchase_receipt_name": None,
+		"purchase_invoice_name": None
+	}
+	
+	if not load_dispatch_name:
+		return result
+	
+	# Check for Purchase Receipt
+	if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
+		pr_list = frappe.get_all(
+			"Purchase Receipt",
+			filters={
+				"custom_load_dispatch": load_dispatch_name
+			},
+			fields=["name"],
+			limit=1
+		)
+		
+		if pr_list:
+			result["has_purchase_receipt"] = True
+			result["purchase_receipt_name"] = pr_list[0].name
+	
+	# Check for Purchase Invoice
+	if frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
+		pi_list = frappe.get_all(
+			"Purchase Invoice",
+			filters={
+				"custom_load_dispatch": load_dispatch_name
+			},
+			fields=["name"],
+			limit=1
+		)
+		
+		if pi_list:
+			result["has_purchase_invoice"] = True
+			result["purchase_invoice_name"] = pi_list[0].name
+	
+	return result
 
 
 @frappe.whitelist()

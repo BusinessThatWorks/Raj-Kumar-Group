@@ -42,10 +42,48 @@ frappe.ui.form.on("Load Dispatch", {
 			apply_custom_field_styling(frm);
 		}
 		if(frm.doc.docstatus==1){
-			frm.add_custom_button(__("Purchase Receipt"),frm.cscript["Create Purchase Receipt"], __("Create"));
-			frm.page.set_inner_btn_group_as_primary(__("Create"));
-			frm.add_custom_button(__("Purchase Invoice"),frm.cscript["Create Purchase Invoice"], __("Create"));
-			frm.page.set_inner_btn_group_as_primary(__("Create"));						
+			// Check if Purchase Receipt or Purchase Invoice already exists
+			frappe.call({
+				method: "rkg.rkg.doctype.load_dispatch.load_dispatch.check_existing_documents",
+				args: {
+					load_dispatch_name: frm.doc.name
+				},
+				callback: function(r) {
+					if (r.message) {
+						const has_pr = r.message.has_purchase_receipt || false;
+						const has_pi = r.message.has_purchase_invoice || false;
+						
+						// Only show Purchase Receipt button if no Purchase Receipt exists
+						if (!has_pr) {
+							frm.add_custom_button(__("Purchase Receipt"),frm.cscript["Create Purchase Receipt"], __("Create"));
+							frm.page.set_inner_btn_group_as_primary(__("Create"));
+						}
+						
+						// Only show Purchase Invoice button if no Purchase Invoice exists
+						if (!has_pi) {
+							frm.add_custom_button(__("Purchase Invoice"),frm.cscript["Create Purchase Invoice"], __("Create"));
+							frm.page.set_inner_btn_group_as_primary(__("Create"));
+						}
+						
+						// Show message if documents already exist
+						if (has_pr || has_pi) {
+							let message = __("Cannot create additional documents. ");
+							if (has_pr && has_pi) {
+								message += __("Purchase Receipt and Purchase Invoice already exist for this Load Dispatch.");
+							} else if (has_pr) {
+								message += __("Purchase Receipt already exists for this Load Dispatch.");
+							} else if (has_pi) {
+								message += __("Purchase Invoice already exists for this Load Dispatch.");
+							}
+							
+							frappe.show_alert({
+								message: message,
+								indicator: "orange"
+							}, 5);
+						}
+					}
+				}
+			});
 		}
 	},
 
