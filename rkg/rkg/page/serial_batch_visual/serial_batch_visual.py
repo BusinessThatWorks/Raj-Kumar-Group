@@ -142,7 +142,7 @@ def get_data_by_item_from_serials(data):
 
 
 def get_data_by_warehouse_from_serials(data):
-	"""Group Serial No data by warehouse for pie chart."""
+	"""Group Serial No data by warehouse for horizontal bar chart."""
 	warehouse_counts = {}
 	
 	for row in data:
@@ -158,9 +158,17 @@ def get_data_by_warehouse_from_serials(data):
 	# Sort by count descending
 	sorted_warehouses = sorted(warehouse_counts.items(), key=lambda x: x[1], reverse=True)
 	
+	# For horizontal bar chart, we can use full warehouse names
+	labels = []
+	values = []
+	
+	for w_name, w_count in sorted_warehouses:
+		labels.append(w_name)
+		values.append(w_count)
+	
 	return {
-		"labels": [w[0] for w in sorted_warehouses],
-		"values": [w[1] for w in sorted_warehouses]
+		"labels": labels,
+		"values": values
 	}
 
 

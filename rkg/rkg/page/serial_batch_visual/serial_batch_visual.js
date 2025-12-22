@@ -59,12 +59,75 @@ frappe.pages["serial-batch-visual"].on_page_load = function (wrapper) {
 			grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
 			gap: 25px;
 			margin-bottom: 30px;
+			overflow-x: hidden;
 		}
 		.chart-container {
 			background: var(--card-bg);
 			border-radius: 12px;
 			padding: 24px;
 			box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+			min-height: 300px;
+		}
+		#warehouse-bar-chart {
+			position: relative;
+			width: 100%;
+			min-height: 200px;
+		}
+		.warehouse-bar-chart-container {
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+			padding: 10px 0;
+		}
+		.warehouse-bar-item {
+			display: grid;
+			grid-template-columns: 200px 1fr;
+			gap: 15px;
+			align-items: center;
+		}
+		.warehouse-label {
+			font-size: 13px;
+			font-weight: 500;
+			color: var(--heading-color);
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			min-width: 0;
+		}
+		.warehouse-bar-wrapper {
+			position: relative;
+			height: 32px;
+			background: var(--bg-light-gray);
+			border-radius: 6px;
+			overflow: hidden;
+			display: flex;
+			align-items: center;
+		}
+		.warehouse-bar {
+			height: 100%;
+			background: linear-gradient(90deg, #5e64ff 0%, #7c83ff 100%);
+			border-radius: 6px;
+			display: flex;
+			align-items: center;
+			justify-content: flex-end;
+			padding-right: 10px;
+			min-width: 40px;
+			transition: width 0.3s ease;
+			position: relative;
+		}
+		.warehouse-bar:hover {
+			background: linear-gradient(90deg, #4a52d4 0%, #6b72e6 100%);
+		}
+		.warehouse-value {
+			color: white;
+			font-weight: 600;
+			font-size: 12px;
+			white-space: nowrap;
+		}
+		@media (max-width: 768px) {
+			.warehouse-bar-item {
+				grid-template-columns: 150px 1fr;
+			}
 		}
 		.chart-title {
 			font-size: 16px;
@@ -339,9 +402,9 @@ class SerialBatchVisual {
 					</div>
 					<div class="chart-container">
 						<div class="chart-title">
-							<i class="fa fa-pie-chart"></i> Distribution by Warehouse
+							<i class="fa fa-bar-chart"></i> Distribution by Warehouse
 						</div>
-						<div id="warehouse-pie-chart"></div>
+						<div id="warehouse-bar-chart"></div>
 					</div>
 				</div>
 
@@ -553,34 +616,63 @@ class SerialBatchVisual {
 	}
 
 	render_warehouse_chart(data) {
-		const container = this.wrapper.find("#warehouse-pie-chart")[0];
+		const container = this.wrapper.find("#warehouse-bar-chart");
+		
+		if (!container.length) {
+			console.error("Warehouse chart container not found");
+			return;
+		}
 		
 		if (!data || !data.labels || data.labels.length === 0) {
-			$(container).html('<div class="no-data"><i class="fa fa-pie-chart"></i><p>No data available</p></div>');
+			container.html('<div class="no-data"><i class="fa fa-bar-chart"></i><p>No data available</p></div>');
 			return;
 		}
 
-		// Clear previous chart
-		$(container).empty();
+		// Validate data integrity
+		if (!data.values || data.values.length !== data.labels.length) {
+			console.error("Warehouse chart data mismatch: labels and values length don't match");
+			container.html('<div class="no-data"><i class="fa fa-bar-chart"></i><p>Data format error</p></div>');
+			return;
+		}
 
-		// Color palette for warehouses
-		const colors = ["#00d4aa", "#5e64ff", "#ff6b6b", "#ffa726", "#ab47bc", "#26c6da", "#9ccc65"];
+		// Clear previous chart - destroy existing chart if it exists
+		if (this.charts.warehouseChart) {
+			try {
+				this.charts.warehouseChart.destroy();
+			} catch (e) {
+				// Ignore errors if chart doesn't have destroy method
+			}
+		}
+		container.empty();
 
-		this.charts.warehouseChart = new frappe.Chart(container, {
-			title: "",
-			data: {
-				labels: data.labels,
-				datasets: [
-					{
-						name: "Count",
-						values: data.values,
-					},
-				],
-			},
-			type: "pie",
-			height: 300,
-			colors: colors.slice(0, data.labels.length),
+		// Use full warehouse names
+		const labels = data.labels || [];
+		const values = data.values || [];
+		
+		// Find max value for percentage calculation
+		const maxValue = Math.max(...values, 1);
+		
+		// Create custom horizontal bar chart HTML
+		let chartHTML = '<div class="warehouse-bar-chart-container">';
+		
+		labels.forEach((label, index) => {
+			const value = values[index];
+			const percentage = (value / maxValue) * 100;
+			
+			chartHTML += `
+				<div class="warehouse-bar-item">
+					<div class="warehouse-label" title="${label}">${label}</div>
+					<div class="warehouse-bar-wrapper">
+						<div class="warehouse-bar" style="width: ${percentage}%">
+							<span class="warehouse-value">${value}</span>
+						</div>
+					</div>
+				</div>
+			`;
 		});
+		
+		chartHTML += '</div>';
+		container.html(chartHTML);
 	}
 
 	render_frame_table(data) {

@@ -1809,17 +1809,37 @@ def set_purchase_receipt_serial_batch_fields_readonly(doc, method=None):
 def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_no=None, frame_warehouse_mapping=None):
 	"""Create Purchase Receipt from Load Dispatch"""
 	from frappe.model.mapper import get_mapped_doc
+	import json
 	
 	# Build frame to warehouse mapping dictionary
 	frame_warehouse_map = {}
 	selected_warehouse = None
 	if frame_warehouse_mapping:
+		# Parse frame_warehouse_mapping if it's a JSON string
+		if isinstance(frame_warehouse_mapping, str):
+			try:
+				frame_warehouse_mapping = json.loads(frame_warehouse_mapping)
+			except (json.JSONDecodeError, ValueError):
+				# Try using Frappe's parse_json as fallback
+				frame_warehouse_mapping = frappe.parse_json(frame_warehouse_mapping)
+		
 		# frame_warehouse_mapping is a list of dicts: [{"frame_no": "xxx", "warehouse": "yyy"}, ...]
-		for mapping in frame_warehouse_mapping:
-			frame_no_key = str(mapping.get("frame_no", "")).strip()
-			warehouse_value = str(mapping.get("warehouse", "")).strip()
-			if frame_no_key and warehouse_value:
-				frame_warehouse_map[frame_no_key] = warehouse_value
+		if isinstance(frame_warehouse_mapping, list):
+			for mapping in frame_warehouse_mapping:
+				# Handle both dict and string cases
+				if isinstance(mapping, dict):
+					frame_no_key = str(mapping.get("frame_no", "")).strip()
+					warehouse_value = str(mapping.get("warehouse", "")).strip()
+				elif isinstance(mapping, str):
+					# If mapping is a string, try to parse it
+					mapping = frappe.parse_json(mapping)
+					frame_no_key = str(mapping.get("frame_no", "")).strip()
+					warehouse_value = str(mapping.get("warehouse", "")).strip()
+				else:
+					continue
+				
+				if frame_no_key and warehouse_value:
+					frame_warehouse_map[frame_no_key] = warehouse_value
 	elif warehouse:
 		# Legacy support: if warehouse is provided but no mapping, use it for all
 		selected_warehouse = warehouse
@@ -1983,17 +2003,37 @@ def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_
 def create_purchase_invoice(source_name, target_doc=None, warehouse=None, frame_no=None, frame_warehouse_mapping=None):
 	"""Create Purchase Invoice from Load Dispatch"""
 	from frappe.model.mapper import get_mapped_doc
+	import json
 	
 	# Build frame to warehouse mapping dictionary
 	frame_warehouse_map = {}
 	selected_warehouse = None
 	if frame_warehouse_mapping:
+		# Parse frame_warehouse_mapping if it's a JSON string
+		if isinstance(frame_warehouse_mapping, str):
+			try:
+				frame_warehouse_mapping = json.loads(frame_warehouse_mapping)
+			except (json.JSONDecodeError, ValueError):
+				# Try using Frappe's parse_json as fallback
+				frame_warehouse_mapping = frappe.parse_json(frame_warehouse_mapping)
+		
 		# frame_warehouse_mapping is a list of dicts: [{"frame_no": "xxx", "warehouse": "yyy"}, ...]
-		for mapping in frame_warehouse_mapping:
-			frame_no_key = str(mapping.get("frame_no", "")).strip()
-			warehouse_value = str(mapping.get("warehouse", "")).strip()
-			if frame_no_key and warehouse_value:
-				frame_warehouse_map[frame_no_key] = warehouse_value
+		if isinstance(frame_warehouse_mapping, list):
+			for mapping in frame_warehouse_mapping:
+				# Handle both dict and string cases
+				if isinstance(mapping, dict):
+					frame_no_key = str(mapping.get("frame_no", "")).strip()
+					warehouse_value = str(mapping.get("warehouse", "")).strip()
+				elif isinstance(mapping, str):
+					# If mapping is a string, try to parse it
+					mapping = frappe.parse_json(mapping)
+					frame_no_key = str(mapping.get("frame_no", "")).strip()
+					warehouse_value = str(mapping.get("warehouse", "")).strip()
+				else:
+					continue
+				
+				if frame_no_key and warehouse_value:
+					frame_warehouse_map[frame_no_key] = warehouse_value
 	elif warehouse:
 		# Legacy support: if warehouse is provided but no mapping, use it for all
 		selected_warehouse = warehouse
