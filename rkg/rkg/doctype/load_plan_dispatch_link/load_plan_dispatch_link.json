@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-01-20 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "load_dispatch",
+  "dispatch_no",
+  "invoice_no",
+  "column_break_dispatch",
+  "status",
+  "total_dispatch_quantity",
+  "column_break_quantities",
+  "total_received_quantity",
+  "total_billed_quantity",
+  "column_break_docstatus",
+  "docstatus"
+ ],
+ "fields": [
+  {
+   "fieldname": "load_dispatch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Load Dispatch",
+   "options": "Load Dispatch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dispatch_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Dispatch No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Invoice No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_dispatch",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_dispatch_quantity",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Dispatch Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_quantities",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_received_quantity",
+   "fieldtype": "Int",
+   "label": "Received Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_billed_quantity",
+   "fieldtype": "Int",
+   "label": "Billed Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_docstatus",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "docstatus",
+   "fieldtype": "Data",
+   "label": "Doc Status",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-20 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Load Plan Dispatch Link",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
+
