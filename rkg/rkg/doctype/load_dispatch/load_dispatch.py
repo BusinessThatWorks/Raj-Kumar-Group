@@ -2240,6 +2240,13 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	Update Load Dispatch totals (total_received_quantity and total_billed_quantity)
 	when Purchase Receipt or Purchase Invoice is submitted or cancelled.
 	
+	Logic:
+	1. If Purchase Receipt is created from Load Dispatch → Update Total Received Quantity
+	2. If Purchase Invoice is created from Load Dispatch → Update Total Billed Quantity
+	3. If Purchase Receipt is created from Load Dispatch, and then Purchase Invoice is created 
+	   from that Purchase Receipt → Both Total Received Quantity and Total Billed Quantity 
+	   should be calculated and should show the same value
+	
 	On Submit: Updates with the submitted document's total_qty
 	On Cancel: Recalculates totals from all remaining submitted documents (excludes cancelled one)
 	
@@ -2247,9 +2254,6 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		doc: Purchase Receipt or Purchase Invoice document
 		method: Hook method name (optional)
 	"""
-	# For Purchase Invoice, we always update billing totals regardless of update_stock
-	# The update_stock check only affects whether we update received quantity
-	# Billing should always be counted from Purchase Invoices
 
 	# Get custom_load_dispatch field value from the document
 	load_dispatch_name = None
@@ -2299,7 +2303,7 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 						for item in pr_doc.items
 					)
 			
-			# From PR we only update RECEIVED quantity; billed qty comes from Purchase Invoices only
+			# From PR we only update RECEIVED quantity
 			total_received_qty += pr_qty
 
 	# Case 2: Purchase Invoice
@@ -2307,8 +2311,41 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		if not frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
 			return
 		
-		# Find all submitted Purchase Invoices (docstatus=1) with this Load Dispatch
-		# Method 1: Direct link via custom_load_dispatch field
+		# First, calculate total_received_qty from ALL Purchase Receipts linked to this Load Dispatch
+		pr_list = frappe.get_all(
+			"Purchase Receipt",
+			filters={
+				"docstatus": 1,
+				"custom_load_dispatch": load_dispatch_name
+			},
+			fields=["name", "total_qty"]
+		)
+		
+		for pr in pr_list:
+			pr_qty = flt(pr.get("total_qty")) or 0
+			
+			if pr_qty == 0:
+				pr_doc = frappe.get_doc("Purchase Receipt", pr.name)
+				if hasattr(pr_doc, "items") and pr_doc.items:
+					pr_qty = sum(
+						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
+						for item in pr_doc.items
+					)
+			
+			total_received_qty += pr_qty
+		
+		# Check if this Purchase Invoice was created from a Purchase Receipt
+		# by checking if any items have purchase_receipt field set
+		has_purchase_receipt_link = False
+		linked_purchase_receipts = set()
+		
+		if hasattr(doc, "items") and doc.items:
+			for item in doc.items:
+				if hasattr(item, "purchase_receipt") and item.purchase_receipt:
+					has_purchase_receipt_link = True
+					linked_purchase_receipts.add(item.purchase_receipt)
+		
+		# Calculate total_billed_qty from ALL Purchase Invoices linked to this Load Dispatch
 		pi_list = frappe.get_all(
 			"Purchase Invoice",
 			filters={
@@ -2318,7 +2355,6 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 			fields=["name", "total_qty"]
 		)
 		
-		# Sum total_qty from ALL Purchase Invoices (billing should count all Purchase Invoices)
 		for pi in pi_list:
 			pi_qty = flt(pi.get("total_qty")) or 0
 			
@@ -2330,14 +2366,28 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 						for item in pi_doc.items
 					)
 			
-			# From Purchase Invoice we only update BILLED quantity (not received quantity)
-			# Received quantity comes from Purchase Receipts only
 			total_billed_qty += pi_qty
 		
-	
+		# If Purchase Invoice was created from Purchase Receipt(s) that came from Load Dispatch
+		# Both total_received_qty and total_billed_qty should show the same value
+		if has_purchase_receipt_link and linked_purchase_receipts:
+			# Check if any of the linked Purchase Receipts are linked to this Load Dispatch
+			pr_from_ld = []
+			for pr_name in linked_purchase_receipts:
+				pr_load_dispatch = None
+				if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
+					pr_load_dispatch = frappe.db.get_value("Purchase Receipt", pr_name, "custom_load_dispatch")
+				
+				# If this Purchase Receipt is linked to the same Load Dispatch
+				if pr_load_dispatch == load_dispatch_name:
+					pr_from_ld.append(pr_name)
+			
+			# If Purchase Invoice is created from Purchase Receipt(s) that came from Load Dispatch
+			if pr_from_ld:
+				# When Invoice is created from Receipt, both should show the same value
+				# Use the Purchase Invoice total_billed_qty for both totals
+				total_received_qty = total_billed_qty
 
-	
-	
 	# Get total_dispatch_quantity to determine status
 	total_dispatch_qty = frappe.db.get_value("Load Dispatch", load_dispatch_name, "total_dispatch_quantity") or 0
 	
