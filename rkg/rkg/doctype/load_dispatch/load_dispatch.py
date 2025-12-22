@@ -1806,9 +1806,23 @@ def set_purchase_receipt_serial_batch_fields_readonly(doc, method=None):
 					item.use_serial_batch_fields = 1
 
 @frappe.whitelist()
-def create_purchase_receipt(source_name, target_doc=None):
+def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_no=None, frame_warehouse_mapping=None):
 	"""Create Purchase Receipt from Load Dispatch"""
 	from frappe.model.mapper import get_mapped_doc
+	
+	# Build frame to warehouse mapping dictionary
+	frame_warehouse_map = {}
+	selected_warehouse = None
+	if frame_warehouse_mapping:
+		# frame_warehouse_mapping is a list of dicts: [{"frame_no": "xxx", "warehouse": "yyy"}, ...]
+		for mapping in frame_warehouse_mapping:
+			frame_no_key = str(mapping.get("frame_no", "")).strip()
+			warehouse_value = str(mapping.get("warehouse", "")).strip()
+			if frame_no_key and warehouse_value:
+				frame_warehouse_map[frame_no_key] = warehouse_value
+	elif warehouse:
+		# Legacy support: if warehouse is provided but no mapping, use it for all
+		selected_warehouse = warehouse
 	
 	def set_missing_values(source, target):
 		target.flags.ignore_permissions = True
@@ -1889,6 +1903,20 @@ def create_purchase_receipt(source_name, target_doc=None):
 			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
 			if item_group and hasattr(target, "item_group"):
 				target.item_group = item_group
+		
+		# Set warehouse based on frame mapping
+		item_warehouse = None
+		if frame_warehouse_map and hasattr(source, "frame_no") and source.frame_no:
+			frame_no_key = str(source.frame_no).strip()
+			if frame_no_key in frame_warehouse_map:
+				item_warehouse = frame_warehouse_map[frame_no_key]
+		
+		# Fallback to selected_warehouse if no mapping found
+		if not item_warehouse and selected_warehouse:
+			item_warehouse = selected_warehouse
+		
+		if item_warehouse and hasattr(target, "warehouse"):
+			target.warehouse = item_warehouse
 
 	doc = get_mapped_doc(
 		"Load Dispatch",  # Source doctype
@@ -1943,12 +1971,32 @@ def create_purchase_receipt(source_name, target_doc=None):
 	# 					if hasattr(item, "__dict__"):
 	# 						item.__dict__["serial_no"] = frame_no_value
 	
-	return doc
+	# Save the document and return it
+	if doc:
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		return {"name": doc.name}
+	
+	return None
 
 @frappe.whitelist()
-def create_purchase_invoice(source_name, target_doc=None):
+def create_purchase_invoice(source_name, target_doc=None, warehouse=None, frame_no=None, frame_warehouse_mapping=None):
 	"""Create Purchase Invoice from Load Dispatch"""
 	from frappe.model.mapper import get_mapped_doc
+	
+	# Build frame to warehouse mapping dictionary
+	frame_warehouse_map = {}
+	selected_warehouse = None
+	if frame_warehouse_mapping:
+		# frame_warehouse_mapping is a list of dicts: [{"frame_no": "xxx", "warehouse": "yyy"}, ...]
+		for mapping in frame_warehouse_mapping:
+			frame_no_key = str(mapping.get("frame_no", "")).strip()
+			warehouse_value = str(mapping.get("warehouse", "")).strip()
+			if frame_no_key and warehouse_value:
+				frame_warehouse_map[frame_no_key] = warehouse_value
+	elif warehouse:
+		# Legacy support: if warehouse is provided but no mapping, use it for all
+		selected_warehouse = warehouse
 	
 	def set_missing_values(source, target):
 		target.flags.ignore_permissions = True
@@ -1992,6 +2040,27 @@ def create_purchase_invoice(source_name, target_doc=None):
 		except frappe.DoesNotExistError:
 			# RKG Settings not found, skip setting supplier and gst_hsn_code
 			pass
+		
+		# Set warehouse on items based on frame mapping
+		if (frame_warehouse_map or selected_warehouse) and hasattr(target, "items") and target.items:
+			for item in target.items:
+				item_warehouse = None
+				# Try to find warehouse from frame mapping using serial_no
+				if frame_warehouse_map and hasattr(item, "serial_no") and item.serial_no:
+					serial_no_key = str(item.serial_no).strip()
+					if serial_no_key in frame_warehouse_map:
+						item_warehouse = frame_warehouse_map[serial_no_key]
+				
+				# Fallback to selected_warehouse if no mapping found
+				if not item_warehouse and selected_warehouse:
+					item_warehouse = selected_warehouse
+				
+				# Set warehouse if found
+				if item_warehouse:
+					if hasattr(item, "warehouse"):
+						item.warehouse = item_warehouse
+					if hasattr(item, "target_warehouse"):
+						item.target_warehouse = item_warehouse
 	
 	def update_item(source, target, source_parent):
 		# Map item_code from Load Dispatch Item to Purchase Invoice Item
@@ -2049,6 +2118,20 @@ def create_purchase_invoice(source_name, target_doc=None):
 			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
 			if item_group and hasattr(target, "item_group"):
 				target.item_group = item_group
+		
+		# Set warehouse based on frame mapping
+		item_warehouse = None
+		if frame_warehouse_map and hasattr(source, "frame_no") and source.frame_no:
+			frame_no_key = str(source.frame_no).strip()
+			if frame_no_key in frame_warehouse_map:
+				item_warehouse = frame_warehouse_map[frame_no_key]
+		
+		# Fallback to selected_warehouse if no mapping found
+		if not item_warehouse and selected_warehouse:
+			item_warehouse = selected_warehouse
+		
+		if item_warehouse and hasattr(target, "warehouse"):
+			target.warehouse = item_warehouse
 
 	doc = get_mapped_doc(
 		"Load Dispatch",  # Source doctype
@@ -2103,7 +2186,13 @@ def create_purchase_invoice(source_name, target_doc=None):
 						if hasattr(item, "__dict__"):
 							item.__dict__["serial_no"] = frame_no_value
 	
-	return doc
+	# Save the document and return it
+	if doc:
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		return {"name": doc.name}
+	
+	return None
 
 
 def update_load_dispatch_totals_from_document(doc, method=None):

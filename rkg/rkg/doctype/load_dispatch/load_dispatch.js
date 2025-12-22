@@ -366,15 +366,206 @@ function calculate_print_name_from_model_serial(model_serial_no, model_name) {
 }
 
 cur_frm.cscript["Create Purchase Receipt"] = function(){
-	frappe.model.open_mapped_doc({
-		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_receipt",
-		frm: cur_frm
-	});
+	show_frame_warehouse_dialog(cur_frm, "Purchase Receipt");
 }
 
 cur_frm.cscript["Create Purchase Invoice"] = function(){
-	frappe.model.open_mapped_doc({
-		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_invoice",
-		frm: cur_frm
+	show_frame_warehouse_dialog(cur_frm, "Purchase Invoice");
+}
+
+// Function to show dialog for selecting Frame (Serial No) and Warehouse
+function show_frame_warehouse_dialog(frm, doc_type) {
+	// Get all frame numbers from items
+	const frame_numbers = [];
+	if (frm.doc.items && frm.doc.items.length > 0) {
+		frm.doc.items.forEach(function(item) {
+			if (item.frame_no && item.frame_no.trim() !== "") {
+				// Avoid duplicates
+				if (frame_numbers.indexOf(item.frame_no.trim()) === -1) {
+					frame_numbers.push(item.frame_no.trim());
+				}
+			}
+		});
+	}
+	
+	// Check if there are any frame numbers
+	if (frame_numbers.length === 0) {
+		frappe.msgprint({
+			title: __("No Frame Numbers Found"),
+			message: __("Please add items with Frame Numbers before creating {0}.", [doc_type]),
+			indicator: "orange"
+		});
+		return;
+	}
+	
+	// Get warehouses for dropdown
+	frappe.call({
+		method: "frappe.client.get_list",
+		args: {
+			doctype: "Warehouse",
+			fields: ["name"],
+			order_by: "name"
+		},
+		callback: function(r) {
+			if (r.message) {
+				const warehouses = r.message.map(function(w) {
+					return w.name;
+				});
+				
+				// Build warehouse options HTML
+				const warehouseOptionsHTML = warehouses.map(w => 
+					`<option value="${w}">${w}</option>`
+				).join('');
+				
+				// Build table rows for all frames
+				let tableRowsHTML = "";
+				frame_numbers.forEach(function(frameNo) {
+					tableRowsHTML += `
+						<tr class="mapping-row" data-frame-no="${frameNo}">
+							<td style="padding: 8px;">
+								<strong>${frameNo}</strong>
+							</td>
+							<td style="padding: 8px;">
+								<select class="form-control warehouse-select" style="width: 100%;" data-frame-no="${frameNo}">
+									<option value="">${__("Select Warehouse")}</option>
+									${warehouseOptionsHTML}
+								</select>
+							</td>
+						</tr>
+					`;
+				});
+				
+				// Show dialog with table showing all frames
+				const dialog = new frappe.ui.Dialog({
+					title: __("Select Warehouses for Frames"),
+					fields: [
+						{
+							label: __("Frame-Warehouse Mapping"),
+							fieldname: "mapping_table",
+							fieldtype: "HTML"
+						}
+					],
+					primary_action_label: __("Create"),
+					primary_action: function(values) {
+						// Get values from the table
+						const mapping = [];
+						const fieldWrapper = dialog.fields_dict.mapping_table.$wrapper;
+						fieldWrapper.find(".mapping-row").each(function() {
+							const row = $(this);
+							const frame_no = row.data("frame-no");
+							const warehouse = row.find(".warehouse-select").val();
+							if (frame_no && warehouse) {
+								mapping.push({
+									frame_no: frame_no,
+									warehouse: warehouse
+								});
+							}
+						});
+						
+						// Check if at least one warehouse is selected
+						const selectedCount = mapping.length;
+						if (selectedCount === 0) {
+							frappe.msgprint({
+								title: __("Validation Error"),
+								message: __("Please select at least one warehouse."),
+								indicator: "orange"
+							});
+							return;
+						}
+						
+						// Warn if not all frames have warehouses
+						if (selectedCount < frame_numbers.length) {
+							frappe.confirm(
+								__("{0} out of {1} frames have warehouses selected. Continue with only selected frames?", [selectedCount, frame_numbers.length]),
+								function() {
+									// User confirmed - proceed
+									createDocument(mapping);
+								},
+								function() {
+									// User cancelled - stay in dialog
+								}
+							);
+						} else {
+							// All frames have warehouses - proceed
+							createDocument(mapping);
+						}
+						
+						function createDocument(mapping) {
+							dialog.hide();
+							
+							// Call the appropriate creation method with mapping
+							const method_name = doc_type === "Purchase Receipt" 
+								? "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_receipt"
+								: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_invoice";
+							
+							frappe.call({
+								method: method_name,
+								args: {
+									source_name: frm.doc.name,
+									frame_warehouse_mapping: mapping
+								},
+								callback: function(r) {
+									if (r.message && r.message.name) {
+										// Open the created document
+										frappe.set_route("Form", doc_type, r.message.name);
+									} else if (r.message) {
+										// If response is the doc object, try to get name
+										const doc_name = r.message.name || (r.message.doc && r.message.doc.name);
+										if (doc_name) {
+											frappe.set_route("Form", doc_type, doc_name);
+										} else {
+											frappe.msgprint({
+												title: __("Success"),
+												message: __("{0} created successfully.", [doc_type]),
+												indicator: "green"
+											});
+											frm.reload_doc();
+										}
+									}
+								},
+								error: function(r) {
+									frappe.msgprint({
+										title: __("Error"),
+										message: r.message || __("An error occurred while creating {0}.", [doc_type]),
+										indicator: "red"
+									});
+								}
+							});
+						}
+					}
+				});
+				
+				// Build the HTML table showing all frames
+				let tableHTML = `
+					<div class="frame-warehouse-table" style="max-height: 400px; overflow-y: auto;">
+						<table class="table table-bordered" style="margin-top: 10px;">
+							<thead>
+								<tr>
+									<th style="width: 50%;">${__("Frame (Serial No)")}</th>
+									<th style="width: 50%;">${__("Warehouse")} <span style="color: red;">*</span></th>
+								</tr>
+							</thead>
+							<tbody id="mapping-tbody">
+								${tableRowsHTML}
+							</tbody>
+						</table>
+						<p style="margin-top: 10px; font-size: 12px; color: #666;">
+							<em>${__("Select a warehouse for each frame above.")}</em>
+						</p>
+					</div>
+				`;
+				
+				// Set the HTML content after dialog is created
+				dialog.fields_dict.mapping_table.$wrapper.html(tableHTML);
+				
+				dialog.show();
+			} else {
+				frappe.msgprint({
+					title: __("Error"),
+					message: __("Could not fetch warehouses. Please try again."),
+					indicator: "red"
+				});
+			}
+		}
 	});
 }
