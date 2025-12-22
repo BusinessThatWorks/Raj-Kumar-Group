@@ -195,20 +195,24 @@ class DamageAssessment(Document):
 @frappe.whitelist()
 def get_load_dispatch_from_serial_no(serial_no):
 	"""
-	Get the Load Dispatch document from which a Serial No (frame) originated.
+	Get the Load Dispatch document from which a Serial No (frame) originated,
+	and also get the warehouse where the Serial No is currently located.
 	
 	The Serial No name is the same as the frame_no in Load Dispatch Item.
 	This function looks up which Load Dispatch Item has this frame_no
-	and returns the parent Load Dispatch name.
+	and returns the parent Load Dispatch name and the warehouse.
 	
 	Args:
 		serial_no: The Serial No (frame_no) to look up
 	
 	Returns:
-		dict with load_dispatch name or None if not found
+		dict with load_dispatch name and warehouse, or None if not found
 	"""
 	if not serial_no:
-		return {"load_dispatch": None}
+		return {"load_dispatch": None, "warehouse": None}
+	
+	# Get warehouse from Serial No
+	warehouse = frappe.db.get_value("Serial No", serial_no, "warehouse")
 	
 	# Look up Load Dispatch Item where frame_no matches the serial_no
 	load_dispatch_item = frappe.db.get_value(
@@ -218,22 +222,24 @@ def get_load_dispatch_from_serial_no(serial_no):
 		as_dict=True
 	)
 	
+	result = {"load_dispatch": None, "warehouse": warehouse}
 	if load_dispatch_item and load_dispatch_item.get("parent"):
-		return {"load_dispatch": load_dispatch_item.parent}
+		result["load_dispatch"] = load_dispatch_item.parent
 	
-	return {"load_dispatch": None}
+	return result
 
 
 @frappe.whitelist()
 def get_frames_from_load_plan(load_plan_reference_no):
 	"""
 	Get all frames (frame_no) from all Load Dispatch documents linked to a Load Plan.
+	Also includes the warehouse where each frame is currently located.
 	
 	Args:
 		load_plan_reference_no: The Load Plan Reference No (Load Plan name)
 	
 	Returns:
-		list of dicts with frame_no and related information
+		list of dicts with frame_no, warehouse, and related information
 	"""
 	if not load_plan_reference_no:
 		return []
@@ -268,7 +274,7 @@ def get_frames_from_load_plan(load_plan_reference_no):
 		order_by="parent, idx"
 	)
 	
-	# Return list of frame information
+	# Return list of frame information with warehouse
 	result = []
 	seen_frames = set()  # To avoid duplicates if same frame appears in multiple dispatches
 	for frame in frames:
@@ -277,13 +283,18 @@ def get_frames_from_load_plan(load_plan_reference_no):
 			# Only add if we haven't seen this frame_no before
 			if frame_no not in seen_frames:
 				seen_frames.add(frame_no)
+				
+				# Get warehouse from Serial No
+				warehouse = frappe.db.get_value("Serial No", frame_no, "warehouse")
+				
 				result.append({
 					"frame_no": frame_no,
 					"serial_no": frame_no,  # frame_no is the serial_no name
 					"item_code": frame.item_code,
 					"model_name": frame.model_name,
 					"model_serial_no": frame.model_serial_no,
-					"load_dispatch": frame.parent
+					"load_dispatch": frame.parent,
+					"warehouse": warehouse  # Add warehouse
 				})
 	
 	return result

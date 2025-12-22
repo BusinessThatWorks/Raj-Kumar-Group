@@ -55,15 +55,16 @@ frappe.ui.form.on("Damage Assessment", {
 						// Clear existing items
 						frm.clear_table("damage_assessment_item");
 						
-						// Add all frames
-						r.message.forEach(function(frame) {
-							let row = frm.add_child("damage_assessment_item");
-							row.serial_no = frame.serial_no;
-							row.load_dispatch = frame.load_dispatch || "";  // Set from frame data
-							row.status = "OK";  // Default to OK
-							row.type_of_damage = "";
-							row.estimated_cost = 0;
-						});
+					// Add all frames
+					r.message.forEach(function(frame) {
+						let row = frm.add_child("damage_assessment_item");
+						row.serial_no = frame.serial_no;
+						row.load_dispatch = frame.load_dispatch || "";  // Set from frame data
+						row.from_warehouse = frame.warehouse || "";  // Set warehouse from frame data
+						row.status = "OK";  // Default to OK
+						row.type_of_damage = "";
+						row.estimated_cost = 0;
+					});
 						
 						frm.refresh_field("damage_assessment_item");
 						frm.trigger("calculate_total_estimated_cost");
@@ -100,22 +101,32 @@ frappe.ui.form.on("Damage Assessment Item", {
 		let row = locals[cdt][cdn];
 		
 		if (row.serial_no) {
-			// Auto-fetch Load Dispatch from which this frame originated
+			// Auto-fetch Load Dispatch and Warehouse from which this frame originated
 			frappe.call({
 				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_load_dispatch_from_serial_no",
 				args: {
 					serial_no: row.serial_no
 				},
 				callback: function(r) {
-					if (r.message && r.message.load_dispatch) {
-						frappe.model.set_value(cdt, cdn, "load_dispatch", r.message.load_dispatch);
-					} else {
-						frappe.model.set_value(cdt, cdn, "load_dispatch", "");
+					if (r.message) {
+						if (r.message.load_dispatch) {
+							frappe.model.set_value(cdt, cdn, "load_dispatch", r.message.load_dispatch);
+						} else {
+							frappe.model.set_value(cdt, cdn, "load_dispatch", "");
+						}
+						
+						// Set warehouse if available
+						if (r.message.warehouse) {
+							frappe.model.set_value(cdt, cdn, "from_warehouse", r.message.warehouse);
+						} else {
+							frappe.model.set_value(cdt, cdn, "from_warehouse", "");
+						}
 					}
 				}
 			});
 		} else {
 			frappe.model.set_value(cdt, cdn, "load_dispatch", "");
+			frappe.model.set_value(cdt, cdn, "from_warehouse", "");
 		}
 	},
 	
