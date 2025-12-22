@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{date}",
+ "creation": "2025-01-20 10:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_upload",
+  "excel_file",
+  "date",
+  "column_break_uyma",
+  "total_load_plans_created",
+  "section_break_results",
+  "upload_items",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_upload",
+   "fieldtype": "Section Break",
+   "label": "File Upload"
+  },
+  {
+   "fieldname": "excel_file",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Excel File",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_results",
+   "fieldtype": "Section Break",
+   "label": "Upload Results"
+  },
+  {
+   "fieldname": "total_load_plans_created",
+   "fieldtype": "Int",
+   "label": "Total Load Plans Created",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upload_items",
+   "fieldtype": "Table",
+   "label": "Upload Items",
+   "options": "Load Plan Upload Item"
+  },
+  {
+   "fieldname": "column_break_uyma",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Load Plan Upload",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-22 17:22:16.010798",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Load Plan Upload",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
