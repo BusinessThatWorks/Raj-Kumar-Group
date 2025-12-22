@@ -8,6 +8,7 @@ class DamageAssessment(Document):
 	def validate(self):
 		"""Validate and calculate totals."""
 		self.set_stock_entry_type()
+		self.remove_ok_items()  # Remove items with Status "OK" before validation
 		self.validate_damage_items()
 		self.calculate_total_estimated_cost()
 	
@@ -30,6 +31,45 @@ class DamageAssessment(Document):
 		elif self.stock_entry_type != material_transfer:
 			# Force it to Material Transfer
 			self.stock_entry_type = material_transfer
+	
+	def remove_ok_items(self):
+		"""Remove child table rows where Status is 'OK', keeping only 'Not OK' items."""
+		if not self.damage_assessment_item:
+			return
+		
+		# Count OK items before removal for message
+		ok_count = sum(1 for item in self.damage_assessment_item if item.status == "OK")
+		
+		if ok_count == 0:
+			return  # No OK items to remove
+		
+		# Get child table meta to know which fields to copy
+		child_meta = frappe.get_meta("Damage Assessment Item")
+		fieldnames = [df.fieldname for df in child_meta.fields if df.fieldtype not in ['Section Break', 'Column Break', 'Tab Break']]
+		
+		# Filter to keep only "Not OK" items and convert to dict
+		not_ok_items_data = []
+		for item in self.damage_assessment_item:
+			if item.status == "Not OK":
+				# Convert child table row to dictionary
+				item_dict = {}
+				for fieldname in fieldnames:
+					if hasattr(item, fieldname):
+						item_dict[fieldname] = item.get(fieldname)
+				not_ok_items_data.append(item_dict)
+		
+		# Clear the child table and add back only "Not OK" items
+		self.damage_assessment_item = []
+		for item_data in not_ok_items_data:
+			self.append("damage_assessment_item", item_data)
+		
+		# Show message if items were removed
+		if ok_count > 0:
+			frappe.msgprint(
+				_("Removed {0} item(s) with Status 'OK' from the child table. Only 'Not OK' items will be saved.").format(ok_count),
+				alert=True,
+				indicator="blue"
+			)
 	
 	def validate_damage_items(self):
 		"""Validate that Not OK items have damage/issue, estimated cost, and warehouses."""
