@@ -49,28 +49,20 @@ frappe.ui.form.on("Load Plan Upload", {
 	},
 	
 	before_submit(frm) {
-		console.log("=== LOAD PLAN UPLOAD: before_submit START ===");
-		console.log("Document status (docstatus):", frm.doc.docstatus);
-		console.log("Confirmation flag (_user_confirmed_submit):", frm._user_confirmed_submit);
-		
 		// CRITICAL: Check if document is already submitted FIRST - prevent re-submission
 		if (frm.doc.docstatus === 1) {
-			console.error("Document already submitted. Blocking re-submission.");
 			frappe.throw(__("This document has already been submitted and processed. Cannot submit again."));
 			return false;
 		}
 		
 		// Check for file attachment
 		if (!frm.doc.excel_file) {
-			console.error("No Excel file attached. Blocking submission.");
 			frappe.throw(__("Please attach an Excel file before submitting"));
 			return false;
 		}
 		
 		// If user already confirmed (from file upload confirmation), allow submit to proceed
 		if (frm._user_confirmed_submit) {
-			console.log("✓ User already confirmed. Allowing submit to proceed.");
-			console.log("=== LOAD PLAN UPLOAD: before_submit END (ALLOWING SUBMIT) ===");
 			// Clear the flag immediately to prevent accidental reuse
 			frm._user_confirmed_submit = false;
 			// Explicitly allow validation
@@ -79,20 +71,14 @@ frappe.ui.form.on("Load Plan Upload", {
 		}
 		
 		// If no confirmation yet, block submission
-		console.log("No confirmation yet. Blocking submission.");
-		console.log("Please confirm via the dialog shown when file was uploaded.");
 		frappe.validated = false;
 		return false;
 	},
 	
 	excel_file(frm) {
-		console.log("=== NEW FILE ATTACHED ===");
-		console.log("File URL:", frm.doc.excel_file);
-		
 		// Reset results when new file is attached
 		if (frm.doc.excel_file) {
 			if (frm.doc.docstatus === 0) {
-				console.log("Resetting results and flags...");
 				frm.set_value("total_load_plans_created", 0);
 				// Clear child table
 				frm.clear_table("upload_items");
@@ -100,32 +86,22 @@ frappe.ui.form.on("Load Plan Upload", {
 				frm._user_confirmed_submit = false;
 				frm._file_validated = false;
 				frm._checking_before_submit = false;
-				console.log("Reset complete");
 				
 				// Save document first to go to draft mode
-				console.log("Saving document to draft mode...");
 				frm.save().then(() => {
-					console.log("✓ Document saved to draft");
-					console.log("Document status:", frm.doc.docstatus);
-					
 					// Now check file and show confirmation
 					check_file_and_show_confirmation(frm);
 				}).catch((err) => {
-					console.error("!!! SAVE FAILED !!!");
-					console.error("Error details:", err);
+					// Save failed - error will be shown by Frappe
 				});
 			}
 		}
 	},
 	
 	after_load(frm) {
-		console.log("=== DOCUMENT LOADED ===");
-		console.log("Document name:", frm.doc.name);
-		console.log("Document status:", frm.doc.docstatus);
 		// Clear flags after document load to prevent stale state
 		frm._user_confirmed_submit = false;
 		frm._checking_before_submit = false;
-		console.log("Flags cleared after load");
 	}
 });
 
@@ -176,17 +152,12 @@ function validate_file_and_show_summary(frm) {
 
 // Function to check file and show confirmation dialog (called after file upload)
 function check_file_and_show_confirmation(frm) {
-	console.log("=== CHECKING FILE AND SHOWING CONFIRMATION ===");
-	console.log("File URL:", frm.doc.excel_file);
-	
 	if (!frm.doc.excel_file) {
-		console.error("No file attached");
 		return;
 	}
 	
 	// Prevent multiple concurrent checks
 	if (frm._checking_before_submit) {
-		console.warn("Already checking file. Skipping duplicate check.");
 		return;
 	}
 	
@@ -200,10 +171,7 @@ function check_file_and_show_confirmation(frm) {
 		freeze: true,
 		freeze_message: __("Reading file..."),
 		callback: function(r) {
-			console.log("Server response received:", r);
-			
 			if (!r.message) {
-				console.error("No message in response. File reading failed.");
 				frm._checking_before_submit = false;
 				frappe.msgprint({
 					title: __("Error"),
@@ -214,14 +182,9 @@ function check_file_and_show_confirmation(frm) {
 			}
 			
 			const check_result = r.message;
-			console.log("File check result:", check_result);
-			console.log("Load Reference count:", check_result.count);
-			console.log("Has multiple:", check_result.has_multiple);
-			console.log("Load References:", check_result.unique_load_refs);
 			
 			// Check if load reference numbers found
 			if (check_result.count === 0) {
-				console.error("No Load Reference Numbers found in file.");
 				frm._checking_before_submit = false;
 				frappe.msgprint({
 					title: __("Error"),
@@ -230,8 +193,6 @@ function check_file_and_show_confirmation(frm) {
 				});
 				return;
 			}
-			
-			console.log("Building confirmation dialog...");
 			
 			// Build detailed confirmation message with row counts
 			const details = check_result.load_ref_details || [];
@@ -262,23 +223,17 @@ function check_file_and_show_confirmation(frm) {
 			confirmation_html += `</div>`;
 			
 			// Show confirmation dialog - this happens BEFORE any Load Plans are created
-			console.log("*** SHOWING CONFIRMATION DIALOG - NO LOAD PLANS CREATED YET ***");
-			console.log("Document is in Draft mode. Waiting for user confirmation to submit...");
-			
 			frappe.confirm(
 				confirmation_html,
 				function() {
 					// Yes callback - User confirmed, SUBMIT DOCUMENT DIRECTLY
-					console.log("=== USER CLICKED YES - SUBMITTING DOCUMENT DIRECTLY ===");
 					frm._checking_before_submit = false;
 					
 					// Set flag to allow submit on the next before_submit call
 					frm._user_confirmed_submit = true;
-					console.log("Confirmation flag set to TRUE");
 					
 					// CRITICAL: Now allow validation since user confirmed
 					frappe.validated = true;
-					console.log("Validation enabled - submission can proceed");
 					
 					// Show submitting message
 					frappe.show_alert({
@@ -286,25 +241,13 @@ function check_file_and_show_confirmation(frm) {
 						indicator: "blue"
 					}, 3);
 					
-					console.log("Calling frm.savesubmit() - Document will be submitted NOW");
-					console.log(">>> before_submit will be called (will see flag and allow) <<<");
-					
 					// SUBMIT DOCUMENT DIRECTLY - savesubmit does both save and submit in one call
 					// This will call before_submit, which will see the flag and return true
 					// Then on_submit will run and create Load Plans
 					frm.savesubmit().then(() => {
-						console.log("✓ Submit completed successfully");
-						console.log(">>> on_submit has run - Load Plans should be created now <<<");
-						console.log("Waiting 1 second before reload...");
-						
 						// After submit completes successfully, reload to show results
 						setTimeout(() => {
-							console.log("Reloading document to show child table...");
 							frm.reload_doc().then(() => {
-								console.log("✓ Document reloaded successfully");
-								console.log("Child table items count:", frm.doc.upload_items ? frm.doc.upload_items.length : 0);
-								console.log("Total Load Plans created:", frm.doc.total_load_plans_created);
-								
 								// Show success message after reload
 								frappe.show_alert({
 									message: __("Load Plans processed successfully. See results below."),
@@ -313,17 +256,12 @@ function check_file_and_show_confirmation(frm) {
 								
 								// Ensure child table is visible
 								if (frm.doc.upload_items && frm.doc.upload_items.length > 0) {
-									console.log("Refreshing child table field...");
 									frm.refresh_field("upload_items");
 								}
-								
-								console.log("=== LOAD PLAN UPLOAD: COMPLETE ===");
 							});
 						}, 1000);
 					}).catch((err) => {
 						// If submit fails, clear flags and show error
-						console.error("!!! SUBMIT FAILED !!!");
-						console.error("Error details:", err);
 						frm._user_confirmed_submit = false;
 						frm._checking_before_submit = false;
 						frappe.validated = false;
@@ -336,25 +274,18 @@ function check_file_and_show_confirmation(frm) {
 				},
 				function() {
 					// No callback - User cancelled
-					console.log("=== USER CLICKED NO - SUBMISSION CANCELLED ===");
-					console.log("*** NO LOAD PLANS WILL BE CREATED ***");
 					frm._user_confirmed_submit = false;
 					frm._checking_before_submit = false;
 					// Keep blocking validation
 					frappe.validated = false;
-					console.log("Flags cleared. Document remains in Draft status.");
-					console.log("Validation remains blocked - document will NOT be submitted");
 					frappe.show_alert({
 						message: __("Submit cancelled. Document remains in Draft."),
 						indicator: "orange"
 					}, 3);
-					console.log("=== LOAD PLAN UPLOAD: CANCELLED ===");
 				}
 			);
 		},
 		error: function(err) {
-			console.error("!!! SERVER CALL FAILED !!!");
-			console.error("Error details:", err);
 			frm._checking_before_submit = false;
 			frappe.msgprint({
 				title: __("Error"),
