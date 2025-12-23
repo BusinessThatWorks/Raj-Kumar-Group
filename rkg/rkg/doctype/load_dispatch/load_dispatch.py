@@ -52,16 +52,21 @@ class LoadDispatch(Document):
 			# If unit field exists but is empty, use default "Pcs"
 			stock_uom = "Pcs"
 		
-		# Create new Item
-		item_doc = frappe.get_doc({
-			"doctype": "Item",
-			"item_code": item_code,
-			"item_name": dispatch_item.model_variant or item_code,
-			"item_group": item_group,
-			"stock_uom": stock_uom,
-			"is_stock_item": 1,
-			"has_serial_no": 1,
-		})
+		# Check if Item already exists
+		if frappe.db.exists("Item", item_code):
+			# Item exists, get it for update
+			item_doc = frappe.get_doc("Item", item_code)
+		else:
+			# Create new Item
+			item_doc = frappe.get_doc({
+				"doctype": "Item",
+				"item_code": item_code,
+				"item_name": dispatch_item.model_variant or item_code,
+				"item_group": item_group,
+				"stock_uom": stock_uom,
+				"is_stock_item": 1,
+				"has_serial_no": 1,
+			})
 		
 		# Populate Supplier from RKG Settings
 		if rkg_settings and rkg_settings.get("default_supplier"):
@@ -94,13 +99,14 @@ class LoadDispatch(Document):
 			if hasattr(item_doc, "custom_print_name"):
 				item_doc.custom_print_name = dispatch_item.print_name
 		
-		# Insert Item with proper error handling
+		# Save or insert Item with proper error handling
 		try:
-			# Validate Item before inserting
-			item_doc.validate()
-			
-			# Insert Item
-			item_doc.insert(ignore_permissions=True)
+			if item_doc.is_new():
+				# New Item - insert it
+				item_doc.insert(ignore_permissions=True)
+			else:
+				# Existing Item - save updates
+				item_doc.save(ignore_permissions=True)
 			
 			# Commit immediately after each Item creation to ensure it exists
 			# Use savepoint to ensure this commit persists
@@ -205,35 +211,126 @@ class LoadDispatch(Document):
 				return any_group
 			frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
 	
+	def _validate_links(self):
+		"""
+		Override _validate_links to skip validation for item_code in child table.
+		item_code will be set in before_submit() when Items are created.
+		This prevents LinkValidationError during draft saves.
+		"""
+		# Remove invalid item_codes before parent validation runs
+		if self.items:
+			for item in self.items:
+				item_code_value = None
+				try:
+					item_code_value = getattr(item, 'item_code', None)
+				except:
+					pass
+				
+				if item_code_value:
+					item_code_str = str(item_code_value).strip() if item_code_value else ""
+					if item_code_str and not frappe.db.exists("Item", item_code_str):
+						# Item doesn't exist - remove item_code before validation
+						try:
+							if hasattr(item, '__dict__') and 'item_code' in item.__dict__:
+								del item.__dict__['item_code']
+						except:
+							pass
+						try:
+							if hasattr(item, 'item_code'):
+								delattr(item, 'item_code')
+						except:
+							pass
+		
+		# Call parent's _validate_links for all other fields
+		# The invalid item_codes have been removed, so validation will pass
+		super()._validate_links()
+	
 	def before_insert(self):
 		"""
 		Hook called before inserting new Load Dispatch document.
 		
 		Note: Items are NOT created here - they are created in before_submit hook.
-		This method only verifies that if item_code is set, the Item exists.
-		Rows without item_code will have Items created in before_submit.
+		This method removes any invalid item_codes to prevent LinkValidationError.
+		Items will be created in before_submit() and item_code will be set then.
 		"""
 		if not self.items:
 			return
 		
-		# Final verification: Ensure all set item_codes have corresponding Items
-		# This prevents link validation errors
-		# Note: item_code can be None/blank - those will be handled on submit
-		missing_items = []
+		# Remove any item_codes that don't have corresponding Items
+		# This prevents LinkValidationError during insert()
+		# Items will be created in before_submit() hook and item_code will be set then
 		for item in self.items:
-			if item.item_code and str(item.item_code).strip():
-				item_code = str(item.item_code).strip()
-				if not frappe.db.exists("Item", item_code):
-					missing_items.append(f"Row #{getattr(item, 'idx', 'Unknown')}: Item '{item_code}' does not exist")
+			item_code_value = getattr(item, 'item_code', None)
+			if item_code_value:
+				item_code_str = str(item_code_value).strip() if item_code_value else ""
+				if item_code_str and not frappe.db.exists("Item", item_code_str):
+					# Item doesn't exist - remove item_code completely using __dict__ deletion
+					# This is the most reliable way to remove a field from a Frappe child table row
+					try:
+						if hasattr(item, '__dict__'):
+							if 'item_code' in item.__dict__:
+								del item.__dict__['item_code']
+							# Also try to unset using delattr
+							if hasattr(item, 'item_code'):
+								delattr(item, 'item_code')
+					except (AttributeError, KeyError, TypeError):
+						# If deletion fails, try setting to None
+						try:
+							setattr(item, 'item_code', None)
+						except:
+							pass
+	
+	def before_validate(self):
+		"""
+		Called before validate() - remove invalid item_codes as early as possible.
+		This runs before any validation logic, ensuring item_code is cleaned up first.
+		CRITICAL: This must remove item_code completely to prevent LinkValidationError.
+		"""
+		if not self.items:
+			return
 		
-		if missing_items:
-			frappe.throw(
-				_("The following Items do not exist:\n{0}\n\n"
-				  "Items will be created on submit if they have Model Serial No.").format(
-					"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
-				),
-				title=_("Invalid Item Codes")
-			)
+		# Remove any item_codes that don't have corresponding Items
+		# This must happen as early as possible to prevent LinkValidationError
+		# Use the most aggressive method: directly manipulate __dict__
+		for item in self.items:
+			# Check if item_code attribute exists (using getattr with None default)
+			item_code_value = None
+			try:
+				item_code_value = getattr(item, 'item_code', None)
+			except:
+				pass
+			
+			if item_code_value:
+				item_code_str = str(item_code_value).strip() if item_code_value else ""
+				if item_code_str and not frappe.db.exists("Item", item_code_str):
+					# Item doesn't exist - remove item_code completely
+					# Try all methods to ensure it's removed
+					removed = False
+					
+					# Method 1: Delete from __dict__ (most reliable for Frappe child tables)
+					try:
+						if hasattr(item, '__dict__') and 'item_code' in item.__dict__:
+							del item.__dict__['item_code']
+							removed = True
+					except (KeyError, TypeError, AttributeError):
+						pass
+					
+					# Method 2: Use delattr if attribute still exists
+					if not removed:
+						try:
+							if hasattr(item, 'item_code'):
+								delattr(item, 'item_code')
+								removed = True
+						except AttributeError:
+							pass
+					
+					# Method 3: Set to None as fallback (Link fields may accept None)
+					if not removed:
+						try:
+							setattr(item, 'item_code', None)
+							item.item_code = None
+						except:
+							pass
 	
 	def before_save(self):
 		"""
@@ -241,9 +338,9 @@ class LoadDispatch(Document):
 		CRITICAL: Only sets item_code if Item already exists to prevent LinkValidationError.
 		Items are created in before_submit() if they don't exist.
 		"""
-		if not self.is_new() and self.items:
-			# For existing documents, set item_code only if Item exists
-			self.set_item_code()
+		# if not self.is_new() and self.items:
+		# 	# For existing documents, set item_code only if Item exists
+		# 	self.set_item_code()
 		
 		# Process additional operations if Load Plan exists
 		if self.items and self.has_valid_load_plan():
@@ -274,19 +371,75 @@ class LoadDispatch(Document):
 			self.calculate_total_dispatch_quantity()
 			return
 		
-		# CRITICAL: Only set item_code if Item already exists
+		# STEP 1: FIRST, remove ALL item_codes that don't have valid Items
+		# This must happen FIRST to prevent LinkValidationError
+		# Use multiple methods to ensure item_code is completely removed
+		for item in self.items:
+			item_code_value = getattr(item, 'item_code', None)
+			if item_code_value:
+				item_code_str = str(item_code_value).strip() if item_code_value else ""
+				if item_code_str and not frappe.db.exists("Item", item_code_str):
+					# Item doesn't exist - remove item_code using all possible methods
+					# Method 1: Delete from __dict__
+					try:
+						if hasattr(item, '__dict__') and 'item_code' in item.__dict__:
+							del item.__dict__['item_code']
+					except (KeyError, TypeError):
+						pass
+					# Method 2: Use delattr
+					try:
+						if hasattr(item, 'item_code'):
+							delattr(item, 'item_code')
+					except AttributeError:
+						pass
+					# Method 3: Set to None (some Link fields accept this)
+					try:
+						item.item_code = None
+					except:
+						pass
+					# Method 4: Use setattr with None
+					try:
+						setattr(item, 'item_code', None)
+					except:
+						pass
+		
+		# STEP 2: Now, only set item_code from model_serial_no if Item already exists
 		# This prevents LinkValidationError when saving draft documents
 		# Items will be created in before_submit() before link validation runs
 		for item in self.items:
+			# Skip if item_code is already set (it's valid since STEP 1 cleared invalid ones)
+			if getattr(item, 'item_code', None):
+				continue
+			
+			# If item_code is not set, try to set it from model_serial_no only if Item exists
 			if item.model_serial_no and str(item.model_serial_no).strip():
 				item_code = str(item.model_serial_no).strip()
 				# Only set item_code if Item exists, otherwise leave it empty
 				if frappe.db.exists("Item", item_code):
 					item.item_code = item_code
-				else:
-					# Clear item_code if Item doesn't exist to prevent LinkValidationError
-					# Items will be created in before_submit()
-					item.item_code = None
+				# else: Do not set item_code - Items will be created in before_submit()
+		
+		# Final safety check: Ensure no invalid item_codes remain
+		# This prevents LinkValidationError by removing any item_code that doesn't have a corresponding Item
+		for item in self.items:
+			item_code_value = getattr(item, 'item_code', None)
+			if item_code_value:
+				item_code_str = str(item_code_value).strip() if item_code_value else ""
+				if item_code_str and not frappe.db.exists("Item", item_code_str):
+					# Item doesn't exist - remove item_code completely using __dict__ deletion
+					try:
+						if hasattr(item, '__dict__'):
+							if 'item_code' in item.__dict__:
+								del item.__dict__['item_code']
+							# Also try to unset using delattr
+							if hasattr(item, 'item_code'):
+								delattr(item, 'item_code')
+					except (AttributeError, KeyError, TypeError):
+						# If deletion fails, try setting to None as last resort
+						try:
+							setattr(item, 'item_code', None)
+						except:
+							pass
 		
 		# For rows with item_code set, verify the Item exists (link validation will handle this)
 		# For rows without item_code, they will be handled in before_submit
@@ -457,11 +610,24 @@ class LoadDispatch(Document):
 		Populate item_code from model_serial_no for all items.
 		CRITICAL: Only sets item_code if Item already exists to prevent LinkValidationError.
 		Items will be created in before_submit() if they don't exist.
+		If item_code is already set and valid, it will be preserved.
 		"""
+		
 		if not self.items:
 			return
 		
 		for item in self.items:
+			# If item_code is already set and Item exists, keep it
+			if item.item_code and str(item.item_code).strip():
+				existing_item_code = str(item.item_code).strip()
+				if frappe.db.exists("Item", existing_item_code):
+					# Item exists, keep the existing item_code
+					continue
+				else:
+					# Item doesn't exist, clear item_code
+					item.item_code = None
+			
+			# If item_code is not set or was cleared, try to set it from model_serial_no
 			if not item.model_serial_no or not str(item.model_serial_no).strip():
 				continue
 			
@@ -953,11 +1119,20 @@ class LoadDispatch(Document):
 			if not item_code:
 				continue
 			
-			# Ensure item_code is set on the item (in case we used model_serial_no)
-			# This ensures item_code is always set from model_serial_no when available
-			item.item_code = item_code
+			# Ensure item_code is set on the item ONLY if Item exists
+			# This ensures item_code is always set from model_serial_no when Item exists
+			if frappe.db.exists("Item", item_code):
+				item.item_code = item_code
+			else:
+				# Item doesn't exist - don't set item_code, it will be created in before_submit()
+				# Remove item_code if it was set
+				if hasattr(item, '__dict__') and 'item_code' in item.__dict__:
+					try:
+						del item.__dict__['item_code']
+					except:
+						pass
 			
-			# Note: item_code is set from model_serial_no or existing item_code
+			# Note: item_code is set from model_serial_no or existing item_code ONLY if Item exists
 			
 			# Ensure print_name is calculated before creating/updating Item
 			if not hasattr(item, "print_name") or not item.print_name:
@@ -1534,6 +1709,9 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 					# Skip Print Name - it will be calculated from Model Serial Number
 					if fieldname == "print_name":
 						continue
+					# CRITICAL: Skip item_code - it will be set on submit only if Item exists
+					if fieldname == "item_code":
+						continue
 					
 					# Resolve actual CSV column using normalized header lookup
 					actual_col = norm_csv_headers.get(_norm_header(csv_col))
@@ -1579,11 +1757,15 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 					if fieldname == "invoice_no" and value:
 						row_data[fieldname] = value
 				
+				# CRITICAL: Explicitly remove item_code if it somehow got into row_data
+				if "item_code" in row_data:
+					del row_data["item_code"]
+				
 				# Calculate print_name from model_name and model_serial_no (don't read from CSV)
 				if "model_serial_no" in row_data and row_data["model_serial_no"]:
 					model_name = row_data.get("model_name", None)
 					row_data["print_name"] = calculate_print_name(row_data["model_serial_no"], model_name)
-				
+				    
 				if row_data:
 					rows.append(row_data)
 			
@@ -1636,6 +1818,7 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 					csv_load_ref = list(csv_load_reference_nos)[0]
 					if csv_load_ref != selected_load_reference_no:
 						frappe.throw(_("Load Reference Number mismatch! You have selected '{0}', but the CSV file contains '{1}'. Please ensure the CSV file matches the selected Load Reference Number.").format(selected_load_reference_no, csv_load_ref))
+			
 			print(rows)
 			print("\n\n")
 			return rows
@@ -1930,7 +2113,7 @@ def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_
 			target.stock_uom = uom_value
 		
 		# Set item_group from source if available, otherwise get from Item
-		if source.item_group:
+		if hasattr(source, "item_group") and source.item_group:
 			# If Purchase Receipt Item has item_group field, set it
 			if hasattr(target, "item_group"):
 				target.item_group = source.item_group
@@ -1973,7 +2156,6 @@ def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_
 					"item_code": "item_code",
 					"model_variant": "item_name",
 					"frame_no": "serial_no",
-					"item_group": "item_group",
 				},
 				"postprocess": update_item
 			},
@@ -2681,7 +2863,8 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			frappe.log_error(f"Could not parse date: {date_str}", "Date Parsing Error")
 			return None
 		
-		# Process each row: Check if Item exists, create if not, then set item_code
+		# Process each row: Only set item_code if Item already exists
+		# Items will be created in before_submit() hook, not during CSV import
 		processed_rows = []
 		for idx, row in enumerate(rows, start=1):
 			# Normalize the row data: map Excel column names to field names
@@ -2690,6 +2873,15 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 				if is_empty_value(value):
 					continue
 				normalized_col = normalize_column_name(excel_col)
+				
+				# CRITICAL: Skip item_code column from CSV - it will be set from model_serial_no on submit
+				# This prevents invalid item_code values from being imported
+				# Check both normalized and original column names
+				if normalized_col and normalized_col == 'item code':
+					continue
+				if excel_col and excel_col.lower().strip() in ['item_code', 'item code']:
+					continue
+				
 				if normalized_col and normalized_col in column_mapping:
 					field_name = column_mapping[normalized_col]
 					# Parse dates for date fields
@@ -2700,8 +2892,9 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 					else:
 						normalized_row[field_name] = value
 				else:
-					# Keep original column name if no mapping found
-					normalized_row[excel_col] = value
+					# Keep original column name if no mapping found, but skip item_code
+					if excel_col.lower().strip() not in ['item_code', 'item code']:
+						normalized_row[excel_col] = value
 			
 			# Step 1: Get Model Serial No (this is the Item Code)
 			# Try multiple variations
@@ -2726,35 +2919,14 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			# Ensure model_serial_no is in the normalized row
 			normalized_row['model_serial_no'] = item_code
 			
-			# Step 2: Check if Item exists with this Item Code (model_serial_no)
-			if frappe.db.exists("Item", item_code):
-				# Item exists - set item_code in the row data
-				normalized_row['item_code'] = item_code
-			else:
-				# Item does NOT exist - create it now
-				try:
-					# Create Item from row data
-					_create_item_from_row_data(normalized_row, item_code)
-					# Clear cache to ensure Item is visible
-					frappe.clear_cache(doctype="Item")
-					# Verify Item was created
-					if frappe.db.exists("Item", item_code):
-						# Item created successfully - set item_code in the row data
-						normalized_row['item_code'] = item_code
-					else:
-						# Item creation failed - log error but continue
-						frappe.log_error(
-							f"Item '{item_code}' was not created after calling _create_item_from_row_data. Row index: {idx}",
-							"Item Creation Failed in process_tabular_file"
-						)
-						normalized_row['item_code'] = None
-				except Exception as e:
-					# Log error but continue processing other rows
-					frappe.log_error(
-						f"Failed to create Item '{item_code}' for row {idx}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-						"Item Creation Error in process_tabular_file"
-					)
-					normalized_row['item_code'] = None
+			# Step 2: CRITICAL - NEVER set item_code in CSV import data
+			# Items will be created in before_submit() and item_code will be set then
+			# Explicitly remove item_code if it somehow got into normalized_row
+			if 'item_code' in normalized_row:
+				del normalized_row['item_code']
+			
+			# DO NOT set item_code here at all - it will be set in before_submit() when Items are created
+			# This prevents LinkValidationError during draft saves
 			
 			processed_rows.append(normalized_row)
 		

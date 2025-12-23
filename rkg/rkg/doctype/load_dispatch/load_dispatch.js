@@ -136,13 +136,20 @@ frappe.ui.form.on("Load Dispatch", {
 								r.message.forEach(function(row) {
 									let child_row = frm.add_child("items");
 									Object.keys(row).forEach(function(key) {
+										// CRITICAL: Skip item_code completely - it will be set on submit only if Item exists
+										// Do NOT set item_code from CSV data to prevent LinkValidationError
+										if (key === 'item_code') {
+											return; // Skip item_code entirely
+										}
 										child_row[key] = row[key];
 									});
-									// Set item_code from model_serial_no if available
-									// Item will be created on save if it doesn't exist
-									if (row.model_serial_no && row.model_serial_no.trim()) {
-										child_row.item_code = row.model_serial_no.trim();
+									// CRITICAL: Explicitly ensure item_code is not set on the row
+									// Delete it if it somehow exists to prevent LinkValidationError
+									if (child_row.item_code !== undefined && child_row.item_code !== null) {
+										delete child_row.item_code;
 									}
+									// item_code will be generated and set in before_submit() when Items are created
+									// Never set item_code from CSV import to avoid LinkValidationError
 									// Calculate rate from price_unit (excluding 18% GST)
 									if (row.price_unit) {
 										const price_unit = flt(row.price_unit);
@@ -318,21 +325,24 @@ frappe.ui.form.on("Load Dispatch Item", {
 		setTimeout(() => apply_custom_field_styling(frm), 50);
 	},
 	model_serial_no: function(frm, cdt, cdn) {
-		// Set item_code from model_serial_no and calculate print_name when model_serial_no changes
+		// Calculate print_name when model_serial_no changes
+		// item_code will be generated and set on submit, not here
 		let row = locals[cdt][cdn];
 		if (row.model_serial_no) {
-			// Set item_code from model_serial_no (Item will be created on save if it doesn't exist)
-			const item_code = row.model_serial_no.trim();
-			row.item_code = item_code;
-			frm.refresh_field("item_code", row.name, "items");
-			
-			// Calculate print_name from model_name and model_serial_no
+			// Don't set item_code here - it will be generated on submit
+			// Only calculate print_name from model_name and model_serial_no
 			row.print_name = calculate_print_name_from_model_serial(row.model_serial_no, row.model_name);
 			frm.refresh_field("print_name", row.name, "items");
 		} else {
-			// Clear item_code if model_serial_no is cleared
-			row.item_code = "";
-			frm.refresh_field("item_code", row.name, "items");
+			// Clear print_name if model_serial_no is cleared
+			// Do NOT set item_code here - let Python handle it
+			row.print_name = "";
+			frm.refresh_field("print_name", row.name, "items");
+			// Explicitly remove item_code if it exists
+			if (row.item_code !== undefined && row.item_code !== null) {
+				delete row.item_code;
+				frm.refresh_field("item_code", row.name, "items");
+			}
 		}
 		// Reapply styling after field refresh
 		setTimeout(() => apply_custom_field_styling(frm), 50);
