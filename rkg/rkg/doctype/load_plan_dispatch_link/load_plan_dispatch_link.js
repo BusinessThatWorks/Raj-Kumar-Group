@@ -9,3 +9,4 @@ frappe.ui.form.on("Load Plan Dispatch Link", {
 	}
 });
 
+
