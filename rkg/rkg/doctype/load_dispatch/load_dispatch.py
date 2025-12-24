@@ -359,6 +359,10 @@ class LoadDispatch(Document):
 							if key_no_value is not None and str(key_no_value).strip():
 								setattr(serial_no, "custom_key_no", str(key_no_value))
 
+							# Map Color Code from Load Dispatch Item to Serial No color_code field
+							if getattr(item, "color_code", None):
+								setattr(serial_no, "color_code", item.color_code)
+
 							# Map purchase_date for aging (prefer dispatch_date -> planned_arrival_date -> parent.dispatch_date) when column exists
 							if has_purchase_date:
 								purchase_date = (
@@ -405,6 +409,21 @@ class LoadDispatch(Document):
 							except Exception as e:
 								frappe.log_error(
 									f"Error updating custom_key_no for Serial No {serial_no_name}: {str(e)}",
+									"Serial No Update Error",
+								)
+
+						# If Serial No already exists, update the color_code if provided
+						if getattr(item, "color_code", None):
+							try:
+								frappe.db.set_value(
+									"Serial No",
+									serial_no_name,
+									"color_code",
+									item.color_code,
+								)
+							except Exception as e:
+								frappe.log_error(
+									f"Error updating color_code for Serial No {serial_no_name}: {str(e)}",
 									"Serial No Update Error",
 								)
 

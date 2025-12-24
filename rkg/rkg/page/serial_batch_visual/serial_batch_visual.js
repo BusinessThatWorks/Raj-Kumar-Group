@@ -1,7 +1,7 @@
 frappe.pages["serial-batch-visual"].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: "Serial & Batch Visual Dashboard",
+		title: "Frame Visual Dashboard",
 		single_column: true,
 	});
 
@@ -689,7 +689,7 @@ class SerialBatchVisual {
 		const table = $(`
 			<div class="serial-list" style="display:block; max-height:400px; overflow:auto; padding:0;">
 				<div class="serial-item" style="font-weight:600; background: var(--bg-light-gray); grid-template-columns: 1.5fr 1fr 1fr 1fr 0.8fr;">
-					<div>Serial No</div>
+					<div>Frame No</div>
 					<div>Item Code</div>
 					<div>Warehouse</div>
 					<div>Age Bucket</div>
