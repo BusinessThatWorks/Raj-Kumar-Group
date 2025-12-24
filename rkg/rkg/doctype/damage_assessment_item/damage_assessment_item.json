@@ -10,7 +10,9 @@
   "load_dispatch",
   "status",
   "column_break_item",
-  "type_of_damage",
+  "type_of_damage_1",
+  "type_of_damage_2",
+  "type_of_damage_3",
   "date_of_arrival_of_frame",
   "damage_description",
   "damage_image",
@@ -52,10 +54,27 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "type_of_damage",
+   "fieldname": "type_of_damage_1",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Damage/Issue",
+   "label": "Damage/Issue 1",
+   "options": "\nDent\nPaint\nScratches\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nTail Light\nSeat\nHandle Bar\nMudguard\nSide Panel\nFuel Tank\nEngine Cover\nWheel/Tyre\nBattery\nElectrical\nOther",
+   "depends_on": "eval:doc.status == 'Not OK'",
+   "reqd": 0
+  },
+  {
+   "fieldname": "type_of_damage_2",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Damage/Issue 2",
+   "options": "\nDent\nPaint\nScratches\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nTail Light\nSeat\nHandle Bar\nMudguard\nSide Panel\nFuel Tank\nEngine Cover\nWheel/Tyre\nBattery\nElectrical\nOther",
+   "depends_on": "eval:doc.status == 'Not OK'"
+  },
+  {
+   "fieldname": "type_of_damage_3",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Damage/Issue 3",
    "options": "\nDent\nPaint\nScratches\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nTail Light\nSeat\nHandle Bar\nMudguard\nSide Panel\nFuel Tank\nEngine Cover\nWheel/Tyre\nBattery\nElectrical\nOther",
    "depends_on": "eval:doc.status == 'Not OK'"
   },

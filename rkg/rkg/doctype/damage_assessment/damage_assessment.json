@@ -65,6 +65,7 @@
    "reqd": 1
   },
   {
+   "description": "Each frame can have up to 3 damages/issues. Damage/Issue 1 is mandatory for frames marked as Not OK.",
    "fieldname": "damage_items_section",
    "fieldtype": "Section Break",
    "label": "Damaged Frames"

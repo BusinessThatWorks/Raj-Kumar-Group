@@ -1,2 +1,0 @@
-# Serial Batch Visual Dashboard
-

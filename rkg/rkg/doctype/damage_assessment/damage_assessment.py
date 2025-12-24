@@ -72,12 +72,16 @@ class DamageAssessment(Document):
 			)
 	
 	def validate_damage_items(self):
-		"""Validate that Not OK items have damage/issue, estimated cost, and warehouses."""
+		"""
+		Validate that Not OK items have at least one damage/issue (type_of_damage_1 is mandatory),
+		estimated cost, and warehouses.
+		"""
 		if self.damage_assessment_item:
 			for item in self.damage_assessment_item:
 				if item.status == "Not OK":
-					if not item.type_of_damage:
-						frappe.throw(_("Damage/Issue is required for frame {0} marked as Not OK").format(item.serial_no or ""))
+					# At least one damage/issue is required (type_of_damage_1 is mandatory)
+					if not item.type_of_damage_1:
+						frappe.throw(_("Damage/Issue 1 is required for frame {0} marked as Not OK").format(item.serial_no or ""))
 					if not item.estimated_cost:
 						frappe.throw(_("Estimated Amount is required for frame {0} marked as Not OK").format(item.serial_no or ""))
 					if not item.from_warehouse:
@@ -128,6 +132,7 @@ class DamageAssessment(Document):
 		Create Stock Entries to move damaged items to Damage Godowns.
 		Groups items by warehouse pairs (from_warehouse, to_warehouse) and creates
 		separate stock entries for each unique warehouse combination.
+		Handles multiple damages per frame by deduplicating serial_no entries.
 		"""
 		if not self.damage_assessment_item:
 			return
@@ -150,16 +155,19 @@ class DamageAssessment(Document):
 			warehouse_key = (item.from_warehouse, item.to_warehouse)
 			
 			if warehouse_key not in warehouse_groups:
-				warehouse_groups[warehouse_key] = []
+				warehouse_groups[warehouse_key] = {}
 			
-			warehouse_groups[warehouse_key].append(item)
+			# Use serial_no as key to deduplicate - if same frame has multiple damages,
+			# we only need one stock entry item per frame
+			if item.serial_no not in warehouse_groups[warehouse_key]:
+				warehouse_groups[warehouse_key][item.serial_no] = item
 		
 		if not warehouse_groups:
 			return
 		
 		# Create a stock entry for each warehouse pair
 		created_stock_entries = []
-		for (from_wh, to_wh), items in warehouse_groups.items():
+		for (from_wh, to_wh), serial_no_items in warehouse_groups.items():
 			stock_entry = frappe.new_doc("Stock Entry")
 			stock_entry.stock_entry_type = self.stock_entry_type
 			stock_entry.posting_date = self.date or frappe.utils.today()
@@ -172,15 +180,16 @@ class DamageAssessment(Document):
 			except AttributeError:
 				pass  # Custom field may not exist, continue without it
 			
-			for item in items:
+			# Add one stock entry item per unique serial_no (frame)
+			for serial_no, item in serial_no_items.items():
 				# Get item_code from Serial No
-				item_code = frappe.db.get_value("Serial No", item.serial_no, "item_code")
+				item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
 				if not item_code:
-					frappe.throw(_("Item Code not found for Serial No: {0}").format(item.serial_no))
+					frappe.throw(_("Item Code not found for Serial No: {0}").format(serial_no))
 				
 				stock_entry.append("items", {
 					"item_code": item_code,
-					"custom_serial_no": item.serial_no,
+					"custom_serial_no": serial_no,
 					"qty": 1,
 					"s_warehouse": from_wh,
 					"t_warehouse": to_wh,

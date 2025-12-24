@@ -15,6 +15,22 @@ frappe.ui.form.on("Damage Assessment", {
 		});
 	},
 	
+	before_save(frm) {
+		// Client-side validation: Check that Damage/Issue 1 is filled for Not OK items
+		if (frm.doc.damage_assessment_item) {
+			let invalid_items = [];
+			frm.doc.damage_assessment_item.forEach(function(item) {
+				if (item.status === "Not OK" && !item.type_of_damage_1) {
+					invalid_items.push(item.serial_no || "Unknown");
+				}
+			});
+			
+			if (invalid_items.length > 0) {
+				frappe.throw(__("Damage/Issue 1 is required for frames marked as Not OK: {0}", [invalid_items.join(", ")]));
+			}
+		}
+	},
+	
 	refresh(frm) {
 		// Always set Stock Entry Type to Material Transfer
 		if (!frm.doc.stock_entry_type || frm.doc.stock_entry_type !== "Material Transfer") {
@@ -62,7 +78,9 @@ frappe.ui.form.on("Damage Assessment", {
 						row.load_dispatch = frame.load_dispatch || "";  // Set from frame data
 						row.from_warehouse = frame.warehouse || "";  // Set warehouse from frame data
 						row.status = "OK";  // Default to OK
-						row.type_of_damage = "";
+						row.type_of_damage_1 = "";
+						row.type_of_damage_2 = "";
+						row.type_of_damage_3 = "";
 						row.estimated_cost = 0;
 					});
 						
@@ -115,10 +133,10 @@ frappe.ui.form.on("Damage Assessment Item", {
 							frappe.model.set_value(cdt, cdn, "load_dispatch", "");
 						}
 						
-						// Set warehouse if available
-						if (r.message.warehouse) {
+						// Set warehouse if available (only if not already set, to preserve existing value)
+						if (r.message.warehouse && !row.from_warehouse) {
 							frappe.model.set_value(cdt, cdn, "from_warehouse", r.message.warehouse);
-						} else {
+						} else if (!r.message.warehouse && !row.from_warehouse) {
 							frappe.model.set_value(cdt, cdn, "from_warehouse", "");
 						}
 					}
@@ -133,9 +151,11 @@ frappe.ui.form.on("Damage Assessment Item", {
 	status(frm, cdt, cdn) {
 		let row = locals[cdt][cdn];
 		
-		// Clear damage/issue, estimated cost, and warehouses if status is OK
+		// Clear damage/issue fields, estimated cost, and warehouses if status is OK
 		if (row.status === "OK") {
-			frappe.model.set_value(cdt, cdn, "type_of_damage", "");
+			frappe.model.set_value(cdt, cdn, "type_of_damage_1", "");
+			frappe.model.set_value(cdt, cdn, "type_of_damage_2", "");
+			frappe.model.set_value(cdt, cdn, "type_of_damage_3", "");
 			frappe.model.set_value(cdt, cdn, "estimated_cost", 0);
 			frappe.model.set_value(cdt, cdn, "from_warehouse", "");
 			frappe.model.set_value(cdt, cdn, "to_warehouse", "");
@@ -146,7 +166,17 @@ frappe.ui.form.on("Damage Assessment Item", {
 		frm.trigger("calculate_total_estimated_cost");
 	},
 	
-	type_of_damage(frm, cdt, cdn) {
+	type_of_damage_1(frm, cdt, cdn) {
+		// Recalculate total when damage/issue changes (in case it affects cost)
+		frm.trigger("calculate_total_estimated_cost");
+	},
+	
+	type_of_damage_2(frm, cdt, cdn) {
+		// Recalculate total when damage/issue changes (in case it affects cost)
+		frm.trigger("calculate_total_estimated_cost");
+	},
+	
+	type_of_damage_3(frm, cdt, cdn) {
 		// Recalculate total when damage/issue changes (in case it affects cost)
 		frm.trigger("calculate_total_estimated_cost");
 	},
