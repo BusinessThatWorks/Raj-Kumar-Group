@@ -239,7 +239,6 @@ class LoadDispatch(Document):
 		if self.items and self.has_valid_load_plan():
 			self.create_serial_nos()
 			self.set_fields_value()
-			self.update_item_pricing_fields()
 			self.set_item_group()
 			self.set_supplier()
 	
@@ -277,7 +276,6 @@ class LoadDispatch(Document):
 		if self.items and self.has_valid_load_plan():
 			self.create_serial_nos()
 			self.set_fields_value()
-			self.update_item_pricing_fields()
 			self.set_item_group()
 		
 		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
@@ -504,52 +502,6 @@ class LoadDispatch(Document):
 					calculated_rate = price_unit / 1.18
 					item.rate = calculated_rate
 
-	def update_item_pricing_fields(self):
-		"""
-		Update Item doctypes with pricing/GST values from Load Dispatch Items.
-		This runs on save/validate so existing Items get refreshed too.
-		"""
-		# Only update pricing if Load Plan exists
-		if not self.has_valid_load_plan():
-			return
-		
-		if not self.items:
-			return
-
-		custom_field_map = {field: field for field in ITEM_CUSTOM_FIELDS}
-
-		for item in self.items:
-			item_code = (item.model_serial_no or "").strip()
-			if not item_code:
-				continue
-			if not frappe.db.exists("Item", item_code):
-				continue
-			
-			# Ensure print_name is calculated before updating Item
-			if not hasattr(item, "print_name") or not item.print_name:
-				model_name = getattr(item, "model_name", None)
-				item.print_name = calculate_print_name(item.model_serial_no, model_name)
-			item_doc = frappe.get_doc("Item", item_code)
-			updated = False
-
-			for child_field, item_field in custom_field_map.items():
-				if hasattr(item, child_field):
-					child_value = getattr(item, child_field)
-					# Allow zero/falsey numeric values to flow through; skip only if None or empty string
-					if child_value is not None and child_value != "":
-						if hasattr(item_doc, item_field):
-							setattr(item_doc, item_field, child_value)
-							updated = True
-			
-			# Update custom_print_name from Load Dispatch Item's print_name
-			if hasattr(item, "print_name") and item.print_name:
-				if hasattr(item_doc, "custom_print_name"):
-					item_doc.custom_print_name = item.print_name
-					updated = True
-
-			if updated:
-				item_doc.save(ignore_permissions=True)
-	
 	def set_item_group(self):
 		"""Set item_group for Load Dispatch Items based on model_name or default."""
 		# Only set item_group if Load Plan exists
