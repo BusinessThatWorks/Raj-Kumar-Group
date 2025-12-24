@@ -206,13 +206,7 @@ class LoadDispatch(Document):
 			frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
 	
 	def before_insert(self):
-		"""
-		Hook called before inserting new Load Dispatch document.
-		
-		Note: Items are NOT created here - they are created in before_submit hook.
-		This method only verifies that if item_code is set, the Item exists.
-		Rows without item_code will have Items created in before_submit.
-		"""
+		"""Verify item_code exists if set; Items created in before_submit hook."""
 		if not self.items:
 			return
 		
@@ -236,11 +230,7 @@ class LoadDispatch(Document):
 			)
 	
 	def before_save(self):
-		"""
-		Populate item_code from model_serial_no before saving.
-		CRITICAL: Only sets item_code if Item already exists to prevent LinkValidationError.
-		Items are created in before_submit() if they don't exist.
-		"""
+		"""Populate item_code from model_serial_no before saving (only if Item exists)."""
 		if not self.is_new() and self.items:
 			# For existing documents, set item_code only if Item exists
 			self.set_item_code()
@@ -263,12 +253,7 @@ class LoadDispatch(Document):
 		self.add_dispatch_quanity_to_load_plan(docstatus=1)
 	
 	def validate(self):
-		"""
-		Validate Load Dispatch.
-		CRITICAL: Items are NOT created here to allow saving documents in Draft state.
-		Only set item_code if Item already exists to prevent LinkValidationError.
-		Items are created in before_submit() hook before link validation runs.
-		"""
+		"""Validate Load Dispatch (Items created in before_submit, not here)."""
 		if not self.items:
 			# Calculate total dispatch quantity
 			self.calculate_total_dispatch_quantity()
@@ -287,10 +272,6 @@ class LoadDispatch(Document):
 					# Clear item_code if Item doesn't exist to prevent LinkValidationError
 					# Items will be created in before_submit()
 					item.item_code = None
-		
-		# For rows with item_code set, verify the Item exists (link validation will handle this)
-		# For rows without item_code, they will be handled in before_submit
-		# No Item creation happens here - only validation of existing item_codes
 		
 		# Process items if Load Plan exists (for additional operations)
 		if self.items and self.has_valid_load_plan():
@@ -319,9 +300,6 @@ class LoadDispatch(Document):
 								"Cannot change Load Reference Number from '{0}' to '{1}' because items are already imported from CSV. The CSV data belongs to Load Reference Number '{0}'. Please clear all items first or use a CSV file that matches the desired Load Reference Number."
 							).format(self._load_reference_no_from_csv, self.load_reference_no)
 						)
-				# If no flag is set but items exist, it means items were imported
-				# In this case, we need to prevent changes - but we can't know the original value
-				# So we'll rely on client-side validation for new documents
 			else:
 				# For existing documents, check if value changed
 				if self.has_value_changed("load_reference_no"):
@@ -453,11 +431,7 @@ class LoadDispatch(Document):
 									)
 	
 	def set_item_code(self):
-		"""
-		Populate item_code from model_serial_no for all items.
-		CRITICAL: Only sets item_code if Item already exists to prevent LinkValidationError.
-		Items will be created in before_submit() if they don't exist.
-		"""
+		"""Populate item_code from model_serial_no, only if Item already exists."""
 		if not self.items:
 			return
 		
@@ -600,11 +574,7 @@ class LoadDispatch(Document):
 			pass
 
 	def before_submit(self):
-		"""
-		Validate Load Plan and create Items before submitting Load Dispatch.
-		CRITICAL: Items are created here (before link validation) to prevent LinkValidationError.
-		This runs before _validate_links(), ensuring all Items exist before link validation.
-		"""
+		"""Validate Load Plan and create Items before submitting Load Dispatch."""
 		# Validate Load Plan exists and is submitted
 		if self.load_reference_no:
 			# Check if Load Plan with given Load Reference No exists
@@ -721,11 +691,7 @@ class LoadDispatch(Document):
 		self.add_dispatch_quanity_to_load_plan(docstatus=2)
 	
 	def update_status(self):
-		"""
-		Update Load Dispatch status based on received quantity.
-		- If total_received_quantity >= total_dispatch_quantity: status = 'Received'
-		- Otherwise: status = 'In-Transit'
-		"""
+		"""Update Load Dispatch status based on received quantity (Received if >= dispatch quantity, otherwise In-Transit)."""
 		total_dispatch = flt(self.total_dispatch_quantity) or 0
 		total_received = flt(self.total_received_quantity) or 0
 		
@@ -740,12 +706,7 @@ class LoadDispatch(Document):
 			self.status = new_status
 	
 	def add_dispatch_quanity_to_load_plan(self, docstatus):
-		"""
-		Update load_dispatch_quantity in Load Plan when Load Dispatch is submitted or cancelled.
-		
-		Args:
-			docstatus: 1 for submit (add quantity), 2 for cancel (subtract quantity)
-		"""
+		"""Update load_dispatch_quantity in Load Plan when Load Dispatch is submitted or cancelled."""
 		if not self.load_reference_no:
 			return
 		
@@ -781,11 +742,7 @@ class LoadDispatch(Document):
 		self.total_dispatch_quantity = total_dispatch_quantity
 	
 	def _filter_duplicate_frame_numbers(self):
-		"""
-		Filter out Load Dispatch Items that have frame numbers already existing 
-		in Serial No doctype from submitted Load Dispatch documents.
-		Shows a message for each skipped item.
-		"""
+		"""Filter out Load Dispatch Items with frame numbers already existing in Serial No doctype."""
 		if not self.items:
 			return
 		
@@ -915,11 +872,7 @@ class LoadDispatch(Document):
 			return None
 	
 	def create_items_from_dispatch_items(self):
-		"""
-		Create Items in Item doctype for all load_dispatch_items that have model_serial_no.
-		Populates Supplier and HSN Code from RKG Settings.
-		Can work without Load Plan to allow saving documents before Load Plan is created.
-		"""
+		"""Create Items from Load Dispatch Items, populating Supplier and HSN Code from RKG Settings."""
 		if not self.items:
 			return
 		
@@ -1205,22 +1158,7 @@ class LoadDispatch(Document):
 
 
 def calculate_print_name(model_serial_no, model_name=None):
-	"""
-	Calculate Print Name from Model Name and Model Serial Number.
-	Logic: Model Name + (Model Serial Number up to "-ID") + (BS-VI)
-	
-	Example:
-		model_name: "CB125 HORNET OBD2B"
-		model_serial_no: "CBF125ZTIDNHB05" or "CBF125ZT-IDNHB05"
-		Output: "CB125 HORNET OBD2B (CBF125ZT-ID) (BS-VI)"
-	
-	Args:
-		model_serial_no: The Model Serial Number string
-		model_name: The Model Name string (optional)
-		
-	Returns:
-		Calculated Print Name string
-	"""
+	"""Calculate Print Name: Model Name + (Model Serial Number up to "-ID") + (BS-VI)"""
 	if not model_serial_no:
 		return ""
 	
@@ -1648,25 +1586,16 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 		frappe.throw(f"Error processing CSV file: {str(e)}")
 @frappe.whitelist()
 def preserve_purchase_receipt_uom(doc, method=None):
-	"""
-	Preserve UOM from Load Dispatch Item's unit field when Purchase Receipt is validated.
-	This ensures UOM doesn't get converted to Item's stock_uom during validation.
-	"""
+	"""Preserve UOM from Load Dispatch Item's unit field when Purchase Receipt is validated."""
 	preserve_uom_from_load_dispatch(doc, "Purchase Receipt")
 
 @frappe.whitelist()
 def preserve_purchase_invoice_uom(doc, method=None):
-	"""
-	Preserve UOM from Load Dispatch Item's unit field when Purchase Invoice is validated.
-	This ensures UOM doesn't get converted to Item's stock_uom during validation.
-	"""
+	"""Preserve UOM from Load Dispatch Item's unit field when Purchase Invoice is validated."""
 	preserve_uom_from_load_dispatch(doc, "Purchase Invoice")
 
 def preserve_uom_from_load_dispatch(doc, doctype_name):
-	"""
-	Generic function to preserve UOM from Load Dispatch Item's unit field.
-	Works for Purchase Receipt and Purchase Invoice.
-	"""
+	"""Preserve UOM from Load Dispatch Item's unit field for Purchase Receipt and Purchase Invoice."""
 	if not doc.items:
 		return
 	
@@ -1982,30 +1911,6 @@ def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_
 		set_missing_values
 	)
 	
-	# # After document creation, ensure serial_no is set on all items
-	# # This is needed because the field might not have been visible during mapping
-	# if doc and hasattr(doc, "items"):
-	# 	# Get the source Load Dispatch document to map frame_no to serial_no
-	# 	source_doc = frappe.get_doc("Load Dispatch", source_name)
-	# 	if source_doc and hasattr(source_doc, "items"):
-	# 		# Create a mapping of item_code to frame_no from source
-	# 		item_to_frame = {}
-	# 		for dispatch_item in source_doc.items:
-	# 			if (hasattr(dispatch_item, "item_code") and dispatch_item.item_code and
-	# 				hasattr(dispatch_item, "frame_no") and dispatch_item.frame_no):
-	# 				item_to_frame[dispatch_item.item_code] = str(dispatch_item.frame_no).strip()
-			
-	# 		# Set serial_no on Purchase Invoice Items
-	# 		for item in doc.items:
-	# 			if hasattr(item, "item_code") and item.item_code and item.item_code in item_to_frame:
-	# 				frame_no_value = item_to_frame[item.item_code]
-	# 				if frame_no_value:
-	# 					# Set serial_no using multiple methods to ensure it works
-	# 					if hasattr(item, "serial_no"):
-	# 						item.serial_no = frame_no_value
-	# 					# Also set directly in __dict__ as fallback
-	# 					if hasattr(item, "__dict__"):
-	# 						item.__dict__["serial_no"] = frame_no_value
 	
 	# Save the document and return it
 	if doc:
@@ -2268,24 +2173,7 @@ def create_purchase_invoice(source_name, target_doc=None, warehouse=None, frame_
 
 
 def update_load_dispatch_totals_from_document(doc, method=None):
-	"""
-	Update Load Dispatch totals (total_received_quantity and total_billed_quantity)
-	when Purchase Receipt or Purchase Invoice is submitted or cancelled.
-	
-	Logic:
-	1. If Purchase Receipt is created from Load Dispatch → Update Total Received Quantity
-	2. If Purchase Invoice is created from Load Dispatch → Update Total Billed Quantity
-	3. If Purchase Receipt is created from Load Dispatch, and then Purchase Invoice is created 
-	   from that Purchase Receipt → Both Total Received Quantity and Total Billed Quantity 
-	   should be calculated and should show the same value
-	
-	On Submit: Updates with the submitted document's total_qty
-	On Cancel: Recalculates totals from all remaining submitted documents (excludes cancelled one)
-	
-	Args:
-		doc: Purchase Receipt or Purchase Invoice document
-		method: Hook method name (optional)
-	"""
+	"""Update Load Dispatch totals (total_received_quantity and total_billed_quantity) when Purchase Receipt/Invoice is submitted or cancelled."""
 
 	# Get custom_load_dispatch field value from the document
 	load_dispatch_name = None
@@ -2446,20 +2334,7 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 
 @frappe.whitelist()
 def check_existing_documents(load_dispatch_name):
-	"""
-	Check if Purchase Receipt or Purchase Invoice already exists for a Load Dispatch.
-	
-	Args:
-		load_dispatch_name: Name of the Load Dispatch document
-		
-	Returns:
-		dict: {
-			"has_purchase_receipt": bool,
-			"has_purchase_invoice": bool,
-			"purchase_receipt_name": str or None,
-			"purchase_invoice_name": str or None
-		}
-	"""
+	"""Check if Purchase Receipt or Purchase Invoice already exists for a Load Dispatch."""
 	result = {
 		"has_purchase_receipt": False,
 		"has_purchase_invoice": False,
@@ -2505,22 +2380,7 @@ def check_existing_documents(load_dispatch_name):
 
 @frappe.whitelist()
 def process_tabular_file(file_url, selected_load_reference_no=None):
-	"""
-	Process CSV/Excel file and return tabular data.
-	
-	For each row:
-	1. Read Model Serial No (this is the Item Code)
-	2. Check if Item exists with that Item Code (model_serial_no)
-	3. If not, create the Item
-	4. Then set item_code in the row data
-	
-	Args:
-		file_url: URL of the attached file
-		selected_load_reference_no: Optional Load Reference No from form
-	
-	Returns:
-		List of dictionaries, each representing a row with item_code populated
-	"""
+	"""Process CSV/Excel file, create Items if they don't exist, and return tabular data with item_code populated."""
 	from frappe.utils import get_site_path
 	
 	try:
@@ -2769,13 +2629,7 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 
 
 def _create_item_from_row_data(row_data, item_code):
-	"""
-	Create an Item from row data (dictionary from CSV/Excel).
-	
-	Args:
-		row_data: Dictionary containing row data from CSV/Excel
-		item_code: Item Code (from Model Serial No)
-	"""
+	"""Create an Item from row data (dictionary from CSV/Excel)."""
 	# Get Model Variant (for item_name)
 	model_variant = (
 		row_data.get('model_variant') or 
@@ -2844,15 +2698,7 @@ def _create_item_from_row_data(row_data, item_code):
 
 
 def _get_or_create_item_group_from_name(model_name):
-	"""
-	Get or create Item Group from Model Name.
-	
-	Args:
-		model_name: Model Name from row data
-	
-	Returns:
-		Item Group name (string)
-	"""
+	"""Get or create Item Group from Model Name."""
 	# First, ensure we have a parent Item Group
 	parent_item_group = "All Item Groups"
 	if not frappe.db.exists("Item Group", parent_item_group):
