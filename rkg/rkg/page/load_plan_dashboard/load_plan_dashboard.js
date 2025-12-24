@@ -65,6 +65,14 @@ class LoadPlanDashboard {
 								<option value="">All Load References</option>
 							</select>
 						</div>
+						<div class="filter-group">
+							<label>From Date</label>
+							<input type="date" class="form-control filter-from-date" />
+						</div>
+						<div class="filter-group">
+							<label>To Date</label>
+							<input type="date" class="form-control filter-to-date" />
+						</div>
 						<div class="filter-group filter-actions">
 							<button class="btn btn-primary btn-refresh">
 								<i class="fa fa-refresh"></i> Refresh
@@ -163,6 +171,8 @@ class LoadPlanDashboard {
 		this.wrapper.find(".btn-clear").on("click", () => {
 			this.wrapper.find(".filter-status").val("");
 			this.wrapper.find(".filter-load-ref").val("");
+			this.wrapper.find(".filter-from-date").val("");
+			this.wrapper.find(".filter-to-date").val("");
 			this.refresh();
 		});
 
@@ -228,9 +238,14 @@ class LoadPlanDashboard {
 	}
 
 	load_plan_data() {
+		const from_date_val = this.wrapper.find(".filter-from-date").val();
+		const to_date_val = this.wrapper.find(".filter-to-date").val();
+		
 		const filters = {
-			status: this.wrapper.find(".filter-status").val(),
-			load_reference: this.wrapper.find(".filter-load-ref").val(),
+			status: this.wrapper.find(".filter-status").val() || null,
+			load_reference: this.wrapper.find(".filter-load-ref").val() || null,
+			from_date: from_date_val && from_date_val.trim() ? from_date_val : null,
+			to_date: to_date_val && to_date_val.trim() ? to_date_val : null,
 			doctype: "Load Plan",
 		};
 
@@ -274,9 +289,14 @@ class LoadPlanDashboard {
 	}
 
 	load_dispatch_data() {
+		const from_date_val = this.wrapper.find(".filter-from-date").val();
+		const to_date_val = this.wrapper.find(".filter-to-date").val();
+		
 		const filters = {
-			status: this.wrapper.find(".filter-status").val(),
-			load_reference: this.wrapper.find(".filter-load-ref").val(),
+			status: this.wrapper.find(".filter-status").val() || null,
+			load_reference: this.wrapper.find(".filter-load-ref").val() || null,
+			from_date: from_date_val && from_date_val.trim() ? from_date_val : null,
+			to_date: to_date_val && to_date_val.trim() ? to_date_val : null,
 			doctype: "Load Dispatch",
 		};
 

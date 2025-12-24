@@ -22,7 +22,7 @@ def _build_where_clause(doctype="Load Plan", status=None, from_date=None, to_dat
 			conditions.append("ld.status = %(status)s")
 		params["status"] = status
 
-	if from_date:
+	if from_date and str(from_date).strip():
 		# For Load Plan: use dispatch_plan_date, fallback to payment_plan_date, then modified
 		# For Load Dispatch: use modified date
 		if doctype == "Load Plan":
@@ -31,7 +31,7 @@ def _build_where_clause(doctype="Load Plan", status=None, from_date=None, to_dat
 			conditions.append(f"{date_field} >= %(from_date)s")
 		params["from_date"] = getdate(from_date)
 
-	if to_date:
+	if to_date and str(to_date).strip():
 		# For Load Plan: use dispatch_plan_date, fallback to payment_plan_date, then modified
 		# For Load Dispatch: use modified date
 		if doctype == "Load Plan":
