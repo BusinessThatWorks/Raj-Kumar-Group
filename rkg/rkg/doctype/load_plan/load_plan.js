@@ -11,22 +11,6 @@ frappe.ui.form.on("Load Plan", {
 			child_table_rows: frm.doc.table_tezh ? frm.doc.table_tezh.length : 0
 		});
 		calculate_total_quantity(frm);
-		
-		// Load related dispatches if load_reference_no exists
-		if (frm.doc.load_reference_no && !frm.is_new()) {
-			load_related_dispatches(frm);
-		} else {
-			// Clear child table if no load reference
-			if (frm.doc.related_dispatches && frm.doc.related_dispatches.length > 0) {
-				frm.clear_table("related_dispatches");
-				frm.refresh_field("related_dispatches");
-			}
-		}
-		
-		// Make related_dispatches table read-only (prevent manual edits)
-		if (frm.fields_dict.related_dispatches) {
-			frm.set_df_property("related_dispatches", "read_only", 1);
-		}
 	},
 
 	before_save(frm) {
@@ -404,54 +388,4 @@ function _populate_single_load_plan(frm, rows) {
 	// Clear file upload flag and restore mandatory fields after population
 	frm._from_file_upload = false;
 	_restore_mandatory_fields(frm);
-}
-
-// Function to load and display related dispatches in child table
-function load_related_dispatches(frm) {
-	frappe.call({
-		method: "rkg.rkg.doctype.load_plan.load_plan.get_related_dispatches",
-		args: {
-			load_reference_no: frm.doc.load_reference_no
-		},
-		callback: function(r) {
-			if (r.message) {
-				populate_dispatches_child_table(frm, r.message);
-			}
-		}
-	});
-}
-
-// Function to populate dispatches in child table
-function populate_dispatches_child_table(frm, dispatches) {
-	// Clear existing rows
-	frm.clear_table("related_dispatches");
-	
-	if (dispatches.length === 0) {
-		frm.refresh_field("related_dispatches");
-		return;
-	}
-	
-	// Add each dispatch as a child table row
-	dispatches.forEach(function(dispatch) {
-		const row = frm.add_child("related_dispatches");
-		row.load_dispatch = dispatch.name;
-		row.dispatch_no = dispatch.dispatch_no || '';
-		row.invoice_no = dispatch.invoice_no || '';
-		row.status = dispatch.status || 'In-Transit';
-		row.total_dispatch_quantity = dispatch.total_dispatch_quantity || 0;
-		row.total_received_quantity = dispatch.total_received_quantity || 0;
-		row.total_billed_quantity = dispatch.total_billed_quantity || 0;
-		
-		// Convert docstatus to readable format
-		if (dispatch.docstatus === 1) {
-			row.docstatus = 'Submitted';
-		} else if (dispatch.docstatus === 2) {
-			row.docstatus = 'Cancelled';
-		} else {
-			row.docstatus = 'Draft';
-		}
-	});
-	
-	// Refresh the child table
-	frm.refresh_field("related_dispatches");
 }

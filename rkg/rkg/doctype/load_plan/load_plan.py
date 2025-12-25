@@ -225,41 +225,6 @@ def update_load_plan_status_from_document(doc, method=None):
 
 
 @frappe.whitelist()
-def get_related_dispatches(load_reference_no):
-	"""
-	Get all Load Dispatch documents linked to a Load Plan.
-	
-	Args:
-		load_reference_no: Load Reference Number (Load Plan name)
-	
-	Returns:
-		List of Load Dispatch documents with key details
-	"""
-	if not load_reference_no:
-		return []
-	
-	dispatches = frappe.get_all(
-		"Load Dispatch",
-		filters={"load_reference_no": load_reference_no},
-		fields=[
-			"name",
-			"dispatch_no",
-			"invoice_no",
-			"status",
-			"total_dispatch_quantity",
-			"total_received_quantity",
-			"total_billed_quantity",
-			"docstatus",
-			"modified",
-			"creation"
-		],
-		order_by="creation desc"
-	)
-	
-	return dispatches
-
-
-@frappe.whitelist()
 def get_first_row_for_mandatory_fields(file_url):
 	"""
 	Quickly get the first row from the file to populate mandatory fields and child table immediately.

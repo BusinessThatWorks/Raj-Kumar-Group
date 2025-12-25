@@ -20,9 +20,7 @@
   "section_break_jxkq",
   "total_quantity",
   "column_break_pbmp",
-  "load_dispatch_quantity",
-  "section_break_dispatches",
-  "related_dispatches"
+  "load_dispatch_quantity"
  ],
  "fields": [
   {
@@ -122,17 +120,6 @@
    "fieldtype": "Attach",
    "label": "Attach Load Plan",
    "reqd": 1
-  },
-  {
-   "fieldname": "section_break_dispatches",
-   "fieldtype": "Section Break",
-   "label": "Related Dispatches"
-  },
-  {
-   "fieldname": "related_dispatches",
-   "fieldtype": "Table",
-   "options": "Load Plan Dispatch Link",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,
