@@ -52,11 +52,7 @@ def get_frame_no_data(where_clause, params):
 		"sn.modified",
 	]
 	
-	# Add date fields if they exist
-	if frappe.db.has_column("Serial No", "purchase_date"):
-		select_fields.append("sn.purchase_date")
-	if frappe.db.has_column("Serial No", "delivery_date"):
-		select_fields.append("sn.delivery_date")
+	# Note: Purchase Receipt date will be fetched via subquery, not from Serial No table
 	
 	# Add custom fields if they exist
 	if frappe.db.has_column("Serial No", "color_code"):
@@ -70,7 +66,13 @@ def get_frame_no_data(where_clause, params):
 	
 	frames = frappe.db.sql(
 		f"""
-		SELECT {', '.join(select_fields)}
+		SELECT {', '.join(select_fields)},
+			(SELECT DATE(MIN(pr.creation))
+			 FROM `tabPurchase Receipt` pr
+			 INNER JOIN `tabPurchase Receipt Item` pri ON pr.name = pri.parent
+			 WHERE (pri.serial_no = sn.name OR FIND_IN_SET(sn.name, pri.serial_no) > 0) 
+			   AND pr.docstatus = 1
+			 LIMIT 1) as purchase_receipt_date
 		FROM `tabSerial No` sn
 		WHERE {where_clause}
 		ORDER BY sn.creation DESC
@@ -179,6 +181,19 @@ def get_frame_no_data(where_clause, params):
 	# Prepare frame cards
 	frame_cards = []
 	for frame in frames[:500]:  # Limit to 500 for performance
+		# Get Purchase Receipt creation date (Purchase Date) - format as date only
+		purchase_receipt_date = frame.get("purchase_receipt_date")
+		if purchase_receipt_date:
+			# Convert to date string (YYYY-MM-DD format)
+			if isinstance(purchase_receipt_date, str):
+				# If it's already a string, extract date part
+				purchase_date = purchase_receipt_date.split(' ')[0] if ' ' in purchase_receipt_date else purchase_receipt_date
+			else:
+				# If it's a date/datetime object, format it
+				purchase_date = str(purchase_receipt_date).split(' ')[0]
+		else:
+			purchase_date = None
+		
 		frame_cards.append({
 			"name": frame.name,
 			"frame_no": frame.serial_no or frame.name,
@@ -186,8 +201,7 @@ def get_frame_no_data(where_clause, params):
 			"item_name": frame.item_name or "-",
 			"warehouse": frame.warehouse or "-",
 			"status": frame.status or "Unknown",
-			"purchase_date": str(frame.get("purchase_date")) if frame.get("purchase_date") else None,
-			"delivery_date": str(frame.get("delivery_date")) if frame.get("delivery_date") else None,
+			"purchase_date": purchase_date,
 			"creation": str(frame.creation) if frame.creation else None,
 			"color_code": frame.get("color_code") or "-",
 			"custom_engine_number": frame.get("custom_engine_number") or "-",
@@ -272,11 +286,29 @@ def get_frame_no_details(name):
 		"modified": str(frame_no.modified) if frame_no.modified else None,
 	}
 	
-	# Add date fields if they exist
-	if frappe.db.has_column("Serial No", "purchase_date"):
-		result["purchase_date"] = str(frame_no.purchase_date) if getattr(frame_no, "purchase_date", None) else None
-	if frappe.db.has_column("Serial No", "delivery_date"):
-		result["delivery_date"] = str(frame_no.delivery_date) if getattr(frame_no, "delivery_date", None) else None
+	# Get Purchase Receipt creation date (Purchase Date) - date only
+	purchase_receipt_date = frappe.db.sql(
+		"""
+		SELECT DATE(MIN(pr.creation))
+		FROM `tabPurchase Receipt` pr
+		INNER JOIN `tabPurchase Receipt Item` pri ON pr.name = pri.parent
+		WHERE (pri.serial_no = %s OR FIND_IN_SET(%s, pri.serial_no) > 0)
+		  AND pr.docstatus = 1
+		LIMIT 1
+		""",
+		(name, name),
+		as_list=True,
+	)
+	
+	if purchase_receipt_date and purchase_receipt_date[0] and purchase_receipt_date[0][0]:
+		# Format as date string (YYYY-MM-DD)
+		date_value = purchase_receipt_date[0][0]
+		if isinstance(date_value, str):
+			result["purchase_date"] = date_value.split(' ')[0] if ' ' in date_value else date_value
+		else:
+			result["purchase_date"] = str(date_value).split(' ')[0]
+	else:
+		result["purchase_date"] = None
 	
 	# Add custom fields if they exist
 	if frappe.db.has_column("Serial No", "color_code"):

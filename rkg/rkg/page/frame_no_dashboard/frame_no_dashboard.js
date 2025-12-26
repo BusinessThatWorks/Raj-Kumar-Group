@@ -29,6 +29,13 @@ class FrameNoDashboard {
 		this.page = page;
 		this.wrapper = $(page.body);
 		this.charts = {};
+		this.allFrames = [];
+		this.filteredFrames = [];
+		this.currentPage = 1;
+		this.itemsPerPage = 50;
+		this.viewMode = "table"; // "table" or "grid"
+		this.sortField = "creation";
+		this.sortOrder = "desc";
 		this.init();
 	}
 
@@ -133,9 +140,36 @@ class FrameNoDashboard {
 
 				<div class="frames-section">
 					<div class="section-header">
-						<span><i class="fa fa-list"></i> Frames</span>
+						<div style="flex: 1;">
+							<span><i class="fa fa-list"></i> Frames</span>
+							<span class="frames-count-badge" id="frames-count">0</span>
+						</div>
+						<div class="frames-controls">
+							<div class="search-box">
+								<input type="text" class="form-control frame-search" placeholder="Search frames..." />
+								<i class="fa fa-search"></i>
+							</div>
+							<div class="view-toggle">
+								<button class="btn btn-sm btn-default view-btn active" data-view="table" title="Table View">
+									<i class="fa fa-table"></i>
+								</button>
+								<button class="btn btn-sm btn-default view-btn" data-view="grid" title="Grid View">
+									<i class="fa fa-th"></i>
+								</button>
+							</div>
+							<select class="form-control sort-select" style="width: 150px;">
+								<option value="creation-desc">Newest First</option>
+								<option value="creation-asc">Oldest First</option>
+								<option value="frame_no-asc">Frame No (A-Z)</option>
+								<option value="frame_no-desc">Frame No (Z-A)</option>
+								<option value="item_code-asc">Item Code (A-Z)</option>
+								<option value="warehouse-asc">Warehouse (A-Z)</option>
+								<option value="status-asc">Status (A-Z)</option>
+							</select>
+						</div>
 					</div>
 					<div id="frames-list"></div>
+					<div class="pagination-container" id="pagination-container"></div>
 				</div>
 
 				<!-- Frame No Details Section -->
@@ -160,12 +194,35 @@ class FrameNoDashboard {
 			this.wrapper.find(".filter-status").val("");
 			this.wrapper.find(".filter-from-date").val("");
 			this.wrapper.find(".filter-to-date").val("");
+			this.wrapper.find(".frame-search").val("");
 			this.refresh();
 		});
 
 		// Back to list button
 		this.wrapper.find(".btn-back-to-list").on("click", () => {
 			this.hide_frame_no_details();
+		});
+
+		// Search box
+		const self = this;
+		this.wrapper.find(".frame-search").on("input", function() {
+			self.filterAndRender();
+		});
+
+		// View toggle
+		this.wrapper.find(".view-btn").on("click", function() {
+			self.wrapper.find(".view-btn").removeClass("active");
+			$(this).addClass("active");
+			self.viewMode = $(this).data("view");
+			self.filterAndRender();
+		});
+
+		// Sort select
+		this.wrapper.find(".sort-select").on("change", function() {
+			const value = $(this).val().split("-");
+			self.sortField = value[0];
+			self.sortOrder = value[1];
+			self.filterAndRender();
 		});
 	}
 
@@ -346,25 +403,193 @@ class FrameNoDashboard {
 	}
 
 	render_frames_list(frames) {
+		// Store all frames
+		this.allFrames = frames || [];
+		this.currentPage = 1; // Reset to first page when new data loads
+		this.filterAndRender();
+	}
+
+	filterAndRender() {
+		// Filter by search term
+		const searchTerm = this.wrapper.find(".frame-search").val().toLowerCase().trim();
+		this.filteredFrames = this.allFrames.filter(frame => {
+			if (!searchTerm) return true;
+			const searchable = [
+				frame.frame_no || "",
+				frame.item_code || "",
+				frame.item_name || "",
+				frame.warehouse || "",
+				frame.status || "",
+				frame.color_code || "",
+				frame.custom_engine_number || ""
+			].join(" ").toLowerCase();
+			return searchable.includes(searchTerm);
+		});
+
+		// Sort frames
+		this.filteredFrames.sort((a, b) => {
+			let aVal = a[this.sortField] || "";
+			let bVal = b[this.sortField] || "";
+			
+			// Handle dates
+			if (this.sortField === "creation") {
+				aVal = new Date(a.creation || 0);
+				bVal = new Date(b.creation || 0);
+			}
+			
+			// Convert to strings for comparison
+			aVal = String(aVal).toLowerCase();
+			bVal = String(bVal).toLowerCase();
+			
+			if (this.sortOrder === "asc") {
+				return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+			} else {
+				return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+			}
+		});
+
+		// Update count
+		this.wrapper.find("#frames-count").text(this.filteredFrames.length);
+
+		// Paginate
+		const totalPages = Math.ceil(this.filteredFrames.length / this.itemsPerPage);
+		const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+		const endIndex = startIndex + this.itemsPerPage;
+		const paginatedFrames = this.filteredFrames.slice(startIndex, endIndex);
+
+		// Render based on view mode
 		const container = this.wrapper.find("#frames-list");
 		container.empty();
 
-		if (!frames || frames.length === 0) {
-			container.html(no_data("No Frames found for filters."));
+		if (paginatedFrames.length === 0) {
+			container.html(no_data("No Frames found."));
+			this.wrapper.find("#pagination-container").empty();
 			return;
 		}
 
-		const cards = frames.slice(0, 200).map((frame) => this.build_frame_card(frame)).join("");
-		container.html(cards);
-		
+		if (this.viewMode === "table") {
+			container.html(this.build_table_view(paginatedFrames));
+		} else {
+			container.html(this.build_grid_view(paginatedFrames));
+		}
+
 		// Add click handlers
 		const self = this;
-		container.find(".frame-card").on("click", (e) => {
-			const card = $(e.currentTarget);
-			const name = card.data("name");
+		container.find(".frame-row, .frame-card").on("click", (e) => {
+			const element = $(e.currentTarget);
+			const name = element.data("name");
 			if (name) {
 				self.show_frame_no_details(name);
 			}
+		});
+
+		// Render pagination
+		this.render_pagination(totalPages);
+	}
+
+	build_table_view(frames) {
+		const rows = frames.map(frame => {
+			const statusClass = (frame.status || "Unknown").toLowerCase().replace(/\s+/g, "-");
+			return `
+				<tr class="frame-row" data-name="${frame.name}" style="cursor: pointer;">
+					<td><strong>${frame.frame_no || frame.name || "-"}</strong></td>
+					<td>${frame.item_code || "-"}</td>
+					<td>${frame.item_name || "-"}</td>
+					<td>${frame.warehouse || "-"}</td>
+					<td><span class="frame-status ${statusClass}">${frame.status || "Unknown"}</span></td>
+					<td>${frame.color_code || "-"}</td>
+					<td>${frame.custom_engine_number || "-"}</td>
+					<td>${frame.purchase_date ? frame.purchase_date.split(' ')[0] : "-"}</td>
+				</tr>
+			`;
+		}).join("");
+
+		return `
+			<div class="table-container">
+				<table class="table table-bordered frames-table">
+					<thead>
+						<tr>
+							<th>Frame No</th>
+							<th>Item Code</th>
+							<th>Item Name</th>
+							<th>Warehouse</th>
+							<th>Status</th>
+							<th>Color</th>
+							<th>Engine No</th>
+					<th>Purchase Date</th>
+						</tr>
+					</thead>
+					<tbody>
+						${rows}
+					</tbody>
+				</table>
+			</div>
+		`;
+	}
+
+	build_grid_view(frames) {
+		const cards = frames.map((frame) => this.build_frame_card(frame)).join("");
+		return `<div class="frames-grid">${cards}</div>`;
+	}
+
+	render_pagination(totalPages) {
+		if (totalPages <= 1) {
+			this.wrapper.find("#pagination-container").empty();
+			return;
+		}
+
+		const container = this.wrapper.find("#pagination-container");
+		let paginationHTML = `<div class="pagination-info">Showing ${((this.currentPage - 1) * this.itemsPerPage) + 1} to ${Math.min(this.currentPage * this.itemsPerPage, this.filteredFrames.length)} of ${this.filteredFrames.length} frames</div>`;
+		paginationHTML += `<div class="pagination-buttons">`;
+
+		// Previous button
+		if (this.currentPage > 1) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${this.currentPage - 1}"><i class="fa fa-chevron-left"></i> Previous</button>`;
+		}
+
+		// Page numbers
+		const maxPages = 7;
+		let startPage = Math.max(1, this.currentPage - Math.floor(maxPages / 2));
+		let endPage = Math.min(totalPages, startPage + maxPages - 1);
+		
+		if (endPage - startPage < maxPages - 1) {
+			startPage = Math.max(1, endPage - maxPages + 1);
+		}
+
+		if (startPage > 1) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="1">1</button>`;
+			if (startPage > 2) {
+				paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+			}
+		}
+
+		for (let i = startPage; i <= endPage; i++) {
+			const activeClass = i === this.currentPage ? "active" : "";
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn ${activeClass}" data-page="${i}">${i}</button>`;
+		}
+
+		if (endPage < totalPages) {
+			if (endPage < totalPages - 1) {
+				paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+			}
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${totalPages}">${totalPages}</button>`;
+		}
+
+		// Next button
+		if (this.currentPage < totalPages) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${this.currentPage + 1}">Next <i class="fa fa-chevron-right"></i></button>`;
+		}
+
+		paginationHTML += `</div>`;
+		container.html(paginationHTML);
+
+		// Add click handlers
+		const self = this;
+		container.find(".page-btn").on("click", function() {
+			self.currentPage = parseInt($(this).data("page"));
+			self.filterAndRender();
+			// Scroll to top of frames section
+			self.wrapper.find(".frames-section")[0].scrollIntoView({ behavior: "smooth", block: "start" });
 		});
 	}
 
@@ -388,8 +613,7 @@ class FrameNoDashboard {
 						<div><span class="muted">Color</span><div class="metric-value">${frame.color_code || "-"}</div></div>
 						<div><span class="muted">Engine No</span><div class="metric-value">${frame.custom_engine_number || "-"}</div></div>
 					</div>
-					${frame.purchase_date ? `<div class="frame-date"><i class="fa fa-calendar"></i> Purchase: ${frame.purchase_date}</div>` : ""}
-					${frame.delivery_date ? `<div class="frame-date"><i class="fa fa-truck"></i> Delivery: ${frame.delivery_date}</div>` : ""}
+					${frame.purchase_date ? `<div class="frame-date"><i class="fa fa-calendar"></i> Purchase Date: ${frame.purchase_date.split(' ')[0]}</div>` : ""}
 				</div>
 			</div>
 		`;
@@ -454,11 +678,7 @@ class FrameNoDashboard {
 					<div class="details-row">
 						<div class="detail-item">
 							<label>Purchase Date:</label>
-							<span>${frame.purchase_date || "-"}</span>
-						</div>
-						<div class="detail-item">
-							<label>Delivery Date:</label>
-							<span>${frame.delivery_date || "-"}</span>
+							<span>${frame.purchase_date ? frame.purchase_date.split(' ')[0] : "-"}</span>
 						</div>
 					</div>
 					<div class="details-row">
@@ -524,14 +744,34 @@ function add_styles() {
 		.chart-title { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
 
 		.frames-section { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
-		.section-header { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-		#frames-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+		.section-header { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+		.frames-count-badge { background: var(--primary); color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+		.frames-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+		.search-box { position: relative; width: 250px; }
+		.search-box input { padding-right: 30px; }
+		.search-box i { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+		.view-toggle { display: flex; gap: 4px; }
+		.view-btn { padding: 6px 12px; }
+		.view-btn.active { background: var(--primary); color: white; }
+		.sort-select { height: 32px; font-size: 12px; }
+		
+		.table-container { overflow-x: auto; margin-top: 12px; }
+		.frames-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+		.frames-table thead { background: var(--bg-light-gray); position: sticky; top: 0; z-index: 10; }
+		.frames-table th { padding: 12px 10px; text-align: left; font-weight: 600; color: var(--heading-color); border: 1px solid var(--border-color); white-space: nowrap; }
+		.frames-table td { padding: 10px; border: 1px solid var(--border-color); }
+		.frames-table tbody tr { background: var(--control-bg); }
+		.frames-table tbody tr:hover { background: var(--bg-color); cursor: pointer; }
+		.frames-table tbody tr:nth-child(even) { background: var(--card-bg); }
+		.frames-table tbody tr:nth-child(even):hover { background: var(--bg-color); }
+		
+		.frames-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 		.frame-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; background: var(--control-bg); box-shadow: 0 1px 4px rgba(0,0,0,0.04); transition: transform 0.2s, box-shadow 0.2s; }
 		.frame-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 		.frame-card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 		.frame-ref { font-weight: 700; color: var(--heading-color); font-size: 16px; }
 		.frame-item { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
-		.frame-status { font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 14px; background: var(--bg-light-gray); color: var(--heading-color); }
+		.frame-status { font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 14px; background: var(--bg-light-gray); color: var(--heading-color); display: inline-block; }
 		.frame-status.active { background: #e0f7f2; color: #0b8c6b; }
 		.frame-status.delivered { background: #e3e7ff; color: #2f49d0; }
 		.frame-status.in-stock { background: #e0f7f2; color: #0b8c6b; }
@@ -540,6 +780,13 @@ function add_styles() {
 		.metric-value { font-weight: 700; color: var(--heading-color); font-size: 13px; }
 		.muted { color: var(--text-muted); font-size: 12px; }
 		.frame-date { color: var(--text-muted); font-size: 11px; display: flex; align-items: center; gap: 4px; }
+		
+		.pagination-container { margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+		.pagination-info { color: var(--text-muted); font-size: 13px; }
+		.pagination-buttons { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+		.page-btn { padding: 6px 12px; min-width: 40px; }
+		.page-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+		.pagination-ellipsis { padding: 0 8px; color: var(--text-muted); }
 
 		.no-data { text-align: center; color: var(--text-muted); padding: 30px 10px; }
 		.no-data i { font-size: 32px; margin-bottom: 8px; opacity: 0.6; }
