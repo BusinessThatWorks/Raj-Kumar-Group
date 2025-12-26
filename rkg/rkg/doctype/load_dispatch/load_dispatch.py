@@ -27,22 +27,10 @@ class LoadDispatch(Document):
 		# Try from instance attribute
 		if hasattr(self, '_print_name_map') and self._print_name_map:
 			print_name_from_map = self._print_name_map.get(item_code)
-			frappe.msgprint(f"DEBUG: Got print_name from instance map: '{print_name_from_map}'", alert=True)
 		
 		# Try from frappe.local
 		if not print_name_from_map and hasattr(frappe.local, 'load_dispatch_print_name_map'):
 			print_name_from_map = frappe.local.load_dispatch_print_name_map.get(item_code)
-			frappe.msgprint(f"DEBUG: Got print_name from frappe.local: '{print_name_from_map}'", alert=True)
-		
-		frappe.log_error(
-			f"Item Code: {item_code}\n"
-			f"Print name from map: {print_name_from_map}\n"
-			f"Has instance map: {hasattr(self, '_print_name_map')}\n"
-			f"Instance map: {getattr(self, '_print_name_map', {})}\n"
-			f"Has frappe.local map: {hasattr(frappe.local, 'load_dispatch_print_name_map')}\n"
-			f"frappe.local map: {getattr(frappe.local, 'load_dispatch_print_name_map', {})}",
-			"DEBUG: Using print_name from map"
-		)
 		
 		if print_name_from_map:
 			# Set it on the dispatch_item object using multiple methods
@@ -53,20 +41,6 @@ class LoadDispatch(Document):
 			if not hasattr(frappe.local, 'item_print_name_map'):
 				frappe.local.item_print_name_map = {}
 			frappe.local.item_print_name_map[item_code] = print_name_from_map
-			frappe.msgprint(f"DEBUG: Set print_name='{print_name_from_map}' on dispatch_item for {item_code}", alert=True)
-		else:
-			frappe.msgprint(f"DEBUG: ERROR - print_name_from_map is None for {item_code}!", alert=True)
-		
-		# Debug: Log what we have on the dispatch_item
-		frappe.log_error(
-			f"Dispatch Item Name: {getattr(dispatch_item, 'name', 'NO NAME')}\n"
-			f"Has print_name attr: {hasattr(dispatch_item, 'print_name')}\n"
-			f"print_name value on object: {getattr(dispatch_item, 'print_name', 'NO ATTR')}\n"
-			f"print_name from getattr: {getattr(dispatch_item, 'print_name', None)}\n"
-			f"model_serial_no: {getattr(dispatch_item, 'model_serial_no', 'NO ATTR')}\n"
-			f"model_name: {getattr(dispatch_item, 'model_name', 'NO ATTR')}",
-			"DEBUG: Dispatch Item Before Item Creation"
-		)
 		
 		# Pass print_name directly to unified function
 		return _create_item_unified(dispatch_item, item_code, source_type="dispatch_item", print_name=print_name_from_map)
@@ -114,6 +88,10 @@ class LoadDispatch(Document):
 			self.set_fields_value()
 			self.set_item_group()
 			self.set_supplier()
+		
+		# Sync print_name from Load Dispatch Item to Item doctype
+		if self.items:
+			self.sync_print_name_to_items()
 	#---------------------------------------------------------
 	
 	def on_submit(self):
@@ -152,6 +130,10 @@ class LoadDispatch(Document):
 			self.create_serial_nos()
 			self.set_fields_value()
 			self.set_item_group()
+		
+		# Sync print_name from Load Dispatch Item to Item doctype for existing items
+		if self.items:
+			self.sync_print_name_to_items()
 		
 		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
 		has_imported_items = False
@@ -424,6 +406,63 @@ class LoadDispatch(Document):
 			# RKG Settings not found, skip setting supplier
 			pass
 	#---------------------------------------------------------
+	
+	def sync_print_name_to_items(self):
+		"""Sync print_name from Load Dispatch Item to Item doctype for all items with item_code."""
+		if not self.items:
+			return
+		
+		# Check if Item doctype has print_name field
+		if not frappe.db.has_column("Item", "print_name"):
+			return
+		
+		updated_items = []
+		for item in self.items:
+			# Only sync if item_code exists and print_name is set
+			if not item.item_code or not str(item.item_code).strip():
+				continue
+			
+			item_code = str(item.item_code).strip()
+			
+			# Check if Item exists
+			if not frappe.db.exists("Item", item_code):
+				continue
+			
+			# Get print_name from Load Dispatch Item
+			print_name = None
+			if hasattr(item, "print_name") and item.print_name:
+				print_name = str(item.print_name).strip()
+			
+			# If print_name is not set, calculate it
+			if not print_name:
+				model_name = getattr(item, "model_name", None)
+				model_serial_no = getattr(item, "model_serial_no", None)
+				if model_serial_no:
+					print_name = calculate_print_name(model_serial_no, model_name)
+					# Also set it on the Load Dispatch Item for consistency
+					item.print_name = print_name
+			
+			# Only update if print_name is available
+			if print_name:
+				# Get current print_name from Item
+				current_print_name = frappe.db.get_value("Item", item_code, "print_name")
+				
+				# Update only if different
+				if current_print_name != print_name:
+					try:
+						frappe.db.set_value("Item", item_code, "print_name", print_name, update_modified=False)
+						updated_items.append(item_code)
+					except Exception as e:
+						frappe.log_error(
+							f"Failed to sync print_name for Item {item_code}: {str(e)}",
+							"Print Name Sync Error"
+						)
+		
+		# Commit changes if any items were updated
+		if updated_items:
+			frappe.db.commit()
+			frappe.clear_cache(doctype="Item")
+	#---------------------------------------------------------
 
 	def before_submit(self):
 		"""Validate Load Plan and create Items before submitting Load Dispatch."""
@@ -465,7 +504,6 @@ class LoadDispatch(Document):
 			)
 		
 		# Ensure print_name is calculated for all items before creating Items
-		frappe.msgprint("DEBUG: Calculating print_name for all items", alert=True)
 		print_name_map = {}  # Map item_code to print_name
 		
 		for item in self.items:
@@ -474,25 +512,11 @@ class LoadDispatch(Document):
 				model_serial_no = item.model_serial_no
 				item_code = str(model_serial_no).strip()
 				
-				old_print_name = getattr(item, "print_name", None)
 				if not hasattr(item, "print_name") or not item.print_name or not str(item.print_name).strip():
 					item.print_name = calculate_print_name(model_serial_no, model_name)
 				
 				# Store in map for later use
 				print_name_map[item_code] = item.print_name
-				
-				frappe.log_error(
-					f"Row {getattr(item, 'idx', '?')}: Calculated print_name\n"
-					f"Item Code: {item_code}\n"
-					f"Model Serial No: {model_serial_no}\n"
-					f"Model Name: {model_name}\n"
-					f"Old print_name: {old_print_name}\n"
-					f"New print_name: {item.print_name}\n"
-					f"Stored in map: {print_name_map.get(item_code)}",
-					"DEBUG: Print Name Calculated"
-				)
-		
-		frappe.msgprint(f"DEBUG: Print name map has {len(print_name_map)} entries: {print_name_map}", alert=True)
 		
 		# Store the map in the document for later use
 		self._print_name_map = print_name_map
@@ -535,9 +559,6 @@ class LoadDispatch(Document):
 					print_name_for_item = self._print_name_map.get(item_code) if hasattr(self, '_print_name_map') and self._print_name_map else None
 					if print_name_for_item:
 						item.print_name = print_name_for_item
-						frappe.msgprint(f"DEBUG: Set print_name='{print_name_for_item}' on item before Item creation", alert=True)
-					else:
-						frappe.msgprint(f"DEBUG: WARNING - print_name not found in map for {item_code}. Map: {getattr(self, '_print_name_map', {})}", alert=True)
 					
 					self._create_single_item_from_dispatch_item(item, item_code)
 					# Clear cache and commit
@@ -1861,21 +1882,14 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 		
 		# Get print_name - try multiple ways to access it
 		# First try the parameter passed directly
-		if print_name:
-			frappe.msgprint(f"DEBUG: Got print_name from parameter: '{print_name}'", alert=True)
-		
 		# Then try from frappe.local (set in _create_single_item_from_dispatch_item)
 		if not print_name and hasattr(frappe.local, 'item_print_name_map'):
 			print_name = frappe.local.item_print_name_map.get(item_code)
-			if print_name:
-				frappe.msgprint(f"DEBUG: Got print_name from frappe.local.item_print_name_map: '{print_name}'", alert=True)
 		
-		# Try from item_data object - use getattr with default None
+		# Try from item_data object
 		if not print_name:
 			try:
 				print_name = getattr(item_data, "print_name", None)
-				if print_name:
-					frappe.msgprint(f"DEBUG: Got print_name from item_data.print_name: '{print_name}'", alert=True)
 			except:
 				pass
 		
@@ -1883,34 +1897,16 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 		if not print_name and hasattr(item_data, "get") and callable(getattr(item_data, "get")):
 			try:
 				print_name = item_data.get("print_name")
-				if print_name:
-					frappe.msgprint(f"DEBUG: Got print_name from item_data.get(): '{print_name}'", alert=True)
 			except:
 				pass
 		
 		# Try accessing as dictionary
 		if not print_name and isinstance(item_data, dict):
 			print_name = item_data.get("print_name")
-			if print_name:
-				frappe.msgprint(f"DEBUG: Got print_name from dict: '{print_name}'", alert=True)
-		
-		frappe.log_error(
-			f"Item Code: {item_code}\n"
-			f"print_name from item_data: {print_name}\n"
-			f"hasattr print_name: {hasattr(item_data, 'print_name')}\n"
-			f"print_name from getattr: {getattr(item_data, 'print_name', 'NO ATTR')}\n"
-			f"print_name from frappe.local: {frappe.local.item_print_name_map.get(item_code) if hasattr(frappe.local, 'item_print_name_map') else 'NO MAP'}\n"
-			f"item_data type: {type(item_data)}\n"
-			f"item_data dir: {[x for x in dir(item_data) if 'print' in x.lower()]}\n"
-			f"model_serial_no: {model_serial_no}\n"
-			f"model_name: {model_name}",
-			"DEBUG: Reading print_name in unified function"
-		)
 		
 		# Always calculate print_name if not set or empty
 		if not print_name or not str(print_name).strip():
 			print_name = calculate_print_name(model_serial_no, model_name)
-			frappe.msgprint(f"DEBUG: Calculated print_name='{print_name}' for {item_code}", alert=True)
 	else:
 		model_name = item_data.get('model_name') or item_data.get('Model Name') or item_data.get('MODEL_NAME')
 		model_variant = item_data.get('model_variant') or item_data.get('Model Variant') or item_data.get('MODEL_VARIANT') or item_code
@@ -1946,7 +1942,6 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 	# Always add print_name if available
 	if print_name_value:
 		item_dict["print_name"] = print_name_value
-		frappe.msgprint(f"DEBUG: Added print_name='{print_name_value}' to item_dict", alert=True)
 	
 	item_doc = frappe.get_doc(item_dict)
 	
@@ -1981,40 +1976,14 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 			item_doc.set("print_name", print_name_value)
 	
 	try:
-		# Debug: Log what we're about to insert
-		frappe.msgprint(f"DEBUG: Creating Item {item_code} with print_name='{print_name_value}'", alert=True)
-		frappe.log_error(
-			f"Item Code: {item_code}\n"
-			f"Print Name Value: {print_name_value}\n"
-			f"Item Dict Keys: {list(item_dict.keys())}\n"
-			f"Item Dict: {item_dict}",
-			"DEBUG: Before Item Insert"
-		)
-		
 		item_doc.insert(ignore_permissions=True)
 		frappe.db.commit()
-		
-		# Debug: Check what was actually saved
-		saved_print_name = frappe.db.get_value("Item", item_code, "print_name")
-		
-		frappe.log_error(
-			f"Item Code: {item_code}\n"
-			f"After Insert - print_name from DB: {saved_print_name}\n"
-			f"Expected value: {print_name_value}",
-			"DEBUG: After Item Insert"
-		)
 		
 		# Ensure print_name is set after insert using db_set (most reliable)
 		if print_name_value and frappe.db.has_column("Item", "print_name"):
 			try:
 				frappe.db.set_value("Item", item_code, "print_name", print_name_value, update_modified=False)
 				frappe.db.commit()
-				final_value = frappe.db.get_value("Item", item_code, "print_name")
-				frappe.msgprint(f"DEBUG: Set print_name='{print_name_value}' for Item {item_code}, final value: '{final_value}'", alert=True)
-				frappe.log_error(
-					f"Successfully set print_name for Item {item_code} to '{print_name_value}'\nFinal value in DB: {final_value}",
-					"DEBUG: Field Update Success"
-				)
 			except Exception as e:
 				frappe.log_error(f"Failed to set print_name for Item {item_code}: {str(e)}", "Item Print Name Update Failed")
 		frappe.clear_cache(doctype="Item")
