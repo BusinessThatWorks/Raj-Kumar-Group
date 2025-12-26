@@ -17,193 +17,65 @@ class LoadDispatch(Document):
 		if not frappe.db.exists("Load Plan", self.load_reference_no):
 			return False
 		return True
+	#---------------------------------------------------------
 	
 	def _create_single_item_from_dispatch_item(self, dispatch_item, item_code):
-		"""
-		Create a single Item from a Load Dispatch Item.
-		This method handles Item Group creation and Item creation for one item.
-		"""
-		# Ensure print_name is calculated
-		if not hasattr(dispatch_item, "print_name") or not dispatch_item.print_name:
-			model_name = getattr(dispatch_item, "model_name", None)
-			dispatch_item.print_name = calculate_print_name(dispatch_item.model_serial_no, model_name)
+		"""Create a single Item from a Load Dispatch Item."""
+		# Get print_name from the map we created in before_submit
+		print_name_from_map = None
 		
-		# Get or create Item Group from model_name
-		item_group = self._get_or_create_item_group(dispatch_item.model_name)
+		# Try from instance attribute
+		if hasattr(self, '_print_name_map') and self._print_name_map:
+			print_name_from_map = self._print_name_map.get(item_code)
+			frappe.msgprint(f"DEBUG: Got print_name from instance map: '{print_name_from_map}'", alert=True)
 		
-		# Ensure item_group is set - this is critical
-		if not item_group:
-			frappe.throw(_("Could not determine Item Group for Item '{0}'. Model Name: {1}").format(
-				item_code, getattr(dispatch_item, 'model_name', 'N/A')
-			))
+		# Try from frappe.local
+		if not print_name_from_map and hasattr(frappe.local, 'load_dispatch_print_name_map'):
+			print_name_from_map = frappe.local.load_dispatch_print_name_map.get(item_code)
+			frappe.msgprint(f"DEBUG: Got print_name from frappe.local: '{print_name_from_map}'", alert=True)
 		
-		# Fetch RKG Settings (optional)
-		rkg_settings = None
-		try:
-			rkg_settings = frappe.get_single("RKG Settings")
-		except frappe.DoesNotExistError:
-			pass
+		frappe.log_error(
+			f"Item Code: {item_code}\n"
+			f"Print name from map: {print_name_from_map}\n"
+			f"Has instance map: {hasattr(self, '_print_name_map')}\n"
+			f"Instance map: {getattr(self, '_print_name_map', {})}\n"
+			f"Has frappe.local map: {hasattr(frappe.local, 'load_dispatch_print_name_map')}\n"
+			f"frappe.local map: {getattr(frappe.local, 'load_dispatch_print_name_map', {})}",
+			"DEBUG: Using print_name from map"
+		)
 		
-		# Get UOM from Load Dispatch Item's unit field, default to "Pcs" if not set
-		stock_uom = "Pcs"  # Default to "Pcs"
-		if hasattr(dispatch_item, "unit") and dispatch_item.unit:
-			stock_uom = str(dispatch_item.unit).strip()
-		elif hasattr(dispatch_item, "unit") and not dispatch_item.unit:
-			# If unit field exists but is empty, use default "Pcs"
-			stock_uom = "Pcs"
+		if print_name_from_map:
+			# Set it on the dispatch_item object using multiple methods
+			dispatch_item.print_name = print_name_from_map
+			# Also set it as an attribute directly
+			setattr(dispatch_item, 'print_name', print_name_from_map)
+			# Store it in frappe.local for the unified function to access
+			if not hasattr(frappe.local, 'item_print_name_map'):
+				frappe.local.item_print_name_map = {}
+			frappe.local.item_print_name_map[item_code] = print_name_from_map
+			frappe.msgprint(f"DEBUG: Set print_name='{print_name_from_map}' on dispatch_item for {item_code}", alert=True)
+		else:
+			frappe.msgprint(f"DEBUG: ERROR - print_name_from_map is None for {item_code}!", alert=True)
 		
-		# Create new Item
-		item_doc = frappe.get_doc({
-			"doctype": "Item",
-			"item_code": item_code,
-			"item_name": dispatch_item.model_variant or item_code,
-			"item_group": item_group,
-			"stock_uom": stock_uom,
-			"is_stock_item": 1,
-			"has_serial_no": 1,
-		})
+		# Debug: Log what we have on the dispatch_item
+		frappe.log_error(
+			f"Dispatch Item Name: {getattr(dispatch_item, 'name', 'NO NAME')}\n"
+			f"Has print_name attr: {hasattr(dispatch_item, 'print_name')}\n"
+			f"print_name value on object: {getattr(dispatch_item, 'print_name', 'NO ATTR')}\n"
+			f"print_name from getattr: {getattr(dispatch_item, 'print_name', None)}\n"
+			f"model_serial_no: {getattr(dispatch_item, 'model_serial_no', 'NO ATTR')}\n"
+			f"model_name: {getattr(dispatch_item, 'model_name', 'NO ATTR')}",
+			"DEBUG: Dispatch Item Before Item Creation"
+		)
 		
-		# Populate Supplier from RKG Settings
-		if rkg_settings and rkg_settings.get("default_supplier"):
-			if hasattr(item_doc, "supplier_items"):
-				item_doc.append("supplier_items", {
-					"supplier": rkg_settings.default_supplier,
-					"is_default": 1
-				})
-			elif hasattr(item_doc, "supplier"):
-				item_doc.supplier = rkg_settings.default_supplier
-		
-		# Populate HSN Code from RKG Settings
-		if rkg_settings and rkg_settings.get("default_hsn_code"):
-			if hasattr(item_doc, "gst_hsn_code"):
-				item_doc.gst_hsn_code = rkg_settings.default_hsn_code
-			elif hasattr(item_doc, "custom_gst_hsn_code"):
-				item_doc.custom_gst_hsn_code = rkg_settings.default_hsn_code
-		
-		# Set custom fields from Load Dispatch Item
-		custom_field_map = {field: field for field in ITEM_CUSTOM_FIELDS}
-		for child_field, item_field in custom_field_map.items():
-			if hasattr(dispatch_item, child_field):
-				child_value = getattr(dispatch_item, child_field)
-				if child_value is not None and child_value != "":
-					if hasattr(item_doc, item_field):
-						setattr(item_doc, item_field, child_value)
-		
-		# Set custom_print_name
-		if hasattr(dispatch_item, "print_name") and dispatch_item.print_name:
-			if hasattr(item_doc, "custom_print_name"):
-				item_doc.custom_print_name = dispatch_item.print_name
-		
-		# Insert Item with proper error handling
-		try:
-			# Validate Item before inserting
-			item_doc.validate()
-			
-			# Insert Item
-			item_doc.insert(ignore_permissions=True)
-			
-			# Commit immediately after each Item creation to ensure it exists
-			# Use savepoint to ensure this commit persists
-			frappe.db.commit()
-			
-			# Force refresh cache to ensure Item is visible
-			frappe.clear_cache(doctype="Item")
-			
-			# Verify Item exists after commit - use direct SQL query
-			item_exists = frappe.db.sql("SELECT name FROM `tabItem` WHERE name = %s", (item_code,))
-			if not item_exists:
-				# Try one more commit and check
-				frappe.db.commit()
-				item_exists = frappe.db.sql("SELECT name FROM `tabItem` WHERE name = %s", (item_code,))
-				if not item_exists:
-					# Log this critical issue
-					frappe.log_error(
-						f"CRITICAL: Item {item_code} was inserted but not found in database after commit. SQL check returned: {item_exists}",
-						"Item Creation Verification Failed"
-					)
-					raise frappe.ValidationError(
-						_("Item '{0}' was created but not found in database. This may indicate a transaction issue.").format(item_code)
-					)
-			
-			return item_doc
-		except frappe.ValidationError:
-			# Re-raise validation errors as-is
-			raise
-		except Exception as e:
-			# Log detailed error
-			import traceback
-			error_details = traceback.format_exc()
-			frappe.log_error(
-				f"Failed to insert Item {item_code}: {str(e)}\n{error_details}\nItem Group: {item_group}",
-				"Item Insert Failed"
-			)
-			# Re-raise with clear message
-			raise frappe.ValidationError(_("Failed to create Item '{0}': {1}").format(item_code, str(e)))
+		# Pass print_name directly to unified function
+		return _create_item_unified(dispatch_item, item_code, source_type="dispatch_item", print_name=print_name_from_map)
+	#---------------------------------------------------------
 	
 	def _get_or_create_item_group(self, model_name):
 		"""Get or create Item Group from model_name. Returns Item Group name."""
-		# First, ensure we have a parent Item Group - create "All Item Groups" if it doesn't exist
-		parent_item_group = "All Item Groups"
-		if not frappe.db.exists("Item Group", parent_item_group):
-			# Try to find any existing parent group
-			parent_item_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
-			if not parent_item_group:
-				# No parent group exists - create "All Item Groups"
-				try:
-					all_groups = frappe.get_doc({
-						"doctype": "Item Group",
-						"item_group_name": "All Item Groups",
-						"is_group": 1
-					})
-					all_groups.insert(ignore_permissions=True)
-					frappe.db.commit()
-					parent_item_group = "All Item Groups"
-				except Exception as e:
-					frappe.log_error(f"Failed to create 'All Item Groups': {str(e)}", "Item Group Creation Failed")
-					frappe.throw(_("No parent Item Group found and could not create 'All Item Groups'. Error: {0}").format(str(e)))
-		
-		# Use model_name as Item Group - create if it doesn't exist
-		if model_name and str(model_name).strip():
-			model_name = str(model_name).strip()
-			if frappe.db.exists("Item Group", model_name):
-				return model_name
-			
-			# Create Item Group from model_name
-			try:
-				new_item_group = frappe.get_doc({
-					"doctype": "Item Group",
-					"item_group_name": model_name,
-					"is_group": 0,
-					"parent_item_group": parent_item_group
-				})
-				new_item_group.insert(ignore_permissions=True)
-				frappe.db.commit()
-				return model_name
-			except Exception as e:
-				frappe.log_error(f"Failed to create Item Group '{model_name}': {str(e)}", "Item Group Creation Failed")
-				# Fall through to default
-		
-		# Fall back to "Two Wheeler Vehicle"
-		if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
-			return "Two Wheeler Vehicle"
-		
-		# Create "Two Wheeler Vehicle" as default
-		try:
-			default_group = frappe.get_doc({
-				"doctype": "Item Group",
-				"item_group_name": "Two Wheeler Vehicle",
-				"is_group": 0,
-				"parent_item_group": parent_item_group
-			})
-			default_group.insert(ignore_permissions=True)
-			frappe.db.commit()
-			return "Two Wheeler Vehicle"
-		except Exception as e:
-			# Last resort: get any available item group
-			any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
-			if any_group:
-				return any_group
-			frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
+		return _get_or_create_item_group_unified(model_name)
+	#---------------------------------------------------------
 	
 	def before_insert(self):
 		"""Verify item_code exists if set; Items created in before_submit hook."""
@@ -228,6 +100,7 @@ class LoadDispatch(Document):
 				),
 				title=_("Invalid Item Codes")
 			)
+	#---------------------------------------------------------
 	
 	def before_save(self):
 		"""Populate item_code from model_serial_no before saving (only if Item exists)."""
@@ -241,6 +114,7 @@ class LoadDispatch(Document):
 			self.set_fields_value()
 			self.set_item_group()
 			self.set_supplier()
+	#---------------------------------------------------------
 	
 	def on_submit(self):
 		"""
@@ -250,6 +124,7 @@ class LoadDispatch(Document):
 		# Set Load Dispatch status to "In-Transit" when submitted
 		self.db_set("status", "In-Transit")
 		self.add_dispatch_quanity_to_load_plan(docstatus=1)
+	#---------------------------------------------------------
 	
 	def validate(self):
 		"""Validate Load Dispatch (Items created in before_submit, not here)."""
@@ -317,6 +192,7 @@ class LoadDispatch(Document):
 		
 		# Calculate total dispatch quantity from child table
 		self.calculate_total_dispatch_quantity()
+	#---------------------------------------------------------
 	
 	def create_serial_nos(self):
 		"""Create serial nos for all items on save."""
@@ -446,6 +322,7 @@ class LoadDispatch(Document):
 										f"Error setting purchase_date for Serial No {serial_no_name}: {str(e)}",
 										"Serial No Update Error",
 									)
+	#---------------------------------------------------------
 	
 	def set_item_code(self):
 		"""Populate item_code from model_serial_no, only if Item already exists."""
@@ -467,6 +344,7 @@ class LoadDispatch(Document):
 				# Item doesn't exist - leave item_code empty
 				# Items will be created in before_submit()
 				item.item_code = None
+	#---------------------------------------------------------
 	
 	def set_fields_value(self):
 		"""Set default values from RKG Settings if not already set."""
@@ -501,6 +379,7 @@ class LoadDispatch(Document):
 					# This ensures rate is always in sync with price_unit
 					calculated_rate = price_unit / 1.18
 					item.rate = calculated_rate
+	#---------------------------------------------------------
 
 	def set_item_group(self):
 		"""Set item_group for Load Dispatch Items based on model_name or default."""
@@ -521,6 +400,7 @@ class LoadDispatch(Document):
 					# Fall back to "Two Wheeler Vehicle" if model_name not found
 					if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
 						item.item_group = "Two Wheeler Vehicle"
+	#---------------------------------------------------------
 	
 	def set_supplier(self):
 		"""Set supplier for items from RKG Settings."""
@@ -543,6 +423,7 @@ class LoadDispatch(Document):
 		except frappe.DoesNotExistError:
 			# RKG Settings not found, skip setting supplier
 			pass
+	#---------------------------------------------------------
 
 	def before_submit(self):
 		"""Validate Load Plan and create Items before submitting Load Dispatch."""
@@ -583,9 +464,48 @@ class LoadDispatch(Document):
 				title=_("Missing Model Serial No")
 			)
 		
-		# Create Items for rows that don't have item_code but have model_serial_no
-		# This happens BEFORE link validation runs, so all Items will exist when validation occurs
+		# Ensure print_name is calculated for all items before creating Items
+		frappe.msgprint("DEBUG: Calculating print_name for all items", alert=True)
+		print_name_map = {}  # Map item_code to print_name
+		
 		for item in self.items:
+			if hasattr(item, "model_serial_no") and item.model_serial_no:
+				model_name = getattr(item, "model_name", None)
+				model_serial_no = item.model_serial_no
+				item_code = str(model_serial_no).strip()
+				
+				old_print_name = getattr(item, "print_name", None)
+				if not hasattr(item, "print_name") or not item.print_name or not str(item.print_name).strip():
+					item.print_name = calculate_print_name(model_serial_no, model_name)
+				
+				# Store in map for later use
+				print_name_map[item_code] = item.print_name
+				
+				frappe.log_error(
+					f"Row {getattr(item, 'idx', '?')}: Calculated print_name\n"
+					f"Item Code: {item_code}\n"
+					f"Model Serial No: {model_serial_no}\n"
+					f"Model Name: {model_name}\n"
+					f"Old print_name: {old_print_name}\n"
+					f"New print_name: {item.print_name}\n"
+					f"Stored in map: {print_name_map.get(item_code)}",
+					"DEBUG: Print Name Calculated"
+				)
+		
+		frappe.msgprint(f"DEBUG: Print name map has {len(print_name_map)} entries: {print_name_map}", alert=True)
+		
+		# Store the map in the document for later use
+		self._print_name_map = print_name_map
+		
+		# Also store it in frappe.local for global access
+		if not hasattr(frappe.local, 'load_dispatch_print_name_map'):
+			frappe.local.load_dispatch_print_name_map = {}
+		frappe.local.load_dispatch_print_name_map.update(print_name_map)
+		
+		# Create Items for rows that don't have item_code but have model_serial_no
+		# This happens AFTER saving print_name values, so Items will have correct print_name
+		for item in self.items:
+			
 			# If item_code is already present → verify Item exists
 			if item.item_code and str(item.item_code).strip():
 				item_code = str(item.item_code).strip()
@@ -611,6 +531,14 @@ class LoadDispatch(Document):
 			else:
 				# Item does NOT exist → create Item
 				try:
+					# Get print_name from the map we created earlier and set it on the item
+					print_name_for_item = self._print_name_map.get(item_code) if hasattr(self, '_print_name_map') and self._print_name_map else None
+					if print_name_for_item:
+						item.print_name = print_name_for_item
+						frappe.msgprint(f"DEBUG: Set print_name='{print_name_for_item}' on item before Item creation", alert=True)
+					else:
+						frappe.msgprint(f"DEBUG: WARNING - print_name not found in map for {item_code}. Map: {getattr(self, '_print_name_map', {})}", alert=True)
+					
 					self._create_single_item_from_dispatch_item(item, item_code)
 					# Clear cache and commit
 					frappe.clear_cache(doctype="Item")
@@ -655,11 +583,13 @@ class LoadDispatch(Document):
 					len(missing_items),
 					"\n".join(missing_items[:20]) + ("\n..." if len(missing_items) > 20 else "")
 				),
-				title=_("Item Code Missing")
-			)
+					title=_("Item Code Missing")
+				)
+	#---------------------------------------------------------
 	
 	def on_cancel(self):
 		self.add_dispatch_quanity_to_load_plan(docstatus=2)
+	#---------------------------------------------------------
 	
 	def update_status(self):
 		"""Update Load Dispatch status based on received quantity (Received if >= dispatch quantity, otherwise In-Transit)."""
@@ -675,6 +605,7 @@ class LoadDispatch(Document):
 		if self.status != new_status:
 			frappe.db.set_value("Load Dispatch", self.name, "status", new_status, update_modified=False)
 			self.status = new_status
+	#---------------------------------------------------------
 	
 	def add_dispatch_quanity_to_load_plan(self, docstatus):
 		"""Update load_dispatch_quantity in Load Plan when Load Dispatch is submitted or cancelled."""
@@ -701,6 +632,7 @@ class LoadDispatch(Document):
 		
 		frappe.db.set_value("Load Plan", self.load_reference_no, "load_dispatch_quantity", new_quantity, update_modified=False)
 		frappe.db.set_value("Load Plan", self.load_reference_no, "status", status, update_modified=False)
+	#---------------------------------------------------------
 	
 	def calculate_total_dispatch_quantity(self):
 		"""Count the number of rows with non-empty frame_no in Load Dispatch Item child table."""
@@ -711,6 +643,7 @@ class LoadDispatch(Document):
 				if item.frame_no and str(item.frame_no).strip():
 					total_dispatch_quantity += 1
 		self.total_dispatch_quantity = total_dispatch_quantity
+	#---------------------------------------------------------
 	
 	def _filter_duplicate_frame_numbers(self):
 		"""Filter out Load Dispatch Items with frame numbers already existing in Serial No doctype."""
@@ -810,6 +743,7 @@ class LoadDispatch(Document):
 				indicator="orange",
 				alert=True
 			)
+	#---------------------------------------------------------
 	
 	def _ensure_default_item_group(self):
 		"""Ensure a default Item Group exists. Creates 'Two Wheeler Vehicle' if it doesn't exist."""
@@ -841,6 +775,7 @@ class LoadDispatch(Document):
 			# Log error but don't fail - will use fallback logic
 			frappe.log_error(f"Could not create default Item Group 'Two Wheeler Vehicle': {str(e)}", "Item Group Creation Failed")
 			return None
+	#---------------------------------------------------------
 	
 	def create_items_from_dispatch_items(self):
 		"""Create Items from Load Dispatch Items, populating Supplier and HSN Code from RKG Settings."""
@@ -905,10 +840,10 @@ class LoadDispatch(Document):
 							setattr(item_doc, item_field, child_value)
 							updated = True
 					
-					# Update custom_print_name from Load Dispatch Item's print_name
+					# Update print_name from Load Dispatch Item's print_name
 					if hasattr(item, "print_name") and item.print_name:
-						if hasattr(item_doc, "custom_print_name"):
-							item_doc.custom_print_name = item.print_name
+						if hasattr(item_doc, "print_name"):
+							item_doc.print_name = item.print_name
 							updated = True
 
 					if updated:
@@ -1049,10 +984,10 @@ class LoadDispatch(Document):
 							if hasattr(item_doc, item_field):
 								setattr(item_doc, item_field, child_value)
 				
-				# Set custom_print_name from Load Dispatch Item's print_name
+				# Set print_name from Load Dispatch Item's print_name
 				if hasattr(item, "print_name") and item.print_name:
-					if hasattr(item_doc, "custom_print_name"):
-						item_doc.custom_print_name = item.print_name
+					if hasattr(item_doc, "print_name"):
+						item_doc.print_name = item.print_name
 
 				# Insert Item - this will create the Item in the database
 				item_doc.insert(ignore_permissions=True)
@@ -1126,6 +1061,7 @@ class LoadDispatch(Document):
 				),
 				title=_("Item Creation Failed")
 			)
+	#---------------------------------------------------------
 
 
 def calculate_print_name(model_serial_no, model_name=None):
@@ -1164,406 +1100,18 @@ def calculate_print_name(model_serial_no, model_name=None):
 	
 	# If no model_name, just use serial_part
 	return f"{serial_part} (BS-VI)"
-
-
-@frappe.whitelist()
-def process_tabular_file(file_url, selected_load_reference_no=None):
-	"""
-	Process CSV file and extract data for child table
-	Maps CSV columns to Load Dispatch Item fields
-	
-	Args:
-		file_url: Path to the CSV file
-		selected_load_reference_no: The manually selected Load Reference No to validate against
-	"""
-	try:
-		# Get file path from file_url
-		# file_url format: /files/filename.csv
-		if file_url.startswith("/files/"):
-			file_name = file_url.split("/files/")[-1]
-			file_path = frappe.get_site_path("public", "files", file_name)
-		else:
-			file_path = frappe.get_site_path("public", file_url.lstrip("/"))
-		
-		# Check if file exists
-		if not os.path.exists(file_path):
-			frappe.throw(f"File not found: {file_url}")
-		
-		# Try different encodings to handle various file formats
-		encodings = ['utf-8-sig', 'utf-8', 'utf-16-le', 'utf-16-be', 'latin-1', 'cp1252']
-		csvfile = None
-		sample = None
-		
-		for encoding in encodings:
-			try:
-				csvfile = open(file_path, 'r', encoding=encoding)
-				# Try to read a sample to verify encoding works and detect delimiter
-				sample = csvfile.read(1024)
-				csvfile.seek(0)
-				break
-			except (UnicodeDecodeError, UnicodeError):
-				if csvfile:
-					csvfile.close()
-				csvfile = None
-				sample = None
-				continue
-		
-		if not csvfile or not sample:
-			frappe.throw(f"Unable to read file with supported encodings. Please ensure the file is in UTF-8, UTF-16, or Latin-1 format.")
-		
-		try:
-			def _norm_header(h):
-				# Normalize header for comparison: strip, lower, collapse spaces, remove BOM and special chars
-				if not h:
-					return ""
-				# Remove BOM and other invisible characters
-				normalized = str(h).replace("\ufeff", "").replace("\u200b", "").strip()
-				# Convert to lowercase and collapse multiple spaces/tabs into single space
-				normalized = " ".join(normalized.lower().split())
-				return normalized
-
-			# Mapping from CSV column names to child table fieldnames
-			column_mapping = {
-				"HMSI Load Reference No": "hmsi_load_reference_no",
-				"Invoice No": "invoice_no",
-				"Dispatch Date": "dispatch_date",
-				"Frame No": "frame_no",
-				"Engine no": "engnie_no_motor_no",
-				"Engine No": "engnie_no_motor_no",  # alternate spelling
-				"Key No": "key_no",
-				"Model": "model_variant",  # Map to model_variant field
-				"Model Variant": "model_variant",
-				"Model Name": "model_name",
-				"Model Serial No": "model_serial_no",
-				"Colour": "color_code",
-				"Color": "color_code",  # alternate spelling
-				"Tax Rate": "tax_rate",
-				"Print Name": "print_name",
-				"DOR": "dor",
-				"HSN Code": "hsn_code",
-				"Qty": "qty",
-				"Unit": "unit",
-				"Price/Unit": "price_unit",
-				"Price/unit": "price_unit",  # alternate spelling
-				"Battery No": "battery_no",
-				# Legacy mappings for backward compatibility
-				"HMSI/InterDealer Load Reference No": "hmsi_load_reference_no",
-				"Invoice No.": "invoice_no",
-				"Frame #": "frame_no",
-				"Engine No/Motor No": "engnie_no_motor_no",
-				"Color Code": "color_code",
-			}
-			
-			# Required headers that MUST be present in the CSV (core), case/space-insensitive
-			# Note: "Print Name" is calculated from Model Serial Number, so it's not required from CSV
-			required_headers_core = [
-				"HMSI Load Reference No",
-				"Invoice No",
-				"Dispatch Date",
-				"Frame No",
-				"Engine no",
-				"Key No",
-				"Model Name",
-				"Colour",
-				"Tax Rate",
-				"DOR",
-				"HSN Code",
-				"Qty",
-				"Unit",
-				"Price/Unit"
-			]
-
-			# Optional headers (ignored if absent)
-			optional_headers = []
-			
-			# Detect delimiter from sample, with fallbacks for common delimiters
-			try:
-				delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
-			except Exception:
-				# If sniffer cannot determine, start with comma as default
-				delimiter = ","
-
-			# Try multiple delimiters to find one that satisfies required headers
-			delimiters_to_try = []
-			for d in [delimiter, ",", "\t", ";", "|"]:
-				if d not in delimiters_to_try:
-					delimiters_to_try.append(d)
-
-			best_delimiter = delimiter
-			best_missing = None
-			best_headers = []
-			for delim in delimiters_to_try:
-				csvfile.seek(0)
-				test_reader = csv.DictReader(csvfile, delimiter=delim)
-				test_headers = [h.strip() if h else "" for h in (test_reader.fieldnames or [])]
-				norm_test_headers = {_norm_header(h) for h in test_headers}
-
-				missing = []
-				for required_header in required_headers_core:
-					norm_req = _norm_header(required_header)
-					# Check for alternate spellings
-					alternates = {
-						_norm_header("Engine no"): [_norm_header("Engine No"), _norm_header("Engine No/Motor No")],
-						_norm_header("Colour"): [_norm_header("Color"), _norm_header("Color Code")],
-						_norm_header("Price/Unit"): [_norm_header("Price/unit")],
-						_norm_header("Frame No"): [_norm_header("Frame #")],
-						_norm_header("Invoice No"): [_norm_header("Invoice No.")],
-						_norm_header("HMSI Load Reference No"): [_norm_header("HMSI/InterDealer Load Reference No")]
-					}
-					
-					found = norm_req in norm_test_headers
-					if not found and norm_req in alternates:
-						for alt in alternates[norm_req]:
-							if alt in norm_test_headers:
-								found = True
-								break
-					
-					if not found:
-						missing.append(required_header)
-
-				if best_missing is None or len(missing) < len(best_missing):
-					best_missing = missing
-					best_delimiter = delim
-					best_headers = test_headers
-
-				# Perfect match found; stop searching
-				if not missing:
-					break
-
-			# Use the best delimiter found - recreate reader to get actual headers
-			csvfile.seek(0)
-			reader = csv.DictReader(csvfile, delimiter=best_delimiter)
-			
-			# Always get headers from the reader to ensure we have the actual headers from the file
-			reader_headers = [h.strip() if h else "" for h in (reader.fieldnames or [])]
-			
-			# Use reader headers (they're the actual headers from the file)
-			csv_headers = reader_headers
-			
-			# Create normalized header mapping after csv_headers is finalized
-			norm_csv_headers = {_norm_header(h): h for h in csv_headers if h}  # Filter out empty headers
-			
-			# Debug: Log found headers for troubleshooting
-			if not csv_headers:
-				frappe.throw(_("CSV file appears to have no headers. Please ensure the first row contains column headers."))
-			
-			# Detect if this is a Load Plan CSV file (has Load Plan headers)
-			load_plan_headers = [
-				"load reference no", "dispatch plan date", "payment plan date",
-				"model", "model name", "type", "variant", "color", "group color", "option", "quantity"
-			]
-			norm_found_headers = set(norm_csv_headers.keys())
-			load_plan_header_count = sum(1 for h in load_plan_headers if h in norm_found_headers)
-			
-			# If most Load Plan headers are present, this is likely a Load Plan CSV
-			if load_plan_header_count >= 5:
-				frappe.throw(
-					_("This appears to be a <b>Load Plan</b> CSV file, not a <b>Load Dispatch</b> CSV file.\n\n"
-					  "Load Dispatch requires different headers including:\n"
-					  "• HMSI Load Reference No\n"
-					  "• Invoice No\n"
-					  "• Dispatch Date\n"
-					  "• Frame No\n"
-					  "• Engine no\n"
-					  "• Key No\n"
-					  "• Model Serial No\n"
-					  "• Price/Unit\n"
-					  "• And other dispatch-specific fields\n\n"
-					  "<b>Please use a Load Dispatch CSV file</b> with the correct headers, or create a Load Plan first using this file."),
-					title=_("Wrong CSV File Type")
-				)
-			
-			# Check for missing headers using the chosen delimiter (case/space-insensitive)
-			missing_core_headers = []
-			for required_header in required_headers_core:
-				norm_req = _norm_header(required_header)
-				# Check for alternate spellings
-				alternates = {
-					_norm_header("Engine no"): [_norm_header("Engine No"), _norm_header("Engine No/Motor No")],
-					_norm_header("Colour"): [_norm_header("Color"), _norm_header("Color Code")],
-					_norm_header("Price/Unit"): [_norm_header("Price/unit")],
-					_norm_header("Frame No"): [_norm_header("Frame #")],
-					_norm_header("Invoice No"): [_norm_header("Invoice No.")],
-					_norm_header("HMSI Load Reference No"): [_norm_header("HMSI/InterDealer Load Reference No")]
-				}
-				
-				found = norm_req in norm_csv_headers
-				if not found and norm_req in alternates:
-					for alt in alternates[norm_req]:
-						if alt in norm_csv_headers:
-							found = True
-							break
-				
-				if not found:
-					missing_core_headers.append(required_header)
-
-			# Optional headers: warn only
-			missing_optional_headers = []
-			for optional_header in optional_headers:
-				if _norm_header(optional_header) not in norm_csv_headers:
-					missing_optional_headers.append(optional_header)
-
-			if missing_core_headers:
-				expected_headers_str = "\n".join([f"• {h}" for h in required_headers_core + optional_headers])
-				missing_headers_str = "\n".join([f"• {h}" for h in missing_core_headers + missing_optional_headers])
-				found_headers_str = "\n".join([f"• {h}" for h in csv_headers[:20]])  # Show first 20 headers found
-				if len(csv_headers) > 20:
-					found_headers_str += f"\n... and {len(csv_headers) - 20} more"
-				
-				frappe.throw(
-					_("CSV Header Validation Failed!\n\n"
-					  "<b>Missing Headers:</b>\n{0}\n\n"
-					  "<b>Expected Headers (CSV should contain these columns):</b>\n{1}\n\n"
-					  "<b>Found Headers in CSV:</b>\n{2}").format(
-						missing_headers_str,
-						expected_headers_str,
-						found_headers_str
-					),
-					title=_("Invalid CSV Headers")
-				)
-			elif missing_optional_headers:
-				missing_headers_str = "\n".join([f"• {h}" for h in missing_optional_headers])
-				frappe.msgprint(
-					_("CSV missing optional headers (processing will continue):\n{0}").format(missing_headers_str),
-					title=_("CSV Optional Headers Missing"),
-					indicator="orange",
-					alert=True,
-				)
-			
-			rows = []
-			csv_load_reference_nos = set()  # Track all load_reference_no values from CSV
-			
-			for csv_row in reader:
-				# Skip empty rows
-				if not any(csv_row.values()):
-					continue
-				
-				row_data = {}
-				for csv_col, fieldname in column_mapping.items():
-					# Skip Print Name - it will be calculated from Model Serial Number
-					if fieldname == "print_name":
-						continue
-					
-					# Resolve actual CSV column using normalized header lookup
-					actual_col = norm_csv_headers.get(_norm_header(csv_col))
-					if not actual_col:
-						continue
-
-					raw_value = csv_row.get(actual_col, "")
-					value = raw_value.strip() if isinstance(raw_value, str) else raw_value
-					
-					if value:
-						# Handle date fields
-						if fieldname in ["dispatch_date", "dor"]:
-							# Try to parse date (assuming format YYYY-MM-DD or similar)
-							try:
-								from frappe.utils import getdate
-								row_data[fieldname] = getdate(value)
-							except:
-								row_data[fieldname] = value
-						# Handle integer fields
-						elif fieldname in ["key_no", "hsn_code", "qty"]:
-							try:
-								row_data[fieldname] = int(float(value)) if value else None
-							except:
-								row_data[fieldname] = value
-						# Handle currency fields
-						elif fieldname in ["price_unit"]:
-							try:
-								if value:
-									# Remove commas (thousand separators) before converting to float
-									cleaned_value = str(value).replace(",", "").strip()
-									row_data[fieldname] = float(cleaned_value) if cleaned_value else 0.0
-								else:
-									row_data[fieldname] = 0.0
-							except:
-								row_data[fieldname] = 0.0
-						else:
-							row_data[fieldname] = value
-					
-					# Track hmsi_load_reference_no from CSV (for validation)
-					if fieldname == "hmsi_load_reference_no" and value:
-						csv_load_reference_nos.add(value)
-					# Also track invoice_no for parent document
-					if fieldname == "invoice_no" and value:
-						row_data[fieldname] = value
-				
-				# Calculate print_name from model_name and model_serial_no (don't read from CSV)
-				if "model_serial_no" in row_data and row_data["model_serial_no"]:
-					model_name = row_data.get("model_name", None)
-					row_data["print_name"] = calculate_print_name(row_data["model_serial_no"], model_name)
-				    
-				if row_data:
-					rows.append(row_data)
-			
-			# Validate that we have at least one hmsi_load_reference_no if we have rows
-			if rows and not csv_load_reference_nos:
-				frappe.throw(
-					_("CSV file contains rows but no Load Reference Numbers found. Please ensure the 'HMSI Load Reference No' column has values in all rows."),
-					title=_("Missing Load Reference Numbers")
-				)
-			
-			# Validate that Load Plans exist for all hmsi_load_reference_no values from CSV
-			if csv_load_reference_nos:
-				missing_load_plans = []
-				for load_ref_no in csv_load_reference_nos:
-					if not frappe.db.exists("Load Plan", load_ref_no):
-						missing_load_plans.append(load_ref_no)
-				
-				if missing_load_plans:
-					missing_list = "\n".join([f"• {ref_no}" for ref_no in sorted(missing_load_plans)])
-					frappe.throw(
-						_("Load Plan Validation Failed!\n\n"
-						  "The following Load Reference Numbers from the CSV do not have corresponding Load Plans:\n{0}\n\n"
-						  "Please create and submit Load Plans for these Load Reference Numbers before importing the CSV.").format(missing_list),
-						title=_("Load Plan Not Found")
-					)
-				
-				# Also validate that all Load Plans are submitted
-				unsubmitted_load_plans = []
-				for load_ref_no in csv_load_reference_nos:
-					load_plan = frappe.get_doc("Load Plan", load_ref_no)
-					if load_plan.docstatus != 1:
-						unsubmitted_load_plans.append(load_ref_no)
-				
-				if unsubmitted_load_plans:
-					unsubmitted_list = "\n".join([f"• {ref_no}" for ref_no in sorted(unsubmitted_load_plans)])
-					frappe.throw(
-						_("Load Plan Validation Failed!\n\n"
-						  "The following Load Reference Numbers have Load Plans that are not submitted:\n{0}\n\n"
-						  "Please submit these Load Plans before importing the CSV.").format(unsubmitted_list),
-						title=_("Load Plan Not Submitted")
-					)
-			
-			# Validate hmsi_load_reference_no match if manually selected
-			if selected_load_reference_no:
-				if len(csv_load_reference_nos) == 0:
-					frappe.throw(_("CSV file does not contain any Load Reference Number. Please ensure the CSV has 'HMSI Load Reference No' column."))
-				elif len(csv_load_reference_nos) > 1:
-					frappe.throw(_("CSV file contains multiple different Load Reference Numbers: {0}. All rows must have the same Load Reference Number.").format(", ".join(sorted(csv_load_reference_nos))))
-				else:
-					csv_load_ref = list(csv_load_reference_nos)[0]
-					if csv_load_ref != selected_load_reference_no:
-						frappe.throw(_("Load Reference Number mismatch! You have selected '{0}', but the CSV file contains '{1}'. Please ensure the CSV file matches the selected Load Reference Number.").format(selected_load_reference_no, csv_load_ref))
-			print(rows)
-			print("\n\n")
-			return rows
-		finally:
-			if csvfile:
-				csvfile.close()
-			
-	except Exception as e:
-		frappe.log_error(f"Error processing CSV file: {str(e)}", "CSV Import Error")
-		frappe.throw(f"Error processing CSV file: {str(e)}")
+	#---------------------------------------------------------
 @frappe.whitelist()
 def preserve_purchase_receipt_uom(doc, method=None):
 	"""Preserve UOM from Load Dispatch Item's unit field when Purchase Receipt is validated."""
 	preserve_uom_from_load_dispatch(doc, "Purchase Receipt")
+	#---------------------------------------------------------
 
 @frappe.whitelist()
 def preserve_purchase_invoice_uom(doc, method=None):
 	"""Preserve UOM from Load Dispatch Item's unit field when Purchase Invoice is validated."""
 	preserve_uom_from_load_dispatch(doc, "Purchase Invoice")
+	#---------------------------------------------------------
 
 def preserve_uom_from_load_dispatch(doc, doctype_name):
 	"""Preserve UOM from Load Dispatch Item's unit field for Purchase Receipt and Purchase Invoice."""
@@ -1594,15 +1142,15 @@ def preserve_uom_from_load_dispatch(doc, doctype_name):
 				item_uom_map[ld_item.item_code] = str(ld_item.unit).strip()
 	
 	# Update document Items with UOM from Load Dispatch
-	if item_uom_map:
-		for doc_item in doc.items:
-			if doc_item.item_code and doc_item.item_code in item_uom_map:
-				uom_value = item_uom_map[doc_item.item_code]
-				# Set UOM if it's different from what's currently set
-				if hasattr(doc_item, "uom") and doc_item.uom != uom_value:
-					doc_item.uom = uom_value
-				if hasattr(doc_item, "stock_uom") and doc_item.stock_uom != uom_value:
-					doc_item.stock_uom = uom_value
+		if item_uom_map:
+			for doc_item in doc.items:
+				if doc_item.item_code and doc_item.item_code in item_uom_map:
+					uom_value = item_uom_map[doc_item.item_code]
+					if hasattr(doc_item, "uom") and doc_item.uom != uom_value:
+						doc_item.uom = uom_value
+					if hasattr(doc_item, "stock_uom") and doc_item.stock_uom != uom_value:
+						doc_item.stock_uom = uom_value
+	#---------------------------------------------------------
 
 def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
 	"""
@@ -1683,6 +1231,7 @@ def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
 		# Set update_stock to 1 only if not created from Purchase Receipt
 		# This ensures serial_no field is visible when creating directly from Load Dispatch
 		doc.update_stock = 1
+	#---------------------------------------------------------
 
 @frappe.whitelist()
 def set_purchase_receipt_serial_batch_fields_readonly(doc, method=None):
@@ -1704,443 +1253,146 @@ def set_purchase_receipt_serial_batch_fields_readonly(doc, method=None):
 			if hasattr(item, "use_serial_batch_fields"):
 				if not item.use_serial_batch_fields:
 					item.use_serial_batch_fields = 1
+	#---------------------------------------------------------
+
+def _create_purchase_document_unified(source_name, doctype, target_doc=None, warehouse=None, frame_warehouse_mapping=None):
+	"""Unified Purchase Receipt/Invoice creation from Load Dispatch"""
+	from frappe.model.mapper import get_mapped_doc
+	import json
+	
+	if frappe.db.has_column(doctype, "custom_load_dispatch"):
+		existing = frappe.get_all(doctype, filters={"custom_load_dispatch": source_name}, fields=["name"], limit=1)
+		if existing:
+			frappe.throw(_("{0} {1} already exists for this Load Dispatch.").format(doctype, existing[0].name))
+	
+	frame_warehouse_map, selected_warehouse = {}, None
+	if frame_warehouse_mapping:
+		if isinstance(frame_warehouse_mapping, str):
+			try:
+				frame_warehouse_mapping = json.loads(frame_warehouse_mapping)
+			except:
+				frame_warehouse_mapping = frappe.parse_json(frame_warehouse_mapping)
+		if isinstance(frame_warehouse_mapping, list):
+			for m in frame_warehouse_mapping:
+				m = frappe.parse_json(m) if isinstance(m, str) else m
+				if isinstance(m, dict):
+					fn, wh = str(m.get("frame_no", "")).strip(), str(m.get("warehouse", "")).strip()
+					if fn and wh:
+						frame_warehouse_map[fn] = wh
+	elif warehouse:
+		selected_warehouse = warehouse
+	
+	def set_missing_values(source, target):
+		target.flags.ignore_permissions = True
+		target.custom_load_reference_no = source.load_reference_no
+		if hasattr(target, "custom_load_dispatch"):
+			target.custom_load_dispatch = source_name
+		elif frappe.db.has_column(doctype, "custom_load_dispatch"):
+			target.db_set("custom_load_dispatch", source_name)
+		
+		has_pr = any(getattr(item, "purchase_receipt", None) for item in (target.items or []))
+		if not has_pr and hasattr(target, "update_stock"):
+			target.update_stock = 1
+		
+		try:
+			rkg = frappe.get_single("RKG Settings")
+			if rkg.get("default_supplier"):
+				target.supplier = rkg.default_supplier
+			if rkg.get("default_hsn_code"):
+				if hasattr(target, "gst_hsn_code"):
+					target.gst_hsn_code = rkg.default_hsn_code
+				elif hasattr(target, "custom_gst_hsn_code"):
+					target.custom_gst_hsn_code = rkg.default_hsn_code
+		except:
+			pass
+		
+		if (frame_warehouse_map or selected_warehouse) and target.items and doctype == "Purchase Invoice":
+			for item in target.items:
+				wh = None
+				if frame_warehouse_map and hasattr(item, "serial_no") and item.serial_no:
+					wh = frame_warehouse_map.get(str(item.serial_no).strip())
+				if not wh and selected_warehouse:
+					wh = selected_warehouse
+				if wh:
+					if hasattr(item, "warehouse"):
+						item.warehouse = wh
+					if hasattr(item, "target_warehouse"):
+						item.target_warehouse = wh
+	
+	def update_item(source, target, source_parent):
+		target.item_code, target.qty = source.item_code, 1
+		if hasattr(target, "use_serial_batch_fields"):
+			target.use_serial_batch_fields = 1
+		
+		if doctype == "Purchase Invoice" and hasattr(source, "frame_no") and source.frame_no:
+			fn = str(source.frame_no).strip()
+			if hasattr(target, "serial_no"):
+				target.serial_no = fn
+			if hasattr(target, "__dict__"):
+				target.__dict__["serial_no"] = fn
+			try:
+				setattr(target, "serial_no", fn)
+			except:
+				pass
+		
+		uom = (hasattr(source, "unit") and source.unit and str(source.unit).strip()) or \
+		      (target.item_code and frappe.db.get_value("Item", target.item_code, "stock_uom")) or "Pcs"
+		if hasattr(target, "uom"):
+			target.uom = uom
+		if hasattr(target, "stock_uom"):
+			target.stock_uom = uom
+		
+		if hasattr(source, "item_group") and source.item_group and hasattr(target, "item_group"):
+			target.item_group = source.item_group
+		elif target.item_code:
+			ig = frappe.db.get_value("Item", target.item_code, "item_group")
+			if ig and hasattr(target, "item_group"):
+				target.item_group = ig
+		
+		wh = None
+		if frame_warehouse_map and hasattr(source, "frame_no") and source.frame_no:
+			wh = frame_warehouse_map.get(str(source.frame_no).strip())
+		if not wh and selected_warehouse:
+			wh = selected_warehouse
+		if wh and hasattr(target, "warehouse"):
+			target.warehouse = wh
+	
+	item_doctype = f"{doctype} Item"
+	doc = get_mapped_doc("Load Dispatch", source_name, {
+		"Load Dispatch": {"doctype": doctype, "validation": {"docstatus": ["=", 1]}, "field_map": {"load_reference_no": "load_reference_no"}},
+		"Load Dispatch Item": {"doctype": item_doctype, "field_map": {"item_code": "item_code", "model_variant": "item_name", "frame_no": "serial_no", "item_group": "item_group"}, "postprocess": update_item}
+	}, target_doc, set_missing_values)
+	
+	if doctype == "Purchase Invoice" and doc and hasattr(doc, "items"):
+		source_doc = frappe.get_doc("Load Dispatch", source_name)
+		if source_doc and source_doc.items:
+			item_to_frame = {di.item_code: str(di.frame_no).strip() for di in source_doc.items if hasattr(di, "item_code") and di.item_code and hasattr(di, "frame_no") and di.frame_no}
+			for item in doc.items:
+				if hasattr(item, "item_code") and item.item_code in item_to_frame:
+					fn = item_to_frame[item.item_code]
+					if hasattr(item, "serial_no"):
+						item.serial_no = fn
+					if hasattr(item, "__dict__"):
+						item.__dict__["serial_no"] = fn
+	
+	if doc:
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		return {"name": doc.name}
+	return None
+	#---------------------------------------------------------
 
 @frappe.whitelist()
 def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_no=None, frame_warehouse_mapping=None):
 	"""Create Purchase Receipt from Load Dispatch"""
-	from frappe.model.mapper import get_mapped_doc
-	import json
-	
-	# Check if Purchase Receipt already exists for this Load Dispatch
-	if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
-		existing_pr = frappe.get_all(
-			"Purchase Receipt",
-			filters={
-				"custom_load_dispatch": source_name
-			},
-			fields=["name"],
-			limit=1
-		)
-		
-		if existing_pr:
-			frappe.throw(
-				__("Purchase Receipt {0} already exists for this Load Dispatch. Cannot create another Purchase Receipt.", [existing_pr[0].name])
-			)
-	
-	# Build frame to warehouse mapping dictionary
-	frame_warehouse_map = {}
-	selected_warehouse = None
-	if frame_warehouse_mapping:
-		# Parse frame_warehouse_mapping if it's a JSON string
-		if isinstance(frame_warehouse_mapping, str):
-			try:
-				frame_warehouse_mapping = json.loads(frame_warehouse_mapping)
-			except (json.JSONDecodeError, ValueError):
-				# Try using Frappe's parse_json as fallback
-				frame_warehouse_mapping = frappe.parse_json(frame_warehouse_mapping)
-		
-		# frame_warehouse_mapping is a list of dicts: [{"frame_no": "xxx", "warehouse": "yyy"}, ...]
-		if isinstance(frame_warehouse_mapping, list):
-			for mapping in frame_warehouse_mapping:
-				# Handle both dict and string cases
-				if isinstance(mapping, dict):
-					frame_no_key = str(mapping.get("frame_no", "")).strip()
-					warehouse_value = str(mapping.get("warehouse", "")).strip()
-				elif isinstance(mapping, str):
-					# If mapping is a string, try to parse it
-					mapping = frappe.parse_json(mapping)
-					frame_no_key = str(mapping.get("frame_no", "")).strip()
-					warehouse_value = str(mapping.get("warehouse", "")).strip()
-				else:
-					continue
-				
-				if frame_no_key and warehouse_value:
-					frame_warehouse_map[frame_no_key] = warehouse_value
-	elif warehouse:
-		# Legacy support: if warehouse is provided but no mapping, use it for all
-		selected_warehouse = warehouse
-	
-	def set_missing_values(source, target):
-		target.flags.ignore_permissions = True
-		# Set load_reference_no from source
-		target.custom_load_reference_no = source.load_reference_no
-		
-		# Set custom_load_dispatch on Purchase Receipt so it can be tracked
-		if hasattr(target, "custom_load_dispatch"):
-			target.custom_load_dispatch = source_name
-		elif frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
-			target.db_set("custom_load_dispatch", source_name)
-		
-		# Only set update_stock to 1 if the Purchase Receipt is NOT created from a Purchase Receipt
-		# If it's created from PR, stock was already updated and we shouldn't update again
-		has_purchase_receipt = False
-		if hasattr(target, "items") and target.items:
-			for item in target.items:
-				if hasattr(item, "purchase_receipt") and item.purchase_receipt:
-					has_purchase_receipt = True
-					break
-		
-		if not has_purchase_receipt and hasattr(target, "update_stock"):
-			# Set update_stock to 1 only if not created from Purchase Receipt
-			# This ensures serial_no field is visible when creating directly from Load Dispatch
-			target.update_stock = 1
-		
-		# Set supplier and gst_hsn_code from RKG Settings on parent document
-		try:
-			rkg_settings = frappe.get_single("RKG Settings")
-			if rkg_settings.get("default_supplier"):
-				target.supplier = rkg_settings.default_supplier
-			
-			# Set gst_hsn_code from RKG Settings on parent document
-			if rkg_settings.get("default_hsn_code"):
-				# Set gst_hsn_code on Purchase Receipt
-				if hasattr(target, "gst_hsn_code"):
-					target.gst_hsn_code = rkg_settings.default_hsn_code
-				elif hasattr(target, "custom_gst_hsn_code"):
-					target.custom_gst_hsn_code = rkg_settings.default_hsn_code
-		except frappe.DoesNotExistError:
-			# RKG Settings not found, skip setting supplier and gst_hsn_code
-			pass
-	
-	def update_item(source, target, source_parent):
-		# Map item_code from Load Dispatch Item to Purchase Receipt Item
-		target.item_code = source.item_code
-		# Set quantity to 1
-		target.qty = 1
-		
-		# Set "Use Serial No / Batch Fields" to checked by default on child table item
-		if hasattr(target, "use_serial_batch_fields"):
-			target.use_serial_batch_fields = 1
-		
-		# Get UOM from Load Dispatch Item's unit field (prioritize this), or from Item's stock_uom, default to "Pcs"
-		uom_value = "Pcs"  # Default
-		if hasattr(source, "unit") and source.unit:
-			# Prioritize Load Dispatch Item's unit field
-			uom_value = str(source.unit).strip()
-		elif target.item_code:
-			# Fallback to Item's stock_uom if unit is not set in Load Dispatch Item
-			item_stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
-			if item_stock_uom:
-				uom_value = item_stock_uom
-		
-		# Set UOM for Purchase Receipt Item - set both uom and stock_uom to ensure consistency
-		if hasattr(target, "uom"):
-			target.uom = uom_value
-		if hasattr(target, "stock_uom"):
-			target.stock_uom = uom_value
-		
-		# Set item_group from source if available, otherwise get from Item
-		if source.item_group:
-			# If Purchase Receipt Item has item_group field, set it
-			if hasattr(target, "item_group"):
-				target.item_group = source.item_group
-		elif target.item_code:
-			# Get item_group from Item doctype
-			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
-			if item_group and hasattr(target, "item_group"):
-				target.item_group = item_group
-		
-		# Set warehouse based on frame mapping
-		item_warehouse = None
-		if frame_warehouse_map and hasattr(source, "frame_no") and source.frame_no:
-			frame_no_key = str(source.frame_no).strip()
-			if frame_no_key in frame_warehouse_map:
-				item_warehouse = frame_warehouse_map[frame_no_key]
-		
-		# Fallback to selected_warehouse if no mapping found
-		if not item_warehouse and selected_warehouse:
-			item_warehouse = selected_warehouse
-		
-		if item_warehouse and hasattr(target, "warehouse"):
-			target.warehouse = item_warehouse
-
-	doc = get_mapped_doc(
-		"Load Dispatch",  # Source doctype
-		source_name,
-		{
-			"Load Dispatch": {
-				"doctype": "Purchase Receipt",
-				"validation": {
-					"docstatus": ["=", 1],
-				},
-				"field_map": {
-					"load_reference_no": "load_reference_no"
-				}
-			},
-			"Load Dispatch Item": {
-				"doctype": "Purchase Receipt Item",
-				"field_map": {
-					"item_code": "item_code",
-					"model_variant": "item_name",
-					"frame_no": "serial_no",
-					"item_group": "item_group",
-				},
-				"postprocess": update_item
-			},
-		},
-		target_doc,
-		set_missing_values
-	)
-	
-	
-	# Save the document and return it
-	if doc:
-		doc.save(ignore_permissions=True)
-		frappe.db.commit()
-		return {"name": doc.name}
-	
-	return None
+	return _create_purchase_document_unified(source_name, "Purchase Receipt", target_doc, warehouse, frame_warehouse_mapping)
+	#---------------------------------------------------------
 
 @frappe.whitelist()
 def create_purchase_invoice(source_name, target_doc=None, warehouse=None, frame_no=None, frame_warehouse_mapping=None):
 	"""Create Purchase Invoice from Load Dispatch"""
-	from frappe.model.mapper import get_mapped_doc
-	import json
-	
-	# Check if Purchase Invoice already exists for this Load Dispatch
-	if frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
-		existing_pi = frappe.get_all(
-			"Purchase Invoice",
-			filters={
-				"custom_load_dispatch": source_name
-			},
-			fields=["name"],
-			limit=1
-		)
-		
-		if existing_pi:
-			frappe.throw(
-				__("Purchase Invoice {0} already exists for this Load Dispatch. Cannot create another Purchase Invoice.", [existing_pi[0].name])
-			)
-	
-	# Build frame to warehouse mapping dictionary
-	frame_warehouse_map = {}
-	selected_warehouse = None
-	if frame_warehouse_mapping:
-		# Parse frame_warehouse_mapping if it's a JSON string
-		if isinstance(frame_warehouse_mapping, str):
-			try:
-				frame_warehouse_mapping = json.loads(frame_warehouse_mapping)
-			except (json.JSONDecodeError, ValueError):
-				# Try using Frappe's parse_json as fallback
-				frame_warehouse_mapping = frappe.parse_json(frame_warehouse_mapping)
-		
-		# frame_warehouse_mapping is a list of dicts: [{"frame_no": "xxx", "warehouse": "yyy"}, ...]
-		if isinstance(frame_warehouse_mapping, list):
-			for mapping in frame_warehouse_mapping:
-				# Handle both dict and string cases
-				if isinstance(mapping, dict):
-					frame_no_key = str(mapping.get("frame_no", "")).strip()
-					warehouse_value = str(mapping.get("warehouse", "")).strip()
-				elif isinstance(mapping, str):
-					# If mapping is a string, try to parse it
-					mapping = frappe.parse_json(mapping)
-					frame_no_key = str(mapping.get("frame_no", "")).strip()
-					warehouse_value = str(mapping.get("warehouse", "")).strip()
-				else:
-					continue
-				
-				if frame_no_key and warehouse_value:
-					frame_warehouse_map[frame_no_key] = warehouse_value
-	elif warehouse:
-		# Legacy support: if warehouse is provided but no mapping, use it for all
-		selected_warehouse = warehouse
-	
-	def set_missing_values(source, target):
-		target.flags.ignore_permissions = True
-		# Set load_reference_no from source
-		target.custom_load_reference_no = source.load_reference_no
-		
-		# Set custom_load_dispatch on Purchase Invoice so it can be tracked
-		if hasattr(target, "custom_load_dispatch"):
-			target.custom_load_dispatch = source_name
-		elif frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
-			target.db_set("custom_load_dispatch", source_name)
-		
-		# Only set update_stock to 1 if the Purchase Invoice is NOT created from a Purchase Receipt
-		# If it's created from PR, stock was already updated and we shouldn't update again
-		# This prevents the validation error: "Stock cannot be updated against Purchase Receipt"
-		has_purchase_receipt = False
-		if hasattr(target, "items") and target.items:
-			for item in target.items:
-				if hasattr(item, "purchase_receipt") and item.purchase_receipt:
-					has_purchase_receipt = True
-					break
-		
-		if not has_purchase_receipt and hasattr(target, "update_stock"):
-			# Set update_stock to 1 only if not created from Purchase Receipt
-			# This ensures serial_no field is visible when creating directly from Load Dispatch
-			target.update_stock = 1
-		
-		# Set supplier and gst_hsn_code from RKG Settings on parent document
-		try:
-			rkg_settings = frappe.get_single("RKG Settings")
-			if rkg_settings.get("default_supplier"):
-				target.supplier = rkg_settings.default_supplier
-			
-			# Set gst_hsn_code from RKG Settings on parent document
-			if rkg_settings.get("default_hsn_code"):
-				# Set gst_hsn_code on Purchase Invoice
-				if hasattr(target, "gst_hsn_code"):
-					target.gst_hsn_code = rkg_settings.default_hsn_code
-				elif hasattr(target, "custom_gst_hsn_code"):
-					target.custom_gst_hsn_code = rkg_settings.default_hsn_code
-		except frappe.DoesNotExistError:
-			# RKG Settings not found, skip setting supplier and gst_hsn_code
-			pass
-		
-		# Set warehouse on items based on frame mapping
-		if (frame_warehouse_map or selected_warehouse) and hasattr(target, "items") and target.items:
-			for item in target.items:
-				item_warehouse = None
-				# Try to find warehouse from frame mapping using serial_no
-				if frame_warehouse_map and hasattr(item, "serial_no") and item.serial_no:
-					serial_no_key = str(item.serial_no).strip()
-					if serial_no_key in frame_warehouse_map:
-						item_warehouse = frame_warehouse_map[serial_no_key]
-				
-				# Fallback to selected_warehouse if no mapping found
-				if not item_warehouse and selected_warehouse:
-					item_warehouse = selected_warehouse
-				
-				# Set warehouse if found
-				if item_warehouse:
-					if hasattr(item, "warehouse"):
-						item.warehouse = item_warehouse
-					if hasattr(item, "target_warehouse"):
-						item.target_warehouse = item_warehouse
-	
-	def update_item(source, target, source_parent):
-		# Map item_code from Load Dispatch Item to Purchase Invoice Item
-		target.item_code = source.item_code
-		# Set quantity to 1
-		target.qty = 1
-		
-		# Set "Use Serial No / Batch Fields" to checked by default on child table item
-		# This is required for the depends_on condition: doc.use_serial_batch_fields === 1
-		if hasattr(target, "use_serial_batch_fields"):
-			target.use_serial_batch_fields = 1
-		
-		# Explicitly set serial_no from frame_no after use_serial_batch_fields is set
-		# This ensures the field is populated even if field_map didn't work due to visibility
-		# Use setattr to ensure the value is set even if the field isn't visible yet
-		if hasattr(source, "frame_no") and source.frame_no:
-			frame_no_value = str(source.frame_no).strip()
-			if frame_no_value:
-				# Try multiple ways to set the serial_no field
-				if hasattr(target, "serial_no"):
-					target.serial_no = frame_no_value
-				# Also try using setattr directly on the dict
-				if hasattr(target, "__dict__"):
-					target.__dict__["serial_no"] = frame_no_value
-				# Force set using setattr as fallback
-				try:
-					setattr(target, "serial_no", frame_no_value)
-				except:
-					pass
-		
-		# Get UOM from Load Dispatch Item's unit field (prioritize this), or from Item's stock_uom, default to "Pcs"
-		uom_value = "Pcs"  # Default
-		if hasattr(source, "unit") and source.unit:
-			# Prioritize Load Dispatch Item's unit field
-			uom_value = str(source.unit).strip()
-		elif target.item_code:
-			# Fallback to Item's stock_uom if unit is not set in Load Dispatch Item
-			item_stock_uom = frappe.db.get_value("Item", target.item_code, "stock_uom")
-			if item_stock_uom:
-				uom_value = item_stock_uom
-		
-		# Set UOM for Purchase Invoice Item - set both uom and stock_uom to ensure consistency
-		if hasattr(target, "uom"):
-			target.uom = uom_value
-		if hasattr(target, "stock_uom"):
-			target.stock_uom = uom_value
-		
-		# Set item_group from source if available, otherwise get from Item
-		if source.item_group:
-			# If Purchase Invoice Item has item_group field, set it
-			if hasattr(target, "item_group"):
-				target.item_group = source.item_group
-		elif target.item_code:
-			# Get item_group from Item doctype
-			item_group = frappe.db.get_value("Item", target.item_code, "item_group")
-			if item_group and hasattr(target, "item_group"):
-				target.item_group = item_group
-		
-		# Set warehouse based on frame mapping
-		item_warehouse = None
-		if frame_warehouse_map and hasattr(source, "frame_no") and source.frame_no:
-			frame_no_key = str(source.frame_no).strip()
-			if frame_no_key in frame_warehouse_map:
-				item_warehouse = frame_warehouse_map[frame_no_key]
-		
-		# Fallback to selected_warehouse if no mapping found
-		if not item_warehouse and selected_warehouse:
-			item_warehouse = selected_warehouse
-		
-		if item_warehouse and hasattr(target, "warehouse"):
-			target.warehouse = item_warehouse
-
-	doc = get_mapped_doc(
-		"Load Dispatch",  # Source doctype
-		source_name,
-		{
-			"Load Dispatch": {
-				"doctype": "Purchase Invoice",
-				"validation": {
-					"docstatus": ["=", 1],
-				},
-				"field_map": {
-					"load_reference_no": "load_reference_no"
-				}
-			},
-			"Load Dispatch Item": {
-				"doctype": "Purchase Invoice Item",
-				"field_map": {
-					"item_code": "item_code",
-					"model_variant": "item_name",
-					"frame_no": "serial_no",
-					"item_group": "item_group",
-				},
-				"postprocess": update_item
-			},
-		},
-		target_doc,
-		set_missing_values
-	)
-	
-	# After document creation, ensure serial_no is set on all items
-	# This is needed because the field might not have been visible during mapping
-	if doc and hasattr(doc, "items"):
-		# Get the source Load Dispatch document to map frame_no to serial_no
-		source_doc = frappe.get_doc("Load Dispatch", source_name)
-		if source_doc and hasattr(source_doc, "items"):
-			# Create a mapping of item_code to frame_no from source
-			item_to_frame = {}
-			for dispatch_item in source_doc.items:
-				if (hasattr(dispatch_item, "item_code") and dispatch_item.item_code and
-					hasattr(dispatch_item, "frame_no") and dispatch_item.frame_no):
-					item_to_frame[dispatch_item.item_code] = str(dispatch_item.frame_no).strip()
-			
-			# Set serial_no on Purchase Invoice Items
-			for item in doc.items:
-				if hasattr(item, "item_code") and item.item_code and item.item_code in item_to_frame:
-					frame_no_value = item_to_frame[item.item_code]
-					if frame_no_value:
-						# Set serial_no using multiple methods to ensure it works
-						if hasattr(item, "serial_no"):
-							item.serial_no = frame_no_value
-						# Also set directly in __dict__ as fallback
-						if hasattr(item, "__dict__"):
-							item.__dict__["serial_no"] = frame_no_value
-	
-	# Save the document and return it
-	if doc:
-		doc.save(ignore_permissions=True)
-		frappe.db.commit()
-		return {"name": doc.name}
-	
-	return None
+	return _create_purchase_document_unified(source_name, "Purchase Invoice", target_doc, warehouse, frame_warehouse_mapping)
+	#---------------------------------------------------------
 
 
 def update_load_dispatch_totals_from_document(doc, method=None):
@@ -2301,6 +1553,7 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		update_modified=False
 	)
 	frappe.db.commit()
+	#---------------------------------------------------------
 
 
 @frappe.whitelist()
@@ -2347,6 +1600,7 @@ def check_existing_documents(load_dispatch_name):
 			result["purchase_invoice_name"] = pi_list[0].name
 	
 	return result
+	#---------------------------------------------------------
 
 
 @frappe.whitelist()
@@ -2564,20 +1818,12 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			else:
 				# Item does NOT exist - create it now
 				try:
-					# Create Item from row data
-					_create_item_from_row_data(normalized_row, item_code)
-					# Clear cache to ensure Item is visible
+					_create_item_unified(normalized_row, item_code, source_type="row_data")
 					frappe.clear_cache(doctype="Item")
-					# Verify Item was created
 					if frappe.db.exists("Item", item_code):
-						# Item created successfully - set item_code in the row data
 						normalized_row['item_code'] = item_code
 					else:
-						# Item creation failed - log error but continue
-						frappe.log_error(
-							f"Item '{item_code}' was not created after calling _create_item_from_row_data. Row index: {idx}",
-							"Item Creation Failed in process_tabular_file"
-						)
+						frappe.log_error(f"Item '{item_code}' was not created. Row index: {idx}", "Item Creation Failed")
 						normalized_row['item_code'] = None
 				except Exception as e:
 					# Log error but continue processing other rows
@@ -2597,46 +1843,98 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			"process_tabular_file Error"
 		)
 		frappe.throw(_("Error processing file: {0}").format(str(e)))
+	#---------------------------------------------------------
 
 
 def _create_item_from_row_data(row_data, item_code):
 	"""Create an Item from row data (dictionary from CSV/Excel)."""
-	# Get Model Variant (for item_name)
-	model_variant = (
-		row_data.get('model_variant') or 
-		row_data.get('Model Variant') or 
-		row_data.get('MODEL_VARIANT') or 
-		item_code
-	)
+	return _create_item_unified(row_data, item_code, source_type="row_data")
+
+
+def _create_item_unified(item_data, item_code, source_type="dispatch_item", print_name=None):
+	"""Unified Item creation - handles both dispatch_item and row_data."""
+	if source_type == "dispatch_item":
+		model_name = getattr(item_data, "model_name", None)
+		model_variant = getattr(item_data, "model_variant", None) or item_code
+		unit = getattr(item_data, "unit", None) or "Pcs"
+		model_serial_no = getattr(item_data, "model_serial_no", None)
+		
+		# Get print_name - try multiple ways to access it
+		# First try the parameter passed directly
+		if print_name:
+			frappe.msgprint(f"DEBUG: Got print_name from parameter: '{print_name}'", alert=True)
+		
+		# Then try from frappe.local (set in _create_single_item_from_dispatch_item)
+		if not print_name and hasattr(frappe.local, 'item_print_name_map'):
+			print_name = frappe.local.item_print_name_map.get(item_code)
+			if print_name:
+				frappe.msgprint(f"DEBUG: Got print_name from frappe.local.item_print_name_map: '{print_name}'", alert=True)
+		
+		# Try from item_data object - use getattr with default None
+		if not print_name:
+			try:
+				print_name = getattr(item_data, "print_name", None)
+				if print_name:
+					frappe.msgprint(f"DEBUG: Got print_name from item_data.print_name: '{print_name}'", alert=True)
+			except:
+				pass
+		
+		# Try using get() method if available
+		if not print_name and hasattr(item_data, "get") and callable(getattr(item_data, "get")):
+			try:
+				print_name = item_data.get("print_name")
+				if print_name:
+					frappe.msgprint(f"DEBUG: Got print_name from item_data.get(): '{print_name}'", alert=True)
+			except:
+				pass
+		
+		# Try accessing as dictionary
+		if not print_name and isinstance(item_data, dict):
+			print_name = item_data.get("print_name")
+			if print_name:
+				frappe.msgprint(f"DEBUG: Got print_name from dict: '{print_name}'", alert=True)
+		
+		frappe.log_error(
+			f"Item Code: {item_code}\n"
+			f"print_name from item_data: {print_name}\n"
+			f"hasattr print_name: {hasattr(item_data, 'print_name')}\n"
+			f"print_name from getattr: {getattr(item_data, 'print_name', 'NO ATTR')}\n"
+			f"print_name from frappe.local: {frappe.local.item_print_name_map.get(item_code) if hasattr(frappe.local, 'item_print_name_map') else 'NO MAP'}\n"
+			f"item_data type: {type(item_data)}\n"
+			f"item_data dir: {[x for x in dir(item_data) if 'print' in x.lower()]}\n"
+			f"model_serial_no: {model_serial_no}\n"
+			f"model_name: {model_name}",
+			"DEBUG: Reading print_name in unified function"
+		)
+		
+		# Always calculate print_name if not set or empty
+		if not print_name or not str(print_name).strip():
+			print_name = calculate_print_name(model_serial_no, model_name)
+			frappe.msgprint(f"DEBUG: Calculated print_name='{print_name}' for {item_code}", alert=True)
+	else:
+		model_name = item_data.get('model_name') or item_data.get('Model Name') or item_data.get('MODEL_NAME')
+		model_variant = item_data.get('model_variant') or item_data.get('Model Variant') or item_data.get('MODEL_VARIANT') or item_code
+		unit = item_data.get('unit') or "Pcs"
+		print_name = None
 	
-	# Get Model Name (for item_group)
-	model_name = (
-		row_data.get('model_name') or 
-		row_data.get('Model Name') or 
-		row_data.get('MODEL_NAME')
-	)
+	item_group = _get_or_create_item_group_unified(model_name)
+	if not item_group:
+		frappe.throw(_("Could not determine Item Group for Item '{0}'. Model Name: {1}").format(item_code, model_name or 'N/A'))
 	
-	# Get or create Item Group from Model Name
-	item_group = _get_or_create_item_group_from_name(model_name)
-	
-	# Fetch HSN Code from RKG Settings (REQUIRED)
 	rkg_settings = None
 	try:
 		rkg_settings = frappe.get_single("RKG Settings")
 	except frappe.DoesNotExistError:
-		frappe.throw(_("RKG Settings not found. Please create RKG Settings and set Default HSN Code."))
+		if source_type == "row_data":
+			frappe.throw(_("RKG Settings not found. Please create RKG Settings and set Default HSN Code."))
 	
-	hsn_code = rkg_settings.get("default_hsn_code")
-	if not hsn_code:
-		frappe.throw(_("Default HSN Code is not set in RKG Settings. Please set it before creating Items."))
+	stock_uom = str(unit).strip() if unit else "Pcs"
+	# Prepare print_name value
+	print_name_value = None
+	if print_name and str(print_name).strip():
+		print_name_value = str(print_name).strip()
 	
-	# Get UOM from row data's unit field, default to "Pcs" if not set
-	stock_uom = "Pcs"  # Default to "Pcs"
-	if row_data.get('unit'):
-		stock_uom = str(row_data.get('unit')).strip()
-	
-	# Create Item document
-	item_doc = frappe.get_doc({
+	item_dict = {
 		"doctype": "Item",
 		"item_code": item_code,
 		"item_name": str(model_variant).strip() if model_variant else item_code,
@@ -2644,90 +1942,137 @@ def _create_item_from_row_data(row_data, item_code):
 		"stock_uom": stock_uom,
 		"is_stock_item": 1,
 		"has_serial_no": 1,
-	})
+	}
+	# Always add print_name if available
+	if print_name_value:
+		item_dict["print_name"] = print_name_value
+		frappe.msgprint(f"DEBUG: Added print_name='{print_name_value}' to item_dict", alert=True)
 	
-	# Set HSN Code - try standard field first, then custom field
-	if hasattr(item_doc, "gst_hsn_code"):
-		item_doc.gst_hsn_code = hsn_code
-	elif hasattr(item_doc, "custom_gst_hsn_code"):
-		item_doc.custom_gst_hsn_code = hsn_code
-	else:
-		# If neither field exists, log warning but continue
-		frappe.log_error(f"HSN Code field not found in Item doctype. Tried: gst_hsn_code, custom_gst_hsn_code", "HSN Code Field Missing")
+	item_doc = frappe.get_doc(item_dict)
 	
-	# Insert Item (ignoring permissions as per requirement)
-	item_doc.insert(ignore_permissions=True)
+	if rkg_settings:
+		if rkg_settings.get("default_supplier") and source_type == "dispatch_item":
+			if hasattr(item_doc, "supplier_items"):
+				item_doc.append("supplier_items", {"supplier": rkg_settings.default_supplier, "is_default": 1})
+			elif hasattr(item_doc, "supplier"):
+				item_doc.supplier = rkg_settings.default_supplier
+		
+		hsn_code = rkg_settings.get("default_hsn_code")
+		if hsn_code:
+			if source_type == "row_data" and not hsn_code:
+				frappe.throw(_("Default HSN Code is not set in RKG Settings."))
+			if hasattr(item_doc, "gst_hsn_code"):
+				item_doc.gst_hsn_code = hsn_code
+			elif hasattr(item_doc, "custom_gst_hsn_code"):
+				item_doc.custom_gst_hsn_code = hsn_code
 	
-	# Commit immediately to ensure Item exists
-	frappe.db.commit()
+	if source_type == "dispatch_item":
+		for field in ITEM_CUSTOM_FIELDS:
+			if hasattr(item_data, field):
+				value = getattr(item_data, field)
+				if value is not None and value != "" and hasattr(item_doc, field):
+					setattr(item_doc, field, value)
 	
-	# Verify Item was created
-	if not frappe.db.exists("Item", item_code):
-		raise frappe.ValidationError(_("Item '{0}' was not created. Please check Error Log.").format(item_code))
+	# Ensure print_name is set (backup in case it wasn't in initial dict)
+	if print_name_value:
+		if hasattr(item_doc, "print_name"):
+			item_doc.print_name = print_name_value
+		if frappe.db.has_column("Item", "print_name"):
+			item_doc.set("print_name", print_name_value)
 	
-	return item_doc
-
-
-def _get_or_create_item_group_from_name(model_name):
-	"""Get or create Item Group from Model Name."""
-	# First, ensure we have a parent Item Group
-	parent_item_group = "All Item Groups"
-	if not frappe.db.exists("Item Group", parent_item_group):
-		# Try to find any existing parent group
-		parent_item_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
-		if not parent_item_group:
-			# Create "All Item Groups" if it doesn't exist
+	try:
+		# Debug: Log what we're about to insert
+		frappe.msgprint(f"DEBUG: Creating Item {item_code} with print_name='{print_name_value}'", alert=True)
+		frappe.log_error(
+			f"Item Code: {item_code}\n"
+			f"Print Name Value: {print_name_value}\n"
+			f"Item Dict Keys: {list(item_dict.keys())}\n"
+			f"Item Dict: {item_dict}",
+			"DEBUG: Before Item Insert"
+		)
+		
+		item_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+		
+		# Debug: Check what was actually saved
+		saved_print_name = frappe.db.get_value("Item", item_code, "print_name")
+		
+		frappe.log_error(
+			f"Item Code: {item_code}\n"
+			f"After Insert - print_name from DB: {saved_print_name}\n"
+			f"Expected value: {print_name_value}",
+			"DEBUG: After Item Insert"
+		)
+		
+		# Ensure print_name is set after insert using db_set (most reliable)
+		if print_name_value and frappe.db.has_column("Item", "print_name"):
 			try:
-				all_groups = frappe.get_doc({
-					"doctype": "Item Group",
-					"item_group_name": "All Item Groups",
-					"is_group": 1
-				})
-				all_groups.insert(ignore_permissions=True)
+				frappe.db.set_value("Item", item_code, "print_name", print_name_value, update_modified=False)
 				frappe.db.commit()
-				parent_item_group = "All Item Groups"
+				final_value = frappe.db.get_value("Item", item_code, "print_name")
+				frappe.msgprint(f"DEBUG: Set print_name='{print_name_value}' for Item {item_code}, final value: '{final_value}'", alert=True)
+				frappe.log_error(
+					f"Successfully set print_name for Item {item_code} to '{print_name_value}'\nFinal value in DB: {final_value}",
+					"DEBUG: Field Update Success"
+				)
 			except Exception as e:
-				frappe.log_error(f"Failed to create 'All Item Groups': {str(e)}", "Item Group Creation Failed")
+				frappe.log_error(f"Failed to set print_name for Item {item_code}: {str(e)}", "Item Print Name Update Failed")
+		frappe.clear_cache(doctype="Item")
+		if not frappe.db.exists("Item", item_code):
+			frappe.db.commit()
+			if not frappe.db.exists("Item", item_code):
+				frappe.log_error(f"Item {item_code} was inserted but not found", "Item Creation Verification Failed")
+				raise frappe.ValidationError(_("Item '{0}' was created but not found in database.").format(item_code))
+		return item_doc
+	except frappe.ValidationError:
+		raise
+	except Exception as e:
+		frappe.log_error(f"Failed to insert Item {item_code}: {str(e)}", "Item Insert Failed")
+		raise frappe.ValidationError(_("Failed to create Item '{0}': {1}").format(item_code, str(e)))
+	#---------------------------------------------------------
+
+def _get_or_create_item_group_unified(model_name):
+	"""Unified Item Group creation - works for both class and standalone."""
+	parent = "All Item Groups"
+	if not frappe.db.exists("Item Group", parent):
+		parent = frappe.db.get_value("Item Group", {"is_group": 1}, "name") or parent
+		if not frappe.db.exists("Item Group", parent):
+			try:
+				frappe.get_doc({"doctype": "Item Group", "item_group_name": parent, "is_group": 1}).insert(ignore_permissions=True)
+				frappe.db.commit()
+			except Exception as e:
+				frappe.log_error(f"Failed to create '{parent}': {str(e)}", "Item Group Creation Failed")
 	
-	# Use model_name as Item Group - create if it doesn't exist
 	if model_name and str(model_name).strip():
 		model_name = str(model_name).strip()
 		if frappe.db.exists("Item Group", model_name):
 			return model_name
-		
-		# Create Item Group from model_name
 		try:
-			new_item_group = frappe.get_doc({
+			frappe.get_doc({
 				"doctype": "Item Group",
 				"item_group_name": model_name,
 				"is_group": 0,
-				"parent_item_group": parent_item_group
-			})
-			new_item_group.insert(ignore_permissions=True)
+				"parent_item_group": parent
+			}).insert(ignore_permissions=True)
 			frappe.db.commit()
 			return model_name
 		except Exception as e:
 			frappe.log_error(f"Failed to create Item Group '{model_name}': {str(e)}", "Item Group Creation Failed")
-			# Fall through to default
 	
-	# Fall back to "Two Wheeler Vehicle"
 	if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
 		return "Two Wheeler Vehicle"
-	
-	# Create "Two Wheeler Vehicle" as default
 	try:
-		default_group = frappe.get_doc({
+		frappe.get_doc({
 			"doctype": "Item Group",
 			"item_group_name": "Two Wheeler Vehicle",
 			"is_group": 0,
-			"parent_item_group": parent_item_group
-		})
-		default_group.insert(ignore_permissions=True)
+			"parent_item_group": parent
+		}).insert(ignore_permissions=True)
 		frappe.db.commit()
 		return "Two Wheeler Vehicle"
 	except Exception as e:
-		# Last resort: get any available item group
 		any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
 		if any_group:
 			return any_group
 		frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
+	#---------------------------------------------------------
