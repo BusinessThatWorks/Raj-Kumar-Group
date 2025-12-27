@@ -46,10 +46,6 @@ class LoadDispatch(Document):
 		return _create_item_unified(dispatch_item, item_code, source_type="dispatch_item", print_name=print_name_from_map)
 	#---------------------------------------------------------
 	
-	def _get_or_create_item_group(self, model_name):
-		"""Get or create Item Group from model_name. Returns Item Group name."""
-		return _get_or_create_item_group_unified(model_name)
-	#---------------------------------------------------------
 	
 	def before_insert(self):
 		"""Verify item_code exists if set; Items created in before_submit hook."""
@@ -364,7 +360,7 @@ class LoadDispatch(Document):
 	#---------------------------------------------------------
 
 	def set_item_group(self):
-		"""Set item_group for Load Dispatch Items based on model_name or default."""
+		"""Set item_group for Load Dispatch Items based on model_name using unified function."""
 		# Only set item_group if Load Plan exists
 		if not self.has_valid_load_plan():
 			return
@@ -375,13 +371,8 @@ class LoadDispatch(Document):
 		for item in self.items:
 			# Only set item_group if the field exists on LoadDispatchItem
 			if hasattr(item, 'item_group') and not item.item_group and item.model_name:
-				# Check if model_name exists as an Item Group
-				if frappe.db.exists("Item Group", item.model_name):
-					item.item_group = item.model_name
-				else:
-					# Fall back to "Two Wheeler Vehicle" if model_name not found
-					if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
-						item.item_group = "Two Wheeler Vehicle"
+				# Use unified function to get or create Item Group with correct hierarchy
+				item.item_group = _get_or_create_item_group_unified(item.model_name)
 	#---------------------------------------------------------
 	
 	def set_supplier(self):
@@ -766,45 +757,10 @@ class LoadDispatch(Document):
 			)
 	#---------------------------------------------------------
 	
-	def _ensure_default_item_group(self):
-		"""Ensure a default Item Group exists. Creates 'Two Wheeler Vehicle' if it doesn't exist."""
-		# Check if "Two Wheeler Vehicle" exists
-		if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
-			return "Two Wheeler Vehicle"
-		
-		# Check if "All Item Groups" exists (standard Frappe parent group)
-		parent_group = "All Item Groups"
-		if not frappe.db.exists("Item Group", parent_group):
-			# Try to find any group that can be a parent
-			parent_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
-			if not parent_group:
-				# No parent group exists - can't create Item Group
-				return None
-		
-		# Create "Two Wheeler Vehicle" Item Group
-		try:
-			default_group = frappe.get_doc({
-				"doctype": "Item Group",
-				"item_group_name": "Two Wheeler Vehicle",
-				"is_group": 0,
-				"parent_item_group": parent_group
-			})
-			default_group.insert(ignore_permissions=True)
-			frappe.db.commit()
-			return "Two Wheeler Vehicle"
-		except Exception as e:
-			# Log error but don't fail - will use fallback logic
-			frappe.log_error(f"Could not create default Item Group 'Two Wheeler Vehicle': {str(e)}", "Item Group Creation Failed")
-			return None
-	#---------------------------------------------------------
-	
 	def create_items_from_dispatch_items(self):
 		"""Create Items from Load Dispatch Items, populating Supplier and HSN Code from RKG Settings."""
 		if not self.items:
 			return
-		
-		# Ensure default Item Group exists if no Item Groups are found
-		self._ensure_default_item_group()
 		
 		# Fetch RKG Settings data (single doctype) - optional, use defaults if not found
 		rkg_settings = None
@@ -874,87 +830,10 @@ class LoadDispatch(Document):
 						skipped_items.append(item_code)
 					continue
 
-				# Determine item_group - use model_name as Item Group, create if it doesn't exist
-				item_group = None
-				
-				# First, ensure we have a parent Item Group to use
-				parent_item_group = "All Item Groups"
-				if not frappe.db.exists("Item Group", parent_item_group):
-					# Try to find any group that can be a parent
-					parent_item_group = frappe.db.get_value("Item Group", {"is_group": 1}, "name", order_by="name")
-					if not parent_item_group:
-						# No parent group exists - this is a critical issue
-						error_msg = _(
-							"No parent Item Group found in the system. Items cannot be created without an Item Group structure.\n\n"
-							"Please ensure 'All Item Groups' exists or create a parent Item Group first."
-						)
-						frappe.log_error(
-							f"Item creation failed for {item_code}: No parent Item Group found",
-							"Item Creation - Missing Parent Item Group"
-						)
-						frappe.throw(error_msg, title=_("Item Group Structure Required"))
-				
-				# Use model_name as Item Group - create it if it doesn't exist
-				if item.model_name and str(item.model_name).strip():
-					model_name = str(item.model_name).strip()
-					if frappe.db.exists("Item Group", model_name):
-						item_group = model_name
-					else:
-						# Create Item Group from model_name
-						try:
-							new_item_group = frappe.get_doc({
-								"doctype": "Item Group",
-								"item_group_name": model_name,
-								"is_group": 0,
-								"parent_item_group": parent_item_group
-							})
-							new_item_group.insert(ignore_permissions=True)
-							frappe.db.commit()
-							item_group = model_name
-							frappe.log_error(
-								f"Created Item Group '{model_name}' for Item {item_code}",
-								"Item Group Auto-Creation"
-							)
-						except Exception as e:
-							# If creation fails, log and fall back to default
-							frappe.log_error(
-								f"Failed to create Item Group '{model_name}': {str(e)}",
-								"Item Group Creation Failed"
-							)
-							# Fall through to default Item Group
-				
-				# Fall back to "Two Wheeler Vehicle" if model_name not available or creation failed
-				if not item_group:
-					if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
-						item_group = "Two Wheeler Vehicle"
-					else:
-						# Create "Two Wheeler Vehicle" as default
-						try:
-							default_group = frappe.get_doc({
-								"doctype": "Item Group",
-								"item_group_name": "Two Wheeler Vehicle",
-								"is_group": 0,
-								"parent_item_group": parent_item_group
-							})
-							default_group.insert(ignore_permissions=True)
-							frappe.db.commit()
-							item_group = "Two Wheeler Vehicle"
-						except Exception as e:
-							# Last resort: get any available item group
-							any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
-							if any_group:
-								item_group = any_group
-							else:
-								error_msg = _(
-									"Could not create or find an Item Group. Items cannot be created without an Item Group.\n\n"
-									"Error: {0}\n\n"
-									"Please create an Item Group manually and try again."
-								).format(str(e))
-								frappe.log_error(
-									f"Item creation failed for {item_code}: Could not create/find Item Group",
-									"Item Creation - Item Group Error"
-								)
-								frappe.throw(error_msg, title=_("Item Group Required"))
+				# Determine item_group - use unified function to ensure correct hierarchy
+				# This ensures: All Item Groups -> Two Wheelers Vehicle -> Model Name
+				model_name = str(item.model_name).strip() if (item.model_name and str(item.model_name).strip()) else None
+				item_group = _get_or_create_item_group_unified(model_name)
 				
 				# Get UOM from Load Dispatch Item's unit field, default to "Pcs" if not set
 				stock_uom = "Pcs"  # Default to "Pcs"
@@ -1074,7 +953,7 @@ class LoadDispatch(Document):
 			frappe.throw(
 				_("Failed to create {0} Item(s). Please check error logs for details:\n\n{1}\n\n"
 				  "Common causes:\n"
-				  "• Missing Item Group (ensure 'Two Wheeler Vehicle' Item Group exists)\n"
+				  "• Missing Item Group (ensure 'Two Wheelers Vehicle' Item Group exists)\n"
 				  "• Validation errors in Item creation\n"
 				  "• Database constraints").format(
 					len(failed_items),
@@ -2001,17 +1880,35 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 	#---------------------------------------------------------
 
 def _get_or_create_item_group_unified(model_name):
-	"""Unified Item Group creation - works for both class and standalone."""
-	parent = "All Item Groups"
-	if not frappe.db.exists("Item Group", parent):
-		parent = frappe.db.get_value("Item Group", {"is_group": 1}, "name") or parent
-		if not frappe.db.exists("Item Group", parent):
-			try:
-				frappe.get_doc({"doctype": "Item Group", "item_group_name": parent, "is_group": 1}).insert(ignore_permissions=True)
-				frappe.db.commit()
-			except Exception as e:
-				frappe.log_error(f"Failed to create '{parent}': {str(e)}", "Item Group Creation Failed")
+	"""Unified Item Group creation - creates hierarchy: All Item Groups -> Two Wheelers Vehicle -> Model Name."""
+	# Step 1: Ensure "All Item Groups" exists (top-level parent)
+	all_groups = "All Item Groups"
+	if not frappe.db.exists("Item Group", all_groups):
+		try:
+			frappe.get_doc({
+				"doctype": "Item Group",
+				"item_group_name": all_groups,
+				"is_group": 1
+			}).insert(ignore_permissions=True)
+			frappe.db.commit()
+		except Exception as e:
+			frappe.log_error(f"Failed to create 'All Item Groups': {str(e)}", "Item Group Creation Failed")
 	
+	# Step 2: Ensure "Two Wheelers Vehicle" exists (intermediate parent)
+	two_wheeler_vehicle = "Two Wheelers Vehicle"
+	if not frappe.db.exists("Item Group", two_wheeler_vehicle):
+		try:
+			frappe.get_doc({
+				"doctype": "Item Group",
+				"item_group_name": two_wheeler_vehicle,
+				"is_group": 1,  # Parent group - can have children
+				"parent_item_group": all_groups
+			}).insert(ignore_permissions=True)
+			frappe.db.commit()
+		except Exception as e:
+			frappe.log_error(f"Failed to create 'Two Wheelers Vehicle': {str(e)}", "Item Group Creation Failed")
+	
+	# Step 3: Create Model Name as child under "Two Wheelers Vehicle" (where items go)
 	if model_name and str(model_name).strip():
 		model_name = str(model_name).strip()
 		if frappe.db.exists("Item Group", model_name):
@@ -2020,28 +1917,22 @@ def _get_or_create_item_group_unified(model_name):
 			frappe.get_doc({
 				"doctype": "Item Group",
 				"item_group_name": model_name,
-				"is_group": 0,
-				"parent_item_group": parent
+				"is_group": 0,  # Leaf group - items go here
+				"parent_item_group": two_wheeler_vehicle
 			}).insert(ignore_permissions=True)
 			frappe.db.commit()
 			return model_name
 		except Exception as e:
 			frappe.log_error(f"Failed to create Item Group '{model_name}': {str(e)}", "Item Group Creation Failed")
 	
-	if frappe.db.exists("Item Group", "Two Wheeler Vehicle"):
-		return "Two Wheeler Vehicle"
-	try:
-		frappe.get_doc({
-			"doctype": "Item Group",
-			"item_group_name": "Two Wheeler Vehicle",
-			"is_group": 0,
-			"parent_item_group": parent
-		}).insert(ignore_permissions=True)
-		frappe.db.commit()
-		return "Two Wheeler Vehicle"
-	except Exception as e:
-		any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
-		if any_group:
-			return any_group
-		frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
+	# Fallback: Return "Two Wheelers Vehicle" if model_name is not provided
+	if frappe.db.exists("Item Group", two_wheeler_vehicle):
+		return two_wheeler_vehicle
+	
+	# Last resort: get any available item group
+	any_group = frappe.db.get_value("Item Group", {}, "name", order_by="name")
+	if any_group:
+		return any_group
+	
+	frappe.throw(_("Could not create or find an Item Group. Please create one manually."))
 	#---------------------------------------------------------
