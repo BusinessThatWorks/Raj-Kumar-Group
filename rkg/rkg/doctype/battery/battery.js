@@ -18,18 +18,26 @@ frappe.ui.form.on("Battery", {
 				callback: function(r) {
 					try {
 						if (r && r.message) {
+							const response = r.message;
+							const rows = response.rows || (Array.isArray(response) ? response : []);
+							
 							frm.clear_table("items");
 							
-							if (r.message.length > 0) {
-								r.message.forEach(function(row) {
+							if (rows.length > 0) {
+								rows.forEach(function(row) {
 									let child_row = frm.add_child("items");
 									
-									// Skip item_code - will be set on submit
+									// Set all fields except internal flags
 									Object.keys(row).forEach(function(key) {
-										if (key !== 'item_code') {
+										if (key !== 'item_exists' && key !== 'item_code') {
 											child_row[key] = row[key];
 										}
 									});
+									
+									// Set item_code if item already exists
+									if (row.item_exists && row.item_code) {
+										child_row.item_code = row.item_code;
+									}
 									
 									// Calculate item_name
 									if (row.battery_brand && row.battery_type) {
@@ -40,10 +48,38 @@ frappe.ui.form.on("Battery", {
 								frm.refresh_field("items");
 								calculate_total_quantity(frm);
 								
-								frappe.show_alert({
-									message: __("Successfully imported {0} rows", [r.message.length]),
-									indicator: "green"
-								}, 5);
+								// Show summary message
+								const existing_count = response.existing_count || 0;
+								const new_count = response.new_count || rows.length;
+								const total_count = rows.length;
+								
+								let message = __("Successfully imported {0} row(s)", [total_count]);
+								let indicator = "green";
+								
+								if (existing_count > 0) {
+									const existing_items = response.existing_items || [];
+									let existing_msg = existing_items.slice(0, 10).join(", ");
+									if (existing_count > 10) {
+										existing_msg += __(" and {0} more", [existing_count - 10]);
+									}
+									
+									message += "\n\n";
+									message += __("{0} item(s) already exist and will be skipped on submit: {1}", 
+										[existing_count, existing_msg]);
+									indicator = "orange";
+								}
+								
+								if (new_count > 0 && existing_count > 0) {
+									message += "\n";
+									message += __("{0} new item(s) will be created on submit.", [new_count]);
+								}
+								
+								frappe.msgprint({
+									message: message,
+									title: __("File Import Summary"),
+									indicator: indicator,
+									alert: true
+								});
 							} else {
 								frappe.show_alert({
 									message: __("No data found in file"),

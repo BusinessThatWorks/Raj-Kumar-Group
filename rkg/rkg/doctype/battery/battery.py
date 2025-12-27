@@ -37,8 +37,12 @@ class Battery(Document):
 				title=_("Missing Battery Serial No")
 			)
 		
-		# Create Items for rows without item_code
+		# Collect all item codes to check existence in batch
+		item_codes_to_check = []
+		item_code_to_row_map = {}
+		
 		for item in self.items:
+			# Skip if item_code already set and exists
 			if item.item_code and str(item.item_code).strip():
 				if not frappe.db.exists("Item", item.item_code):
 					frappe.throw(
@@ -53,35 +57,128 @@ class Battery(Document):
 				continue
 			
 			item_code = str(item.battery_serial_no).strip()
+			item_codes_to_check.append(item_code)
+			item_code_to_row_map[item_code] = item
+		
+		# Batch check for existing items (optimized)
+		existing_items = set()
+		if item_codes_to_check:
+			existing_items = set(
+				frappe.db.get_all(
+					"Item",
+					filters={"item_code": ["in", item_codes_to_check]},
+					pluck="item_code"
+				)
+			)
+		
+		# Track skipped and created items
+		skipped_items = []
+		created_items = []
+		failed_items = []
+		
+		# Process items
+		for item_code in item_codes_to_check:
+			item = item_code_to_row_map[item_code]
+			row_num = getattr(item, 'idx', 'Unknown')
 			
-			if frappe.db.exists("Item", item_code):
+			# Skip if item already exists
+			if item_code in existing_items:
 				item.item_code = item_code
-			else:
-				try:
-					self._create_item_from_battery_item(item, item_code)
-					frappe.clear_cache(doctype="Item")
-					frappe.db.commit()
-					
-					if frappe.db.exists("Item", item_code):
-						item.item_code = item_code
-					else:
-						frappe.throw(
-							_("Item '{0}' was not created for Row #{1}.").format(
-								item_code, getattr(item, 'idx', 'Unknown')
-							),
-							title=_("Item Creation Failed")
-						)
-				except Exception as e:
-					frappe.log_error(
-						f"Failed to create Item {item_code}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-						"Battery Item Creation Error"
+				skipped_items.append({
+					"item_code": item_code,
+					"row": row_num
+				})
+				continue
+			
+			# Create new item
+			try:
+				self._create_item_from_battery_item(item, item_code)
+				frappe.clear_cache(doctype="Item")
+				frappe.db.commit()
+				
+				# Verify item was created
+				if frappe.db.exists("Item", item_code):
+					item.item_code = item_code
+					created_items.append({
+						"item_code": item_code,
+						"row": row_num
+					})
+				else:
+					failed_items.append({
+						"item_code": item_code,
+						"row": row_num,
+						"error": "Item was not created"
+					})
+			except Exception as e:
+				frappe.log_error(
+					f"Failed to create Item {item_code}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					"Battery Item Creation Error"
+				)
+				failed_items.append({
+					"item_code": item_code,
+					"row": row_num,
+					"error": str(e)
+				})
+		
+		# Show summary message
+		total_items = len(item_codes_to_check)
+		skipped_count = len(skipped_items)
+		created_count = len(created_items)
+		failed_count = len(failed_items)
+		
+		# Build message
+		message_parts = []
+		
+		if created_count > 0:
+			message_parts.append(_("{0} item(s) created successfully.").format(created_count))
+		
+		if skipped_count > 0:
+			skipped_codes = [s["item_code"] for s in skipped_items[:10]]
+			skipped_msg = ", ".join(skipped_codes)
+			if skipped_count > 10:
+				skipped_msg += _(" and {0} more").format(skipped_count - 10)
+			message_parts.append(
+				_("{0} item(s) already exist and were skipped: {1}").format(skipped_count, skipped_msg)
+			)
+		
+		if failed_count > 0:
+			failed_codes = [f["item_code"] for f in failed_items[:5]]
+			failed_msg = ", ".join(failed_codes)
+			if failed_count > 5:
+				failed_msg += _(" and {0} more").format(failed_count - 5)
+			message_parts.append(
+				_("{0} item(s) failed to create: {1}").format(failed_count, failed_msg)
+			)
+		
+		# Show message if there are skipped or failed items
+		if skipped_count > 0 or failed_count > 0:
+			message = "\n".join(message_parts)
+			indicator = "orange" if failed_count == 0 else "red"
+			
+			frappe.msgprint(
+				message,
+				title=_("Item Creation Summary"),
+				indicator=indicator,
+				alert=True
+			)
+		
+		# Throw error if any items failed to create
+		if failed_count > 0:
+			error_details = []
+			for failed in failed_items[:10]:
+				error_details.append(
+					_("Row #{0}: {1} - {2}").format(
+						failed["row"], failed["item_code"], failed["error"]
 					)
-					frappe.throw(
-						_("Failed to create Item '{0}' for Row #{1}.\n\nError: {2}").format(
-							item_code, getattr(item, 'idx', 'Unknown'), str(e)
-						),
-						title=_("Item Creation Failed")
-					)
+				)
+			
+			frappe.throw(
+				_("Cannot submit Battery. Failed to create {0} item(s):\n\n{1}").format(
+					failed_count,
+					"\n".join(error_details) + ("\n..." if failed_count > 10 else "")
+				),
+				title=_("Item Creation Failed")
+			)
 	
 	def set_item_code(self):
 		"""Set item_code only if Item exists."""
@@ -205,7 +302,7 @@ def _get_or_create_battery_item_group(battery_brand, battery_type):
 
 @frappe.whitelist()
 def process_battery_file(file_url):
-	"""Process CSV/Excel file and return normalized data."""
+	"""Process CSV/Excel file and return normalized data with existing items check."""
 	from frappe.utils import get_site_path
 	
 	try:
@@ -254,6 +351,7 @@ def process_battery_file(file_url):
 		
 		# Process rows
 		processed_rows = []
+		item_codes = []
 		for row in rows:
 			normalized_row = {}
 			for excel_col, value in row.items():
@@ -276,9 +374,37 @@ def process_battery_file(file_url):
 						normalized_row[field_name] = str(value).strip()
 			
 			if normalized_row.get('battery_serial_no'):
+				item_code = str(normalized_row.get('battery_serial_no')).strip()
+				item_codes.append(item_code)
 				processed_rows.append(normalized_row)
 		
-		return processed_rows
+		# Check for existing items (batch query for optimization)
+		existing_items = set()
+		if item_codes:
+			existing_items = set(
+				frappe.db.get_all(
+					"Item",
+					filters={"item_code": ["in", item_codes]},
+					pluck="item_code"
+				)
+			)
+		
+		# Mark existing items in processed rows
+		for row in processed_rows:
+			item_code = str(row.get('battery_serial_no', '')).strip()
+			if item_code in existing_items:
+				row['item_exists'] = True
+				row['item_code'] = item_code
+			else:
+				row['item_exists'] = False
+		
+		# Return data with existing items info
+		return {
+			"rows": processed_rows,
+			"existing_count": len(existing_items),
+			"new_count": len(processed_rows) - len(existing_items),
+			"existing_items": list(existing_items)[:20]  # Limit to first 20 for display
+		}
 		
 	except Exception as e:
 		frappe.log_error(
