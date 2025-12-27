@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-27 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_1",
+  "battery_serial_no",
+  "battery_brand",
+  "battery_type",
+  "column_break_1",
+  "battery_charging_code",
+  "charging_date",
+  "column_break_2",
+  "item_code",
+  "item_name",
+  "unit"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "battery_serial_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Battery Serial No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "battery_brand",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Battery Brand"
+  },
+  {
+   "fieldname": "battery_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Battery Type"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "battery_charging_code",
+   "fieldtype": "Data",
+   "label": "Battery Charging Code"
+  },
+  {
+   "fieldname": "charging_date",
+   "fieldtype": "Date",
+   "label": "Charging Date"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Small Text",
+   "label": "Unit"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-12-27 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Battery Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
+
