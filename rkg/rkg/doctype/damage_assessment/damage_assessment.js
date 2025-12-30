@@ -1,3 +1,24 @@
+// Helper function to get damage warehouse from Warehouse Transfer mapping
+function get_damage_warehouse(from_warehouse, callback) {
+	if (!from_warehouse) {
+		if (callback) callback(null);
+		return;
+	}
+	
+	// Call server-side method to get damage warehouse from Warehouse Transfer
+	frappe.call({
+		method: "rkg.rkg.doctype.warehouse_transfer.warehouse_transfer.get_damage_warehouse",
+		args: {
+			from_warehouse: from_warehouse
+		},
+		callback: function(r) {
+			if (callback) {
+				callback(r.message || null);
+			}
+		}
+	});
+}
+
 frappe.ui.form.on("Damage Assessment", {
 	setup(frm) {
 		// Set filter for serial_no in child table based on warehouse
@@ -136,6 +157,14 @@ frappe.ui.form.on("Damage Assessment Item", {
 						// Set warehouse if available (only if not already set, to preserve existing value)
 						if (r.message.warehouse && !row.from_warehouse) {
 							frappe.model.set_value(cdt, cdn, "from_warehouse", r.message.warehouse);
+							// Auto-populate to_warehouse if status is "Not OK"
+							if (row.status === "Not OK") {
+								get_damage_warehouse(r.message.warehouse, function(damage_warehouse) {
+									if (damage_warehouse) {
+										frappe.model.set_value(cdt, cdn, "to_warehouse", damage_warehouse);
+									}
+								});
+							}
 						} else if (!r.message.warehouse && !row.from_warehouse) {
 							frappe.model.set_value(cdt, cdn, "from_warehouse", "");
 						}
@@ -157,13 +186,36 @@ frappe.ui.form.on("Damage Assessment Item", {
 			frappe.model.set_value(cdt, cdn, "type_of_damage_2", "");
 			frappe.model.set_value(cdt, cdn, "type_of_damage_3", "");
 			frappe.model.set_value(cdt, cdn, "estimated_cost", 0);
-			frappe.model.set_value(cdt, cdn, "from_warehouse", "");
 			frappe.model.set_value(cdt, cdn, "to_warehouse", "");
+			// Note: from_warehouse is kept as it's already fetched
+		} else if (row.status === "Not OK" && row.from_warehouse) {
+			// Auto-populate to_warehouse based on from_warehouse from Warehouse Transfer
+			get_damage_warehouse(row.from_warehouse, function(damage_warehouse) {
+				if (damage_warehouse) {
+					frappe.model.set_value(cdt, cdn, "to_warehouse", damage_warehouse);
+				}
+			});
 		}
 		
 		// Refresh the row to show/hide fields based on status
 		frm.refresh_field("damage_assessment_item");
 		frm.trigger("calculate_total_estimated_cost");
+	},
+	
+	from_warehouse(frm, cdt, cdn) {
+		let row = locals[cdt][cdn];
+		
+		// Auto-populate to_warehouse if status is "Not OK" and from_warehouse is set
+		if (row.status === "Not OK" && row.from_warehouse) {
+			get_damage_warehouse(row.from_warehouse, function(damage_warehouse) {
+				if (damage_warehouse) {
+					frappe.model.set_value(cdt, cdn, "to_warehouse", damage_warehouse);
+				}
+			});
+		} else if (row.status === "OK") {
+			// Clear to_warehouse if status is OK
+			frappe.model.set_value(cdt, cdn, "to_warehouse", "");
+		}
 	},
 	
 	type_of_damage_1(frm, cdt, cdn) {
