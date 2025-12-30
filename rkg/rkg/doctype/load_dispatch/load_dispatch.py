@@ -1223,6 +1223,21 @@ def _create_purchase_document_unified(source_name, doctype, target_doc=None, war
 		target.item_code, target.qty = source.item_code, 1
 		if hasattr(target, "use_serial_batch_fields"):
 			target.use_serial_batch_fields = 1
+
+		# Pricing: when creating Purchase Receipt / Purchase Invoice from Load Dispatch,
+		# use Load Dispatch Item's Price/Unit (`price_unit`) instead of `rate`.
+		# Some sites may have a custom `price_unit` field on the target item row; if so, populate it too.
+		try:
+			price_unit = flt(getattr(source, "price_unit", 0) or 0)
+		except Exception:
+			price_unit = 0
+
+		if price_unit and price_unit > 0:
+			if hasattr(target, "price_unit"):
+				target.price_unit = price_unit
+			# Fallback to standard ERPNext field
+			if hasattr(target, "rate"):
+				target.rate = price_unit
 		
 		if doctype == "Purchase Invoice" and hasattr(source, "frame_no") and source.frame_no:
 			fn = str(source.frame_no).strip()
