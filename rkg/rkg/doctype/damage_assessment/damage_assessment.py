@@ -72,10 +72,7 @@ class DamageAssessment(Document):
 			)
 	
 	def validate_damage_items(self):
-		"""
-		Validate that Not OK items have at least one damage/issue (type_of_damage_1 is mandatory),
-		estimated cost, and warehouses.
-		"""
+		"""Validate that Not OK items have at least one damage/issue (type_of_damage_1 is mandatory), estimated cost, and warehouses."""
 		if self.damage_assessment_item:
 			for item in self.damage_assessment_item:
 				if item.status == "Not OK":
@@ -105,8 +102,7 @@ class DamageAssessment(Document):
 	
 	def on_cancel(self):
 		"""Cancel linked Stock Entries when Damage Assessment is cancelled."""
-		# Try to get stock entries linked to this Damage Assessment via custom field
-		# If custom field doesn't exist, this will return empty list
+		# Try to get stock entries linked to this Damage Assessment via custom field. If custom field doesn't exist, this will return empty list
 		try:
 			stock_entries = frappe.get_all(
 				"Stock Entry",
@@ -120,20 +116,14 @@ class DamageAssessment(Document):
 			for se in stock_entries:
 				self.cancel_stock_entry(se.name)
 		except Exception:
-			# Custom field may not exist, or there might be other issues
-			# Log the error but don't fail the cancel operation
+			# Custom field may not exist, or there might be other issues. Log the error but don't fail the cancel operation
 			frappe.log_error(
 				f"Error cancelling stock entries for Damage Assessment {self.name}",
 				"Damage Assessment Cancel Error"
 			)
 	
 	def create_stock_entries(self):
-		"""
-		Create Stock Entries to move damaged items to Damage Godowns.
-		Groups items by warehouse pairs (from_warehouse, to_warehouse) and creates
-		separate stock entries for each unique warehouse combination.
-		Handles multiple damages per frame by deduplicating serial_no entries.
-		"""
+		"""Create Stock Entries to move damaged items to Damage Godowns. Groups items by warehouse pairs (from_warehouse, to_warehouse) and creates separate stock entries for each unique warehouse combination. Handles multiple damages per frame by deduplicating serial_no entries."""
 		if not self.damage_assessment_item:
 			return
 		
@@ -157,8 +147,7 @@ class DamageAssessment(Document):
 			if warehouse_key not in warehouse_groups:
 				warehouse_groups[warehouse_key] = {}
 			
-			# Use serial_no as key to deduplicate - if same frame has multiple damages,
-			# we only need one stock entry item per frame
+			# Use serial_no as key to deduplicate - if same frame has multiple damages, we only need one stock entry item per frame
 			if item.serial_no not in warehouse_groups[warehouse_key]:
 				warehouse_groups[warehouse_key][item.serial_no] = item
 		
@@ -172,9 +161,7 @@ class DamageAssessment(Document):
 			stock_entry.stock_entry_type = self.stock_entry_type
 			stock_entry.posting_date = self.date or frappe.utils.today()
 			
-			# Add custom field to link back to Damage Assessment
-			# Note: This assumes you have a custom field 'custom_damage_assessment' in Stock Entry
-			# If not, you may need to add it or use a different method to track
+			# Add custom field to link back to Damage Assessment. Note: This assumes you have a custom field 'custom_damage_assessment' in Stock Entry. If not, you may need to add it or use a different method to track
 			try:
 				stock_entry.custom_damage_assessment = self.name
 			except AttributeError:
@@ -243,20 +230,7 @@ class DamageAssessment(Document):
 
 @frappe.whitelist()
 def get_load_dispatch_from_serial_no(serial_no):
-	"""
-	Get the Load Dispatch document from which a Serial No (frame) originated,
-	and also get the warehouse where the Serial No is currently located.
-	
-	The Serial No name is the same as the frame_no in Load Dispatch Item.
-	This function looks up which Load Dispatch Item has this frame_no
-	and returns the parent Load Dispatch name and the warehouse.
-	
-	Args:
-		serial_no: The Serial No (frame_no) to look up
-	
-	Returns:
-		dict with load_dispatch name and warehouse, or None if not found
-	"""
+	"""Get the Load Dispatch document from which a Serial No (frame) originated, and also get the warehouse where the Serial No is currently located. The Serial No name is the same as the frame_no in Load Dispatch Item. This function looks up which Load Dispatch Item has this frame_no and returns the parent Load Dispatch name and the warehouse. Args: serial_no: The Serial No (frame_no) to look up. Returns: dict with load_dispatch name and warehouse, or None if not found."""
 	if not serial_no:
 		return {"load_dispatch": None, "warehouse": None}
 	
@@ -280,16 +254,7 @@ def get_load_dispatch_from_serial_no(serial_no):
 
 @frappe.whitelist()
 def get_frames_from_load_plan(load_plan_reference_no):
-	"""
-	Get all frames (frame_no) from all Load Dispatch documents linked to a Load Plan.
-	Also includes the warehouse where each frame is currently located.
-	
-	Args:
-		load_plan_reference_no: The Load Plan Reference No (Load Plan name)
-	
-	Returns:
-		list of dicts with frame_no, warehouse, and related information
-	"""
+	"""Get all frames (frame_no) from all Load Dispatch documents linked to a Load Plan. Also includes the warehouse where each frame is currently located. Args: load_plan_reference_no: The Load Plan Reference No (Load Plan name). Returns: list of dicts with frame_no, warehouse, and related information."""
 	if not load_plan_reference_no:
 		return []
 	
