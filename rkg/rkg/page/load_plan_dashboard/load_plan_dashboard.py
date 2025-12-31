@@ -71,6 +71,7 @@ def get_load_plan_data(where_clause, params):
 			lp.dispatch_plan_date,
 			lp.payment_plan_date,
 			lp.status,
+			lp.docstatus,
 			lp.total_quantity,
 			lp.load_dispatch_quantity,
 			lp.modified,
@@ -185,10 +186,21 @@ def get_load_plan_data(where_clause, params):
 		dispatch_date = plan.dispatch_plan_date
 		is_overdue = bool(dispatch_date and getdate(dispatch_date) < today and remaining > 0)
 
+		# Determine status: use status field if set, otherwise derive from docstatus
+		# docstatus: 0 = Draft, 1 = Submitted, 2 = Cancelled
+		status = plan.status
+		if not status:
+			if plan.docstatus == 0:
+				status = "Draft"
+			elif plan.docstatus == 1:
+				status = "Submitted"
+			else:
+				status = "Cancelled"
+
 		plan_cards.append(
 			{
 				"load_reference_no": plan.load_reference_no,
-				"status": plan.status or "Submitted",
+				"status": status,
 				"dispatch_plan_date": str(dispatch_date) if dispatch_date else None,
 				"payment_plan_date": str(plan.payment_plan_date) if plan.payment_plan_date else None,
 				"total_quantity": planned,
@@ -417,6 +429,17 @@ def get_load_plan_details(load_reference_no):
 		order_by="idx"
 	)
 	
+	# Determine status: use status field if set, otherwise derive from docstatus
+	# docstatus: 0 = Draft, 1 = Submitted, 2 = Cancelled
+	status = load_plan.status
+	if not status:
+		if load_plan.docstatus == 0:
+			status = "Draft"
+		elif load_plan.docstatus == 1:
+			status = "Submitted"
+		else:
+			status = "Cancelled"
+	
 	# Return extended format with all details
 	return {
 		"plan": {
@@ -424,7 +447,7 @@ def get_load_plan_details(load_reference_no):
 			"name": load_plan.name,
 			"dispatch_plan_date": str(load_plan.dispatch_plan_date) if load_plan.dispatch_plan_date else None,
 			"payment_plan_date": str(load_plan.payment_plan_date) if load_plan.payment_plan_date else None,
-			"status": load_plan.status,
+			"status": status,
 			"total_quantity": flt(load_plan.total_quantity) or 0,
 			"load_dispatch_quantity": flt(load_plan.load_dispatch_quantity) or 0,
 			"modified": str(load_plan.modified) if load_plan.modified else None,

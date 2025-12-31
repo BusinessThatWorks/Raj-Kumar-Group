@@ -438,7 +438,7 @@ class LoadPlanDashboard {
 						</div>
 					</div>
 					<div class="plan-status ${statusClass}">
-						${plan.status || "Submitted"} ${overdueBadge}
+						${plan.status || "Draft"} ${overdueBadge}
 					</div>
 				</div>
 				<div class="plan-card__body">
@@ -673,7 +673,7 @@ class LoadPlanDashboard {
 			<div class="plan-details-card">
 				<div class="details-header">
 					<h3>${plan.load_reference_no || "-"}</h3>
-					<span class="badge badge-${plan.status === "Dispatched" ? "success" : plan.status === "Draft" ? "danger" : "info"}">${plan.status || "Submitted"}</span>
+					<span class="badge badge-${plan.status === "Dispatched" ? "success" : plan.status === "Draft" ? "danger" : "info"}">${plan.status || "Draft"}</span>
 				</div>
 				<div class="details-body">
 					<div class="details-row">
