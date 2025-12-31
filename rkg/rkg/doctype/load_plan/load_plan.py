@@ -86,23 +86,7 @@ class LoadPlan(Document):
 
 
 def update_load_plan_status_from_document(doc, method=None):
-	"""
-	Update Load Plan status based on Purchase Receipt or Purchase Invoice submission.
-	Called from hooks when Purchase Receipt or Purchase Invoice is submitted.
-	
-	Logic:
-	- Get load_reference_no from the submitted document (custom_load_reference_no or load_reference_to)
-	- Find all submitted Purchase Receipt/Invoice documents with that load_reference_no
-	- Sum total_quantity from those documents
-	- Compare with Load Plan's total_quantity:
-	  - If total_quantity >= Load Plan total_quantity: 'Dispatched'
-	  - If total_quantity < Load Plan total_quantity and > 0: 'Partial Dispatched'
-	  - Otherwise: 'In-Transit'
-	
-	Args:
-		doc: Purchase Receipt or Purchase Invoice document
-		method: Hook method name (optional)
-	"""
+	"""Update Load Plan status based on Purchase Receipt or Purchase Invoice submission. Called from hooks when Purchase Receipt or Purchase Invoice is submitted. Logic: Get load_reference_no from the submitted document (custom_load_reference_no or load_reference_to), find all submitted Purchase Receipt/Invoice documents with that load_reference_no, sum total_quantity from those documents, compare with Load Plan's total_quantity: If total_quantity >= Load Plan total_quantity: 'Dispatched', If total_quantity < Load Plan total_quantity and > 0: 'Partial Dispatched', Otherwise: 'In-Transit'. Args: doc: Purchase Receipt or Purchase Invoice document, method: Hook method name (optional)."""
 	# Get load_reference_no from the document
 	load_reference_no = None
 	
@@ -226,11 +210,7 @@ def update_load_plan_status_from_document(doc, method=None):
 
 @frappe.whitelist()
 def get_first_row_for_mandatory_fields(file_url):
-	"""
-	Quickly get the first row from the file to populate mandatory fields and child table immediately.
-	Returns the first row with parent fields and child table data.
-	This is called immediately when file is attached to prevent validation errors.
-	"""
+	"""Quickly get the first row from the file to populate mandatory fields and child table immediately. Returns the first row with parent fields and child table data. This is called immediately when file is attached to prevent validation errors."""
 	if not file_url:
 		return None
 	
@@ -267,10 +247,7 @@ def get_first_row_for_mandatory_fields(file_url):
 
 @frappe.whitelist()
 def process_tabular_file(file_url):
-	"""
-	Read the attached file row-wise (CSV or Excel) and map it to Load Plan Item fields.
-	Returns a list of dicts ready to be added to the child table.
-	"""
+	"""Read the attached file row-wise (CSV or Excel) and map it to Load Plan Item fields. Returns a list of dicts ready to be added to the child table."""
 	if not file_url:
 		frappe.throw(_("No file provided"))
 
@@ -742,18 +719,7 @@ def _process_load_plan_csv(file_url, column_mapping, required_headers, optional_
 
 @frappe.whitelist()
 def create_load_plans_from_file(file_url, create_multiple=True):
-	"""
-	Process file and create Load Plan documents.
-	If create_multiple=True and file contains multiple load_reference_no values,
-	creates separate Load Plan documents for each unique load_reference_no.
-	
-	Args:
-		file_url: URL of the attached file
-		create_multiple: If True, create separate Load Plans for each load_reference_no
-	
-	Returns:
-		dict with created_load_plans list and summary
-	"""
+	"""Process file and create Load Plan documents. If create_multiple=True and file contains multiple load_reference_no values, creates separate Load Plan documents for each unique load_reference_no. Args: file_url: URL of the attached file, create_multiple: If True, create separate Load Plans for each load_reference_no. Returns: dict with created_load_plans list and summary."""
 	if not file_url:
 		frappe.throw(_("No file provided"))
 	
@@ -869,19 +835,7 @@ def create_load_plans_from_file(file_url, create_multiple=True):
 
 
 def _create_single_load_plan(load_reference_no, dispatch_plan_date, payment_plan_date, child_rows, file_url):
-	"""
-	Create a single Load Plan document with the provided data.
-	
-	Args:
-		load_reference_no: Load Reference Number
-		dispatch_plan_date: Dispatch Plan Date
-		payment_plan_date: Payment Plan Date
-		child_rows: List of child table row dictionaries
-		file_url: File URL for attachment
-	
-	Returns:
-		Created LoadPlan document
-	"""
+	"""Create a single Load Plan document with the provided data. Args: load_reference_no: Load Reference Number, dispatch_plan_date: Dispatch Plan Date, payment_plan_date: Payment Plan Date, child_rows: List of child table row dictionaries, file_url: File URL for attachment. Returns: Created LoadPlan document."""
 	# Filter to only include valid child fieldnames - never filter by values
 	valid_child_fields = {
 		"model", "model_name", "model_type", "model_variant",
