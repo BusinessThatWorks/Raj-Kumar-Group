@@ -20,8 +20,7 @@ class LoadPlanUpload(Document):
 		if not self.excel_file:
 			frappe.throw(_("No file attached"))
 		
-		# Reprocess the file to get latest data (file may have changed)
-		# This ensures we have fresh data even if file was updated
+		# Reprocess the file to get latest data (file may have changed). This ensures we have fresh data even if file was updated
 		check_result = check_multiple_load_reference_numbers(self.excel_file)
 		
 		# Check if load reference numbers found
@@ -74,14 +73,12 @@ class LoadPlanUpload(Document):
 					"error_message": err.get("error", "")
 				})
 			
-			# Update child table and total count together
-			# CRITICAL: This happens in on_submit - Load Plans are already created above
+			# Update child table and total count together. CRITICAL: This happens in on_submit - Load Plans are already created above
 			try:
 				# Update total count
 				frappe.db.set_value("Load Plan Upload", self.name, "total_load_plans_created", result.get("total_created", 0), update_modified=False)
 				
-				# Update child table using a helper method
-				# This populates the child table with results (Created, Skipped, Error)
+				# Update child table using a helper method. This populates the child table with results (Created, Skipped, Error)
 				if child_table_data:
 					_update_upload_items_child_table(self.name, child_table_data)
 				
@@ -96,9 +93,7 @@ class LoadPlanUpload(Document):
 				)
 				frappe.db.commit()
 			
-			# Don't show msgprint here - let the client-side handle messaging after reload
-			# This prevents messages from appearing before the form reloads
-			# The client will show appropriate messages after reload is complete
+			# Don't show msgprint here - let the client-side handle messaging after reload. This prevents messages from appearing before the form reloads. The client will show appropriate messages after reload is complete
 				
 		except Exception as e:
 			# Add error to child table if possible
@@ -127,10 +122,7 @@ class LoadPlanUpload(Document):
 
 
 def _update_upload_items_child_table(parent_name, child_table_data):
-	"""
-	Helper function to update child table after document submission.
-	Uses direct SQL insert to ensure immediate visibility without refresh.
-	"""
+	"""Helper function to update child table after document submission. Uses direct SQL insert to ensure immediate visibility without refresh."""
 	try:
 		# Delete existing child table rows
 		frappe.db.sql("""
@@ -170,17 +162,7 @@ def _update_upload_items_child_table(parent_name, child_table_data):
 
 @frappe.whitelist()
 def check_multiple_load_reference_numbers(file_url):
-	"""
-	Read the Excel file and check if multiple load reference numbers exist.
-	ONLY reads the file - does NOT create any Load Plans.
-	Uses the EXACT same logic as Load Plan's create_load_plans_from_file.
-	
-	Args:
-		file_url: URL of the attached file
-		
-	Returns:
-		dict with unique_load_refs list, count, load_ref_details (with row counts), and message
-	"""
+	"""Read the Excel file and check if multiple load reference numbers exist. ONLY reads the file - does NOT create any Load Plans. Uses the EXACT same logic as Load Plan's create_load_plans_from_file. Args: file_url: URL of the attached file. Returns: dict with unique_load_refs list, count, load_ref_details (with row counts), and message."""
 	if not file_url:
 		frappe.throw(_("No file provided"))
 	
@@ -259,17 +241,7 @@ def check_multiple_load_reference_numbers(file_url):
 
 @frappe.whitelist()
 def create_load_plans_from_file_skip_existing(file_url, create_multiple=True):
-	"""
-	Process file and create Load Plan documents, but skip Load Plans that already exist.
-	Uses EXACT same logic as Load Plan's create_load_plans_from_file, but skips existing ones.
-	
-	Args:
-		file_url: URL of the attached file
-		create_multiple: If True, create separate Load Plans for each load_reference_no
-		
-	Returns:
-		dict with created_load_plans list, skipped_load_plans list, and summary
-	"""
+	"""Process file and create Load Plan documents, but skip Load Plans that already exist. Uses EXACT same logic as Load Plan's create_load_plans_from_file, but skips existing ones. Args: file_url: URL of the attached file, create_multiple: If True, create separate Load Plans for each load_reference_no. Returns: dict with created_load_plans list, skipped_load_plans list, and summary."""
 	if not file_url:
 		frappe.throw(_("No file provided"))
 	
