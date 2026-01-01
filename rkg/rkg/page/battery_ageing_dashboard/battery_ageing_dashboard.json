@@ -1,0 +1,26 @@
+{
+ "content": null,
+ "creation": "2025-12-31 14:04:51.954141",
+ "description": "Visual dashboard for Battery Ageing",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "fa fa-battery-full",
+ "idx": 0,
+ "modified": "2025-12-31 14:04:51.954141",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "battery-ageing-dashboard",
+ "owner": "Administrator",
+ "page_name": "battery-ageing-dashboard",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Battery Ageing Dashboard"
+}
+
