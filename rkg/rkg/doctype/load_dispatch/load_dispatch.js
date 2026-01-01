@@ -89,6 +89,7 @@ frappe.ui.form.on("Load Dispatch", {
 
 	load_reference_no(frm) {
 		// Prevent changing load_reference_no if items are already imported from CSV
+		// Note: Load Reference No field is a Link field to Load Plan, so Frappe automatically validates it exists
 		if (frm.doc.items && frm.doc.items.length > 0) {
 			// Check if any item has frame_no (imported data)
 			const has_imported_items = frm.doc.items.some(item => item.frame_no && item.frame_no.trim() !== "");
@@ -128,78 +129,106 @@ frappe.ui.form.on("Load Dispatch", {
 				callback: function(r) {
 					try {
 						if (r && r.message) {
-							// Clear existing items
-							frm.clear_table("items");
+							// Handle new response format with metadata
+							let response_data = r.message;
+							let rows = [];
+							let has_multiple_load_ref_nos = false;
+							let load_ref_nos = [];
+							let valid_load_ref_nos = [];
+							let invalid_load_ref_nos = [];
 							
-							// Add rows from imported data
-							if (r.message.length > 0) {
-								r.message.forEach(function(row) {
-									let child_row = frm.add_child("items");
-									Object.keys(row).forEach(function(key) {
-										// CRITICAL: Skip item_code completely - it will be set on submit only if Item exists
-										// Do NOT set item_code from CSV data to prevent LinkValidationError
-										if (key === 'item_code') {
-											return; // Skip item_code entirely
-										}
-										child_row[key] = row[key];
-									});
-									// CRITICAL: Explicitly ensure item_code is not set on the row
-									// Delete it if it somehow exists to prevent LinkValidationError
-									if (child_row.item_code !== undefined && child_row.item_code !== null) {
-										delete child_row.item_code;
+							// Check if response is new format (object with metadata) or old format (array)
+							if (response_data.rows) {
+								// New format with metadata
+								rows = response_data.rows;
+								has_multiple_load_ref_nos = response_data.has_multiple_load_ref_nos || false;
+								load_ref_nos = response_data.load_ref_nos || [];
+								valid_load_ref_nos = response_data.valid_load_ref_nos || [];
+								invalid_load_ref_nos = response_data.invalid_load_ref_nos || [];
+							} else if (Array.isArray(response_data)) {
+								// Old format (backward compatibility)
+								rows = response_data;
+								// For old format, validate Load Ref Nos from rows
+								const load_ref_nos_set = new Set();
+								rows.forEach(row => {
+									if (row.hmsi_load_reference_no) {
+										load_ref_nos_set.add(row.hmsi_load_reference_no);
 									}
-									// item_code will be generated and set in before_submit() when Items are created
-									// Never set item_code from CSV import to avoid LinkValidationError
-									// Calculate rate from price_unit (excluding 18% GST)
-									if (row.price_unit) {
-										const price_unit = flt(row.price_unit);
-										if (price_unit > 0) {
-											child_row.rate = price_unit / 1.18;
+								});
+								load_ref_nos = Array.from(load_ref_nos_set);
+								// Validate each Load Ref No
+								load_ref_nos.forEach(ref_no => {
+									// We'll validate on client side for old format
+									valid_load_ref_nos.push(ref_no);
+								});
+							} else {
+								frappe.show_alert({
+									message: __("Unexpected response format from server"),
+									indicator: "orange"
+								}, 5);
+								return;
+							}
+							
+							// Show warning if there are invalid Load Ref Nos
+							if (invalid_load_ref_nos.length > 0) {
+								frappe.msgprint({
+									title: __("Invalid Load Reference Numbers"),
+									message: __("The following Load Reference Numbers in the file do not exist as Load Plans and will be skipped:\n{0}\n\nPlease create these Load Plans first or remove them from the file.", 
+										[invalid_load_ref_nos.join(", ")]),
+									indicator: "orange"
+								});
+								
+								// Filter out rows with invalid Load Ref Nos
+								rows = rows.filter(row => {
+									const row_load_ref_no = row.hmsi_load_reference_no;
+									return !row_load_ref_no || valid_load_ref_nos.includes(row_load_ref_no);
+								});
+							}
+							
+							// If no valid rows remain, show error
+							if (rows.length === 0) {
+								frappe.msgprint({
+									title: __("No Valid Data"),
+									message: __("No rows with valid Load Reference Numbers found. Please ensure the Load Reference Numbers in the file exist as Load Plans."),
+									indicator: "red"
+								});
+								return;
+							}
+							
+							// If multiple valid Load Ref Nos found and not already filtered, show selection dialog
+							if (has_multiple_load_ref_nos && !response_data.filtered && valid_load_ref_nos.length > 1) {
+								show_load_ref_no_selection_dialog(frm, valid_load_ref_nos, rows);
+								return;
+							}
+							
+							// If single Load Ref No, validate it exists before importing
+							if (valid_load_ref_nos.length === 1) {
+								const single_load_ref_no = valid_load_ref_nos[0];
+								// Validate it exists as Load Plan
+								frappe.call({
+									method: "frappe.client.get",
+									args: {
+										doctype: "Load Plan",
+										name: single_load_ref_no
+									},
+									callback: function(load_plan_r) {
+										if (load_plan_r.message) {
+											// Load Plan exists, proceed with import
+											import_rows_to_load_dispatch(frm, rows, single_load_ref_no);
+										} else {
+											frappe.msgprint({
+												title: __("Invalid Load Reference Number"),
+												message: __("Load Reference Number '{0}' does not exist as a Load Plan. Please create the Load Plan first.", [single_load_ref_no]),
+												indicator: "red"
+											});
 										}
 									}
 								});
-								
-								frm.refresh_field("items");
-								
-								// Apply custom styling to print_name and rate fields after import
-								setTimeout(() => apply_custom_field_styling(frm), 200);
-								
-								// Map values from first imported row to parent fields
-								const first_row = r.message[0] || {};
-								if (first_row.hmsi_load_reference_no) {
-									// Store the load_reference_no from the file to prevent changes
-									frm._load_reference_no_from_csv = first_row.hmsi_load_reference_no;
-									// Check if field exists before setting
-									if (frm.fields_dict.load_reference_no) {
-										frm.set_value("load_reference_no", first_row.hmsi_load_reference_no);
-									} else {
-										// Fallback: set directly on doc if field not yet available
-										frm.doc.load_reference_no = first_row.hmsi_load_reference_no;
-									}
-								}
-								if (first_row.invoice_no) {
-									// Check if field exists before setting
-									if (frm.fields_dict.invoice_no) {
-										frm.set_value("invoice_no", first_row.invoice_no);
-									} else {
-										// Fallback: set directly on doc if field not yet available
-										frm.doc.invoice_no = first_row.invoice_no;
-									}
-								}
-								
-								// Recalculate total dispatch quantity after import
-								calculate_total_dispatch_quantity(frm);
-								
-								frappe.show_alert({
-									message: __("Successfully imported {0} rows from file", [r.message.length]),
-									indicator: "green"
-								}, 5);
-							} else {
-								frappe.show_alert({
-									message: __("No data found in attached file"),
-									indicator: "orange"
-								}, 5);
+								return;
 							}
+							
+							// Import rows (either filtered or no Load Ref No specified)
+							import_rows_to_load_dispatch(frm, rows);
 						} else {
 							frappe.show_alert({
 								message: __("Unexpected response format from server"),
@@ -236,6 +265,199 @@ frappe.ui.form.on("Load Dispatch", {
 	},
 
 });
+
+// Show dialog to select Load Ref No when multiple are found
+function show_load_ref_no_selection_dialog(frm, load_ref_nos, all_rows) {
+	const dialog = new frappe.ui.Dialog({
+		title: __("Multiple Load Reference Numbers Found"),
+		fields: [
+			{
+				fieldtype: "HTML",
+				options: `<div style="padding: 10px; background-color: #fff3cd; border-radius: 4px; margin-bottom: 15px;">
+					<p style="margin: 0;"><strong>${__("Warning")}:</strong> ${__("The file contains {0} different Load Reference Numbers. Please select which one to import.", [load_ref_nos.length])}</p>
+					<p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">
+						<em>${__("Only rows matching the selected Load Reference Number will be imported into this Load Dispatch document.")}</em>
+					</p>
+					<p style="margin: 5px 0 0 0; font-size: 12px; color: #856404;">
+						<strong>${__("Note")}:</strong> ${__("To import rows with other Load Reference Numbers, create separate Load Dispatch documents for each.")}
+					</p>
+				</div>`
+			},
+			{
+				label: __("Load Reference Numbers in File"),
+				fieldname: "load_ref_nos_info",
+				fieldtype: "HTML",
+				options: `<div style="padding: 10px; background-color: #f8f9fa; border-radius: 4px; margin-bottom: 15px;">
+					<ul style="margin: 0; padding-left: 20px;">
+						${load_ref_nos.map(ref_no => `<li><strong>${ref_no}</strong> (${all_rows.filter(r => r.hmsi_load_reference_no === ref_no).length} rows)</li>`).join('')}
+					</ul>
+				</div>`
+			},
+			{
+				label: __("Select Load Reference Number"),
+				fieldname: "selected_load_ref_no",
+				fieldtype: "Select",
+				options: load_ref_nos.join("\n"),
+				reqd: 1,
+				description: __("Select which Load Reference Number to import. Only rows matching this selection will be imported.")
+			}
+		],
+		primary_action_label: __("Import Selected"),
+		primary_action: function(values) {
+			if (!values.selected_load_ref_no) {
+				frappe.msgprint({
+					title: __("Validation Error"),
+					message: __("Please select a Load Reference Number."),
+					indicator: "orange"
+				});
+				return;
+			}
+			
+			// Validate that selected Load Ref No exists as Load Plan
+			frappe.call({
+				method: "frappe.client.get",
+				args: {
+					doctype: "Load Plan",
+					name: values.selected_load_ref_no
+				},
+				callback: function(load_plan_r) {
+					if (load_plan_r.message) {
+						// Load Plan exists, proceed with import
+						dialog.hide();
+						
+						// Filter rows by selected Load Ref No
+						const filtered_rows = all_rows.filter(function(row) {
+							return row.hmsi_load_reference_no === values.selected_load_ref_no;
+						});
+						
+						// Import filtered rows
+						import_rows_to_load_dispatch(frm, filtered_rows, values.selected_load_ref_no);
+					} else {
+						// Load Plan does not exist
+						frappe.msgprint({
+							title: __("Invalid Load Reference Number"),
+							message: __("Load Reference Number '{0}' does not exist as a Load Plan. Please create the Load Plan first or select a valid Load Reference Number.", [values.selected_load_ref_no]),
+							indicator: "red"
+						});
+					}
+				}
+			});
+		}
+	});
+	
+	dialog.show();
+}
+
+// Import rows into Load Dispatch document
+function import_rows_to_load_dispatch(frm, rows, selected_load_ref_no) {
+	if (!rows || rows.length === 0) {
+		frappe.show_alert({
+			message: __("No data found to import"),
+			indicator: "orange"
+		}, 5);
+		return;
+	}
+	
+	// Validate Load Ref No exists as Load Plan if provided
+	if (selected_load_ref_no && selected_load_ref_no.trim()) {
+		frappe.call({
+			method: "frappe.client.get",
+			args: {
+				doctype: "Load Plan",
+				name: selected_load_ref_no
+			},
+			callback: function(load_plan_r) {
+				if (load_plan_r.message) {
+					// Load Plan exists, proceed with import
+					do_import_rows(frm, rows, selected_load_ref_no);
+				} else {
+					// Load Plan does not exist
+					frappe.msgprint({
+						title: __("Invalid Load Reference Number"),
+						message: __("Load Reference Number '{0}' does not exist as a Load Plan. Please create the Load Plan first.", [selected_load_ref_no]),
+						indicator: "red"
+					});
+				}
+			}
+		});
+	} else {
+		// No Load Ref No specified, proceed with import
+		do_import_rows(frm, rows, null);
+	}
+}
+
+// Internal function to perform the actual import
+function do_import_rows(frm, rows, selected_load_ref_no) {
+	
+	// Clear existing items
+	frm.clear_table("items");
+	
+	// Add rows from imported data
+	rows.forEach(function(row) {
+		let child_row = frm.add_child("items");
+		Object.keys(row).forEach(function(key) {
+			// CRITICAL: Skip item_code completely - it will be set on submit only if Item exists
+			// Do NOT set item_code from CSV data to prevent LinkValidationError
+			if (key === 'item_code') {
+				return; // Skip item_code entirely
+			}
+			child_row[key] = row[key];
+		});
+		// CRITICAL: Explicitly ensure item_code is not set on the row
+		// Delete it if it somehow exists to prevent LinkValidationError
+		if (child_row.item_code !== undefined && child_row.item_code !== null) {
+			delete child_row.item_code;
+		}
+		// item_code will be generated and set in before_submit() when Items are created
+		// Never set item_code from CSV import to avoid LinkValidationError
+		// Calculate rate from price_unit (excluding 18% GST)
+		if (row.price_unit) {
+			const price_unit = flt(row.price_unit);
+			if (price_unit > 0) {
+				child_row.rate = price_unit / 1.18;
+			}
+		}
+	});
+	
+	frm.refresh_field("items");
+	
+	// Apply custom styling to print_name and rate fields after import
+	setTimeout(() => apply_custom_field_styling(frm), 200);
+	
+	// Map values from first imported row to parent fields
+	const first_row = rows[0] || {};
+	const load_ref_no_to_use = selected_load_ref_no || first_row.hmsi_load_reference_no;
+	
+	if (load_ref_no_to_use) {
+		// Store the load_reference_no from the file to prevent changes
+		frm._load_reference_no_from_csv = load_ref_no_to_use;
+		// Check if field exists before setting
+		if (frm.fields_dict.load_reference_no) {
+			frm.set_value("load_reference_no", load_ref_no_to_use);
+		} else {
+			// Fallback: set directly on doc if field not yet available
+			frm.doc.load_reference_no = load_ref_no_to_use;
+		}
+	}
+	
+	if (first_row.invoice_no) {
+		// Check if field exists before setting
+		if (frm.fields_dict.invoice_no) {
+			frm.set_value("invoice_no", first_row.invoice_no);
+		} else {
+			// Fallback: set directly on doc if field not yet available
+			frm.doc.invoice_no = first_row.invoice_no;
+		}
+	}
+	
+	// Recalculate total dispatch quantity after import
+	calculate_total_dispatch_quantity(frm);
+	
+	frappe.show_alert({
+		message: __("Successfully imported {0} rows from file", [rows.length]),
+		indicator: "green"
+	}, 5);
+}
 
 // Calculate total dispatch quantity by counting rows with frame_no
 function calculate_total_dispatch_quantity(frm) {

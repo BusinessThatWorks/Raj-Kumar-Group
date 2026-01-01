@@ -12,37 +12,22 @@ ITEM_CUSTOM_FIELDS = []
 class LoadDispatch(Document):
 	def has_valid_load_plan(self):
 		"""Check if Load Dispatch has a valid Load Plan linked."""
-		if not self.load_reference_no:
-			return False
-		if not frappe.db.exists("Load Plan", self.load_reference_no):
-			return False
-		return True
+		return bool(self.load_reference_no and frappe.db.exists("Load Plan", self.load_reference_no))
 	#---------------------------------------------------------
 	
 	def _create_single_item_from_dispatch_item(self, dispatch_item, item_code):
 		"""Create a single Item from a Load Dispatch Item."""
 		# Get print_name from the map we created in before_submit
-		print_name_from_map = None
-		
-		# Try from instance attribute
-		if hasattr(self, '_print_name_map') and self._print_name_map:
-			print_name_from_map = self._print_name_map.get(item_code)
-		
-		# Try from frappe.local
-		if not print_name_from_map and hasattr(frappe.local, 'load_dispatch_print_name_map'):
-			print_name_from_map = frappe.local.load_dispatch_print_name_map.get(item_code)
+		print_name_from_map = ((self._print_name_map.get(item_code) if hasattr(self, '_print_name_map') and self._print_name_map else None)
+			or (getattr(frappe.local, 'load_dispatch_print_name_map', {}).get(item_code) if hasattr(frappe.local, 'load_dispatch_print_name_map') else None))
 		
 		if print_name_from_map:
-			# Set it on the dispatch_item object using multiple methods
 			dispatch_item.print_name = print_name_from_map
-			# Also set it as an attribute directly
 			setattr(dispatch_item, 'print_name', print_name_from_map)
-			# Store it in frappe.local for the unified function to access
 			if not hasattr(frappe.local, 'item_print_name_map'):
 				frappe.local.item_print_name_map = {}
 			frappe.local.item_print_name_map[item_code] = print_name_from_map
 		
-		# Pass print_name directly to unified function
 		return _create_item_unified(dispatch_item, item_code, source_type="dispatch_item", print_name=print_name_from_map)
 	#---------------------------------------------------------
 	
@@ -107,9 +92,7 @@ class LoadDispatch(Document):
 			self.calculate_total_dispatch_quantity()
 			return
 		
-		# CRITICAL: Only set item_code if Item already exists
-		# This prevents LinkValidationError when saving draft documents
-		# Items will be created in before_submit() before link validation runs
+		# CRITICAL: Only set item_code if Item already exists. This prevents LinkValidationError when saving draft documents. Items will be created in before_submit() before link validation runs
 		for item in self.items:
 			if item.model_serial_no and str(item.model_serial_no).strip():
 				item_code = str(item.model_serial_no).strip()
@@ -117,8 +100,7 @@ class LoadDispatch(Document):
 				if frappe.db.exists("Item", item_code):
 					item.item_code = item_code
 				else:
-					# Clear item_code if Item doesn't exist to prevent LinkValidationError
-					# Items will be created in before_submit()
+					# Clear item_code if Item doesn't exist to prevent LinkValidationError. Items will be created in before_submit()
 					item.item_code = None
 		
 		# Process items if Load Plan exists (for additional operations)
@@ -132,12 +114,7 @@ class LoadDispatch(Document):
 			self.sync_print_name_to_items()
 		
 		# Prevent changing load_reference_no if document has imported items (works for both new and existing documents)
-		has_imported_items = False
-		if self.items:
-			for item in self.items:
-				if item.frame_no and str(item.frame_no).strip():
-					has_imported_items = True
-					break
+		has_imported_items = any(item.frame_no and str(item.frame_no).strip() for item in (self.items or []))
 		
 		# Check if load_reference_no is being changed
 		if has_imported_items:
@@ -161,11 +138,9 @@ class LoadDispatch(Document):
 						).format(old_value or "None", self.load_reference_no)
 					)
 		
-		# Note: Load Plan validation is done in before_submit to allow saving without Load Plan
-		# This enables importing CSV data first, then creating/submitting Load Plan later
+		# Note: Load Plan validation is done in before_submit to allow saving without Load Plan. This enables importing CSV data first, then creating/submitting Load Plan later
 		
-		# Check for duplicate frame numbers in Serial No doctype from submitted Load Dispatch documents
-		# and skip those items
+		# Check for duplicate frame numbers in Serial No doctype from submitted Load Dispatch documents and skip those items
 		self._filter_duplicate_frame_numbers()
 		
 		# Calculate total dispatch quantity from child table
@@ -188,25 +163,18 @@ class LoadDispatch(Document):
 					# Check if Serial No already exists
 					if not frappe.db.exists("Serial No", serial_no_name):
 						try:
-							# IMPORTANT:
-							# - Serial No doctype still has a mandatory standard field `serial_no`
-							# - Your DB table currently does NOT have a `serial_no` column
-							#   so you MUST fix the schema (see explanation in assistant message)
-							#   so this insert works without SQL errors.
+							# IMPORTANT: Serial No doctype still has a mandatory standard field `serial_no`. Your DB table currently does NOT have a `serial_no` column so you MUST fix the schema (see explanation in assistant message) so this insert works without SQL errors.
 							serial_no = frappe.get_doc({
 								"doctype": "Serial No",
 								"item_code": item_code,
 								"serial_no": serial_no_name,  # Frame Number -> Serial No field
 							})
 
-							# Map Engine No / Motor No from Load Dispatch Item to Serial No custom field
-							# Assumes Serial No has a custom field named `custom_engine_number`
+							# Map Engine No / Motor No from Load Dispatch Item to Serial No custom field. Assumes Serial No has a custom field named `custom_engine_number`
 							if getattr(item, "engnie_no_motor_no", None):
 								setattr(serial_no, "custom_engine_number", item.engnie_no_motor_no)
 
-							# Map Key No from Load Dispatch Item to Serial No custom field
-							# Assumes Serial No has a custom field named `custom_key_no`
-							# Use 'is not None' check since key_no is Int and 0 is a valid value
+							# Map Key No from Load Dispatch Item to Serial No custom field. Assumes Serial No has a custom field named `custom_key_no`. Use 'is not None' check since key_no is Int and 0 is a valid value
 							key_no_value = getattr(item, "key_no", None)
 							if key_no_value is not None and str(key_no_value).strip():
 								setattr(serial_no, "custom_key_no", str(key_no_value))
@@ -247,8 +215,7 @@ class LoadDispatch(Document):
 									f"Error updating custom_engine_number for Serial No {serial_no_name}: {str(e)}",
 									"Serial No Update Error",
 								)
-						# If Serial No already exists, update the custom key no if provided
-						# Use 'is not None' check since key_no is Int and 0 is a valid value
+						# If Serial No already exists, update the custom key no if provided. Use 'is not None' check since key_no is Int and 0 is a valid value
 						key_no_value = getattr(item, "key_no", None)
 						if key_no_value is not None and str(key_no_value).strip():
 							try:
@@ -339,22 +306,13 @@ class LoadDispatch(Document):
 		for item in self.items:
 			# Calculate print_name from model_name and model_serial_no if model_serial_no exists
 			if hasattr(item, "model_serial_no") and item.model_serial_no:
-				model_name = getattr(item, "model_name", None)
-				if not hasattr(item, "print_name") or not item.print_name:
-					item.print_name = calculate_print_name(item.model_serial_no, model_name)
-				# Also recalculate if model_serial_no changed (for manual edits)
-				elif hasattr(item, "print_name") and item.model_serial_no:
-					# Recalculate to ensure it's always correct
-					item.print_name = calculate_print_name(item.model_serial_no, model_name)
+				item.print_name = calculate_print_name(item.model_serial_no, getattr(item, "model_name", None))
 			
-			# Calculate rate from price_unit (excluding 18% GST)
-			# rate = price_unit / 1.18 (standard GST exclusion formula)
-			# Note: price_unit remains unchanged from Excel, only rate is calculated
+			# Calculate rate from price_unit (excluding 18% GST). rate = price_unit / 1.18 (standard GST exclusion formula). Note: price_unit remains unchanged from Excel, only rate is calculated
 			if hasattr(item, "price_unit") and item.price_unit:
 				price_unit = flt(item.price_unit)
 				if price_unit > 0:
-					# Always calculate rate from price_unit (excluding 18% GST)
-					# This ensures rate is always in sync with price_unit
+					# Always calculate rate from price_unit (excluding 18% GST). This ensures rate is always in sync with price_unit
 					calculated_rate = price_unit / 1.18
 					item.rate = calculated_rate
 	#---------------------------------------------------------
@@ -389,9 +347,7 @@ class LoadDispatch(Document):
 			default_supplier = rkg_settings.get("default_supplier")
 			
 			if default_supplier:
-				# Set supplier on items if needed
-				# Note: This depends on whether Load Dispatch Item has a supplier field
-				# If not, supplier is set on the Item doctype itself
+				# Set supplier on items if needed. Note: This depends on whether Load Dispatch Item has a supplier field. If not, supplier is set on the Item doctype itself
 				pass
 		except frappe.DoesNotExistError:
 			# RKG Settings not found, skip setting supplier
@@ -409,35 +365,19 @@ class LoadDispatch(Document):
 		
 		updated_items = []
 		for item in self.items:
-			# Only sync if item_code exists and print_name is set
-			if not item.item_code or not str(item.item_code).strip():
+			if not item.item_code or not str(item.item_code).strip() or not frappe.db.exists("Item", (item_code := str(item.item_code).strip())):
 				continue
 			
-			item_code = str(item.item_code).strip()
-			
-			# Check if Item exists
-			if not frappe.db.exists("Item", item_code):
-				continue
-			
-			# Get print_name from Load Dispatch Item
-			print_name = None
-			if hasattr(item, "print_name") and item.print_name:
-				print_name = str(item.print_name).strip()
-			
-			# If print_name is not set, calculate it
-			if not print_name:
-				model_name = getattr(item, "model_name", None)
-				model_serial_no = getattr(item, "model_serial_no", None)
-				if model_serial_no:
-					print_name = calculate_print_name(model_serial_no, model_name)
-					# Also set it on the Load Dispatch Item for consistency
-					item.print_name = print_name
+			# Get print_name from Load Dispatch Item, calculate if not set
+			print_name = (str(item.print_name).strip() if hasattr(item, "print_name") and item.print_name else None)
+			if not print_name and item.model_serial_no:
+				print_name = calculate_print_name(item.model_serial_no, getattr(item, "model_name", None))
+				item.print_name = print_name
 			
 			# Only update if print_name is available
 			if print_name:
 				# Get current print_name from Item
 				current_print_name = frappe.db.get_value("Item", item_code, "print_name")
-				
 				# Update only if different
 				if current_print_name != print_name:
 					try:
@@ -494,19 +434,15 @@ class LoadDispatch(Document):
 				title=_("Missing Model Serial No")
 			)
 		
-		# Ensure print_name is calculated for all items before creating Items
-		print_name_map = {}  # Map item_code to print_name
+		# Ensure print_name is calculated for all items before creating Items. Map item_code to print_name
+		print_name_map = {}
 		
 		for item in self.items:
 			if hasattr(item, "model_serial_no") and item.model_serial_no:
-				model_name = getattr(item, "model_name", None)
 				model_serial_no = item.model_serial_no
 				item_code = str(model_serial_no).strip()
-				
 				if not hasattr(item, "print_name") or not item.print_name or not str(item.print_name).strip():
-					item.print_name = calculate_print_name(model_serial_no, model_name)
-				
-				# Store in map for later use
+					item.print_name = calculate_print_name(model_serial_no, getattr(item, "model_name", None))
 				print_name_map[item_code] = item.print_name
 		
 		# Store the map in the document for later use
@@ -517,8 +453,7 @@ class LoadDispatch(Document):
 			frappe.local.load_dispatch_print_name_map = {}
 		frappe.local.load_dispatch_print_name_map.update(print_name_map)
 		
-		# Create Items for rows that don't have item_code but have model_serial_no
-		# This happens AFTER saving print_name values, so Items will have correct print_name
+		# Create Items for rows that don't have item_code but have model_serial_no. This happens AFTER saving print_name values, so Items will have correct print_name
 		for item in self.items:
 			
 			# If item_code is already present → verify Item exists
@@ -648,13 +583,7 @@ class LoadDispatch(Document):
 	
 	def calculate_total_dispatch_quantity(self):
 		"""Count the number of rows with non-empty frame_no in Load Dispatch Item child table."""
-		total_dispatch_quantity = 0
-		if self.items:
-			for item in self.items:
-				# Count rows that have a non-empty frame_no
-				if item.frame_no and str(item.frame_no).strip():
-					total_dispatch_quantity += 1
-		self.total_dispatch_quantity = total_dispatch_quantity
+		self.total_dispatch_quantity = sum(1 for item in (self.items or []) if item.frame_no and str(item.frame_no).strip())
 	#---------------------------------------------------------
 	
 	def _filter_duplicate_frame_numbers(self):
@@ -675,22 +604,15 @@ class LoadDispatch(Document):
 				continue
 			
 			# Get item_code from model_serial_no or item_code field
-			item_code = None
-			if item.model_serial_no and str(item.model_serial_no).strip():
-				item_code = str(item.model_serial_no).strip()
-			elif hasattr(item, 'item_code') and item.item_code and str(item.item_code).strip():
-				item_code = str(item.item_code).strip()
+			item_code = (str(item.model_serial_no).strip() if item.model_serial_no and str(item.model_serial_no).strip() 
+				else (str(item.item_code).strip() if hasattr(item, 'item_code') and item.item_code and str(item.item_code).strip() else None))
 			
 			if not item_code:
 				continue
 			
 			# Check if frame number (Serial No) already exists using frappe.db.exists
 			if frappe.db.exists("Serial No", frame_no):
-				# Frame number exists in Serial No doctype
-				# Now check if it's from a submitted Load Dispatch document
-				# We need to find which Load Dispatch Item has this frame_no
-				# and check if the parent Load Dispatch is submitted
-				# Exclude the current document if it exists
+				# Frame number exists in Serial No doctype. Check if it's from a submitted Load Dispatch document. Find which Load Dispatch Item has this frame_no and check if parent Load Dispatch is submitted. Exclude current document if it exists.
 				if self.name:
 					# Existing document - exclude it from the check
 					existing_load_dispatch_item = frappe.db.sql("""
@@ -776,29 +698,16 @@ class LoadDispatch(Document):
 		failed_items = []  # Track Items that failed to create
 		
 		for item in self.items:
-			# Use model_serial_no as the item code (primary source)
-			# Fall back to item_code if model_serial_no is not set
-			item_code = None
-			if item.model_serial_no and str(item.model_serial_no).strip():
-				item_code = str(item.model_serial_no).strip()
-			elif hasattr(item, 'item_code') and item.item_code and str(item.item_code).strip():
-				# Fallback: use item_code if model_serial_no is not available
-				item_code = str(item.item_code).strip()
-			
-			# Nothing to create if we still don't have a code
+			# Use model_serial_no as the item code (primary source), fall back to item_code
+			item_code = (str(item.model_serial_no).strip() if item.model_serial_no and str(item.model_serial_no).strip()
+				else (str(item.item_code).strip() if hasattr(item, 'item_code') and item.item_code and str(item.item_code).strip() else None))
 			if not item_code:
 				continue
 			
-			# Ensure item_code is set on the item (in case we used model_serial_no)
-			# This ensures item_code is always set from model_serial_no when available
 			item.item_code = item_code
-			
-			# Note: item_code is set from model_serial_no or existing item_code
-			
 			# Ensure print_name is calculated before creating/updating Item
 			if not hasattr(item, "print_name") or not item.print_name:
-				model_name = getattr(item, "model_name", None)
-				item.print_name = calculate_print_name(item.model_serial_no, model_name)
+				item.print_name = calculate_print_name(item.model_serial_no, getattr(item, "model_name", None))
 			
 			# Check if Item already exists
 			try:
@@ -830,18 +739,12 @@ class LoadDispatch(Document):
 						skipped_items.append(item_code)
 					continue
 
-				# Determine item_group - use unified function to ensure correct hierarchy
-				# This ensures: All Item Groups -> Two Wheelers Vehicle -> Model Name
+				# Determine item_group - use unified function to ensure correct hierarchy. This ensures: All Item Groups -> Two Wheelers Vehicle -> Model Name
 				model_name = str(item.model_name).strip() if (item.model_name and str(item.model_name).strip()) else None
 				item_group = _get_or_create_item_group_unified(model_name)
 				
 				# Get UOM from Load Dispatch Item's unit field, default to "Pcs" if not set
-				stock_uom = "Pcs"  # Default to "Pcs"
-				if hasattr(item, "unit") and item.unit:
-					stock_uom = str(item.unit).strip()
-				elif hasattr(item, "unit") and not item.unit:
-					# If unit field exists but is empty, use default "Pcs"
-					stock_uom = "Pcs"
+				stock_uom = str(item.unit).strip() if hasattr(item, "unit") and item.unit else "Pcs"
 				
 				# Create new Item
 				item_doc = frappe.get_doc({
@@ -867,9 +770,7 @@ class LoadDispatch(Document):
 					elif hasattr(item_doc, "supplier"):
 						item_doc.supplier = rkg_settings.default_supplier
 				
-				# Populate HSN Code from RKG Settings (uses default_hsn_code on the single doctype)
-				if rkg_settings and rkg_settings.get("default_hsn_code"):
-					# Try common field names for HSN Code
+				# Populate HSN Code from RKG Settings (uses default_hsn_code on the single doctype). Try common field names for HSN Code
 					if hasattr(item_doc, "gst_hsn_code"):
 						item_doc.gst_hsn_code = rkg_settings.default_hsn_code
 					elif hasattr(item_doc, "custom_gst_hsn_code"):
@@ -901,8 +802,7 @@ class LoadDispatch(Document):
 					f"Error creating Item {item_code}: {str(e)}\n{error_details}", 
 					"Item Creation Error"
 				)
-				# Track failed Items instead of throwing immediately
-				# We'll throw at the end if any Items failed
+				# Track failed Items instead of throwing immediately. We'll throw at the end if any Items failed
 				failed_items.append({
 					"item_code": item_code,
 					"error": str(e),
@@ -951,11 +851,7 @@ class LoadDispatch(Document):
 				failed_list += f"\n... and {len(failed_items) - 20} more"
 			
 			frappe.throw(
-				_("Failed to create {0} Item(s). Please check error logs for details:\n\n{1}\n\n"
-				  "Common causes:\n"
-				  "• Missing Item Group (ensure 'Two Wheelers Vehicle' Item Group exists)\n"
-				  "• Validation errors in Item creation\n"
-				  "• Database constraints").format(
+				_("Failed to create {0} Item(s). Please check error logs for details:\n\n{1}\n\nCommon causes:\n• Missing Item Group (ensure 'Two Wheelers Vehicle' Item Group exists)\n• Validation errors in Item creation\n• Database constraints").format(
 					len(failed_items),
 					failed_list
 				),
@@ -1019,11 +915,8 @@ def preserve_uom_from_load_dispatch(doc, doctype_name):
 		return
 	
 	# Check if document was created from Load Dispatch
-	load_dispatch_name = None
-	if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch:
-		load_dispatch_name = doc.custom_load_dispatch
-	elif frappe.db.has_column(doctype_name, "custom_load_dispatch"):
-		load_dispatch_name = frappe.db.get_value(doctype_name, doc.name, "custom_load_dispatch")
+	load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
+		else (frappe.db.get_value(doctype_name, doc.name, "custom_load_dispatch") if frappe.db.has_column(doctype_name, "custom_load_dispatch") else None))
 	
 	if not load_dispatch_name:
 		return
@@ -1042,14 +935,14 @@ def preserve_uom_from_load_dispatch(doc, doctype_name):
 				item_uom_map[ld_item.item_code] = str(ld_item.unit).strip()
 	
 	# Update document Items with UOM from Load Dispatch
-		if item_uom_map:
-			for doc_item in doc.items:
-				if doc_item.item_code and doc_item.item_code in item_uom_map:
-					uom_value = item_uom_map[doc_item.item_code]
-					if hasattr(doc_item, "uom") and doc_item.uom != uom_value:
-						doc_item.uom = uom_value
-					if hasattr(doc_item, "stock_uom") and doc_item.stock_uom != uom_value:
-						doc_item.stock_uom = uom_value
+	if item_uom_map:
+		for doc_item in doc.items:
+			if doc_item.item_code and doc_item.item_code in item_uom_map:
+				uom_value = item_uom_map[doc_item.item_code]
+				if hasattr(doc_item, "uom") and doc_item.uom != uom_value:
+					doc_item.uom = uom_value
+				if hasattr(doc_item, "stock_uom") and doc_item.stock_uom != uom_value:
+					doc_item.stock_uom = uom_value
 	#---------------------------------------------------------
 
 def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
@@ -1061,10 +954,7 @@ def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
 		return
 	
 	# Get unique purchase receipts from items
-	purchase_receipts = set()
-	for item in doc.items:
-		if hasattr(item, "purchase_receipt") and item.purchase_receipt:
-			purchase_receipts.add(item.purchase_receipt)
+	purchase_receipts = {item.purchase_receipt for item in doc.items if hasattr(item, "purchase_receipt") and item.purchase_receipt}
 	
 	if not purchase_receipts:
 		return
@@ -1097,39 +987,21 @@ def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
 				key = (pr_name, pi_item.item_code, pi_item.idx)
 				if key in receipt_item_map:
 					serial_no_value = receipt_item_map[key]
-					if serial_no_value:
-						# Set use_serial_batch_fields if not already set
-						if hasattr(pi_item, "use_serial_batch_fields") and not pi_item.use_serial_batch_fields:
-							pi_item.use_serial_batch_fields = 1
-						# Set serial_no
-						if hasattr(pi_item, "serial_no"):
-							pi_item.serial_no = serial_no_value
 				else:
 					# Fallback: match by purchase_receipt and item_code only (first match)
-					for (pr_key, item_code, idx), serial_no_value in receipt_item_map.items():
-						if pr_key == pr_name and item_code == pi_item.item_code:
-							if serial_no_value:
-								# Set use_serial_batch_fields if not already set
-								if hasattr(pi_item, "use_serial_batch_fields") and not pi_item.use_serial_batch_fields:
-									pi_item.use_serial_batch_fields = 1
-								# Set serial_no
-								if hasattr(pi_item, "serial_no"):
-									pi_item.serial_no = serial_no_value
-							break
+					serial_no_value = next((v for (pr_key, item_code, idx), v in receipt_item_map.items() if pr_key == pr_name and item_code == pi_item.item_code), None)
+				
+				if serial_no_value:
+					if hasattr(pi_item, "use_serial_batch_fields") and not pi_item.use_serial_batch_fields:
+						pi_item.use_serial_batch_fields = 1
+					if hasattr(pi_item, "serial_no"):
+						pi_item.serial_no = serial_no_value
 	
-	# Only set update_stock to 1 if the Purchase Invoice is NOT created from a Purchase Receipt
-	# If it's created from PR, stock was already updated and we shouldn't update again
-	# This prevents the validation error: "Stock cannot be updated against Purchase Receipt"
-	has_purchase_receipt = False
-	if doc.items:
-		for item in doc.items:
-			if hasattr(item, "purchase_receipt") and item.purchase_receipt:
-				has_purchase_receipt = True
-				break
+	# Only set update_stock to 1 if the Purchase Invoice is NOT created from a Purchase Receipt. If it's created from PR, stock was already updated and we shouldn't update again. This prevents the validation error: "Stock cannot be updated against Purchase Receipt"
+	has_purchase_receipt = any(hasattr(item, "purchase_receipt") and item.purchase_receipt for item in (doc.items or []))
 	
 	if not has_purchase_receipt and hasattr(doc, "update_stock") and not doc.update_stock:
-		# Set update_stock to 1 only if not created from Purchase Receipt
-		# This ensures serial_no field is visible when creating directly from Load Dispatch
+		# Set update_stock to 1 only if not created from Purchase Receipt. This ensures serial_no field is visible when creating directly from Load Dispatch
 		doc.update_stock = 1
 	#---------------------------------------------------------
 
@@ -1140,11 +1012,8 @@ def set_purchase_receipt_serial_batch_fields_readonly(doc, method=None):
 	for Purchase Receipts created from Load Dispatch.
 	"""
 	# Check if this Purchase Receipt was created from Load Dispatch
-	load_dispatch_name = None
-	if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch:
-		load_dispatch_name = doc.custom_load_dispatch
-	elif frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
-		load_dispatch_name = frappe.db.get_value("Purchase Receipt", doc.name, "custom_load_dispatch")
+	load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
+		else (frappe.db.get_value("Purchase Receipt", doc.name, "custom_load_dispatch") if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch") else None))
 	
 	# Only apply if created from Load Dispatch
 	if load_dispatch_name and doc.items:
@@ -1224,9 +1093,7 @@ def _create_purchase_document_unified(source_name, doctype, target_doc=None, war
 		if hasattr(target, "use_serial_batch_fields"):
 			target.use_serial_batch_fields = 1
 
-		# Pricing: when creating Purchase Receipt / Purchase Invoice from Load Dispatch,
-		# use Load Dispatch Item's Price/Unit (`price_unit`) instead of `rate`.
-		# Some sites may have a custom `price_unit` field on the target item row; if so, populate it too.
+		# Pricing: when creating Purchase Receipt / Purchase Invoice from Load Dispatch, use Load Dispatch Item's Price/Unit (`price_unit`) instead of `rate`. Some sites may have a custom `price_unit` field on the target item row; if so, populate it too.
 		try:
 			price_unit = flt(getattr(source, "price_unit", 0) or 0)
 		except Exception:
@@ -1245,10 +1112,6 @@ def _create_purchase_document_unified(source_name, doctype, target_doc=None, war
 				target.serial_no = fn
 			if hasattr(target, "__dict__"):
 				target.__dict__["serial_no"] = fn
-			try:
-				setattr(target, "serial_no", fn)
-			except:
-				pass
 		
 		uom = (hasattr(source, "unit") and source.unit and str(source.unit).strip()) or \
 		      (target.item_code and frappe.db.get_value("Item", target.item_code, "stock_uom")) or "Pcs"
@@ -1314,13 +1177,8 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 	"""Update Load Dispatch totals (total_received_quantity and total_billed_quantity) when Purchase Receipt/Invoice is submitted or cancelled."""
 
 	# Get custom_load_dispatch field value from the document
-	load_dispatch_name = None
-	
-	# Try to get custom_load_dispatch from the document
-	if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch:
-		load_dispatch_name = doc.custom_load_dispatch
-	elif frappe.db.has_column(doc.doctype, "custom_load_dispatch"):
-		load_dispatch_name = frappe.db.get_value(doc.doctype, doc.name, "custom_load_dispatch")
+	load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
+		else (frappe.db.get_value(doc.doctype, doc.name, "custom_load_dispatch") if frappe.db.has_column(doc.doctype, "custom_load_dispatch") else None))
 
 	if not load_dispatch_name:
 		return
@@ -1338,8 +1196,7 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		if not frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
 			return
 		
-		# Find all submitted Purchase Receipts (docstatus=1) with this Load Dispatch
-		# This automatically excludes cancelled documents (docstatus=2)
+		# Find all submitted Purchase Receipts (docstatus=1) with this Load Dispatch. This automatically excludes cancelled documents (docstatus=2)
 		pr_list = frappe.get_all(
 			"Purchase Receipt",
 			filters={
@@ -1352,16 +1209,8 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		# Sum total_qty from all submitted Purchase Receipts
 		for pr in pr_list:
 			pr_qty = flt(pr.get("total_qty")) or 0
-			
-			if pr_qty == 0:
-				pr_doc = frappe.get_doc("Purchase Receipt", pr.name)
-				if hasattr(pr_doc, "items") and pr_doc.items:
-					pr_qty = sum(
-						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
-						for item in pr_doc.items
-					)
-			
-			# From PR we only update RECEIVED quantity
+			if pr_qty == 0 and hasattr((pr_doc := frappe.get_doc("Purchase Receipt", pr.name)), "items") and pr_doc.items:
+				pr_qty = sum(flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0) for item in pr_doc.items)
 			total_received_qty += pr_qty
 
 	# Case 2: Purchase Invoice
@@ -1381,27 +1230,13 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		
 		for pr in pr_list:
 			pr_qty = flt(pr.get("total_qty")) or 0
-			
-			if pr_qty == 0:
-				pr_doc = frappe.get_doc("Purchase Receipt", pr.name)
-				if hasattr(pr_doc, "items") and pr_doc.items:
-					pr_qty = sum(
-						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
-						for item in pr_doc.items
-					)
-			
+			if pr_qty == 0 and hasattr((pr_doc := frappe.get_doc("Purchase Receipt", pr.name)), "items") and pr_doc.items:
+				pr_qty = sum(flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0) for item in pr_doc.items)
 			total_received_qty += pr_qty
 		
-		# Check if this Purchase Invoice was created from a Purchase Receipt
-		# by checking if any items have purchase_receipt field set
-		has_purchase_receipt_link = False
-		linked_purchase_receipts = set()
-		
-		if hasattr(doc, "items") and doc.items:
-			for item in doc.items:
-				if hasattr(item, "purchase_receipt") and item.purchase_receipt:
-					has_purchase_receipt_link = True
-					linked_purchase_receipts.add(item.purchase_receipt)
+		# Check if this Purchase Invoice was created from a Purchase Receipt by checking if any items have purchase_receipt field set
+		linked_purchase_receipts = {item.purchase_receipt for item in (doc.items or []) if hasattr(item, "purchase_receipt") and item.purchase_receipt}
+		has_purchase_receipt_link = bool(linked_purchase_receipts)
 		
 		# Calculate total_billed_qty from ALL Purchase Invoices linked to this Load Dispatch
 		pi_list = frappe.get_all(
@@ -1415,19 +1250,11 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		
 		for pi in pi_list:
 			pi_qty = flt(pi.get("total_qty")) or 0
-			
-			if pi_qty == 0:
-				pi_doc = frappe.get_doc("Purchase Invoice", pi.name)
-				if hasattr(pi_doc, "items") and pi_doc.items:
-					pi_qty = sum(
-						flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0)
-						for item in pi_doc.items
-					)
-			
+			if pi_qty == 0 and hasattr((pi_doc := frappe.get_doc("Purchase Invoice", pi.name)), "items") and pi_doc.items:
+				pi_qty = sum(flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0) for item in pi_doc.items)
 			total_billed_qty += pi_qty
 		
-		# If Purchase Invoice was created from Purchase Receipt(s) that came from Load Dispatch
-		# Both total_received_qty and total_billed_qty should show the same value
+		# If Purchase Invoice was created from Purchase Receipt(s) that came from Load Dispatch, both total_received_qty and total_billed_qty should show the same value
 		if has_purchase_receipt_link and linked_purchase_receipts:
 			# Check if any of the linked Purchase Receipts are linked to this Load Dispatch
 			pr_from_ld = []
@@ -1442,16 +1269,13 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 			
 			# If Purchase Invoice is created from Purchase Receipt(s) that came from Load Dispatch
 			if pr_from_ld:
-				# When Invoice is created from Receipt, both should show the same value
-				# Use the Purchase Invoice total_billed_qty for both totals
+				# When Invoice is created from Receipt, both should show the same value. Use the Purchase Invoice total_billed_qty for both totals
 				total_received_qty = total_billed_qty
 
 	# Get total_dispatch_quantity to determine status
 	total_dispatch_qty = frappe.db.get_value("Load Dispatch", load_dispatch_name, "total_dispatch_quantity") or 0
 	
-	# Determine status based on received quantity
-	# If total_received_quantity >= total_dispatch_quantity: status = 'Received'
-	# Otherwise: status = 'In-Transit'
+	# Determine status based on received quantity. If total_received_quantity >= total_dispatch_quantity: status = 'Received'. Otherwise: status = 'In-Transit'
 	if flt(total_dispatch_qty) > 0 and flt(total_received_qty) >= flt(total_dispatch_qty):
 		new_status = "Received"
 	else:
@@ -1552,8 +1376,7 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 		else:
 			frappe.throw(_("Unsupported file format. Please upload CSV or Excel file."))
 		
-		# Normalize column names: create a mapping from various Excel column name formats to standard field names
-		# This handles case-insensitive matching and common variations
+		# Normalize column names: create a mapping from various Excel column name formats to standard field names. This handles case-insensitive matching and common variations
 		def normalize_column_name(col_name):
 			"""Normalize column name to handle case-insensitive matching and variations."""
 			if not col_name:
@@ -1657,14 +1480,12 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			except:
 				# If getdate fails, try manual parsing
 				try:
-					# Try MM/DD/YYYY or DD/MM/YYYY format
+					# Try MM/DD/YYYY or DD/MM/YYYY format. Match patterns like 12/11/2025, 12-11-2025, etc.
 					import re
-					# Match patterns like 12/11/2025, 12-11-2025, etc.
 					match = re.match(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', date_str)
 					if match:
 						month, day, year = match.groups()
-						# Assume MM/DD/YYYY format (US format)
-						# If day > 12, it's likely DD/MM/YYYY
+						# Assume MM/DD/YYYY format (US format). If day > 12, it's likely DD/MM/YYYY
 						if int(day) > 12:
 							day, month = month, day  # Swap for DD/MM/YYYY
 						return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
@@ -1683,6 +1504,8 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 		
 		# Process each row: Check if Item exists, create if not, then set item_code
 		processed_rows = []
+		load_ref_nos = set()  # Track unique Load Ref Nos
+		
 		for idx, row in enumerate(rows, start=1):
 			# Normalize the row data: map Excel column names to field names
 			normalized_row = {}
@@ -1703,8 +1526,21 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 					# Keep original column name if no mapping found
 					normalized_row[excel_col] = value
 			
-			# Step 1: Get Model Serial No (this is the Item Code)
-			# Try multiple variations
+			# Extract Load Ref No from the row
+			hmsi_load_ref_no = (
+				normalized_row.get('hmsi_load_reference_no') or
+				row.get('hmsi_load_reference_no') or
+				row.get('HMSI Load Reference No') or
+				row.get('HMSI_LOAD_REFERENCE_NO') or
+				row.get('Load Reference No') or
+				row.get('LOAD_REFERENCE_NO')
+			)
+			
+			if hmsi_load_ref_no and str(hmsi_load_ref_no).strip():
+				load_ref_nos.add(str(hmsi_load_ref_no).strip())
+				normalized_row['hmsi_load_reference_no'] = str(hmsi_load_ref_no).strip()
+			
+			# Step 1: Get Model Serial No (this is the Item Code). Try multiple variations
 			model_serial_no = (
 				normalized_row.get('model_serial_no') or
 				row.get('model_serial_no') or 
@@ -1750,7 +1586,61 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 			
 			processed_rows.append(normalized_row)
 		
-		return processed_rows
+		# Check if multiple Load Ref Nos are present
+		load_ref_nos_list = sorted(list(load_ref_nos))
+		
+		# Validate that all Load Ref Nos exist as Load Plans
+		invalid_load_ref_nos = []
+		valid_load_ref_nos = []
+		for load_ref_no in load_ref_nos_list:
+			if frappe.db.exists("Load Plan", load_ref_no):
+				valid_load_ref_nos.append(load_ref_no)
+			else:
+				invalid_load_ref_nos.append(load_ref_no)
+		
+		# If there are invalid Load Ref Nos, include them in metadata for error handling. But don't throw error here - let the client-side handle it with better UX
+		
+		# If selected_load_reference_no is provided, validate and filter rows to only that Load Ref No
+		if selected_load_reference_no and selected_load_reference_no.strip():
+			selected_load_ref_no = str(selected_load_reference_no).strip()
+			
+			# Validate that selected Load Ref No exists as Load Plan
+			if not frappe.db.exists("Load Plan", selected_load_ref_no):
+				frappe.throw(
+					_("Load Reference Number '{0}' does not exist as a Load Plan. Please create the Load Plan first or select a valid Load Reference Number.").format(selected_load_ref_no),
+					title=_("Invalid Load Reference Number")
+				)
+			
+			filtered_rows = []
+			for row in processed_rows:
+				row_load_ref_no = row.get('hmsi_load_reference_no')
+				if row_load_ref_no and str(row_load_ref_no).strip() == selected_load_ref_no:
+					filtered_rows.append(row)
+				elif not row_load_ref_no:
+					# Include rows without Load Ref No if selected one is provided. This allows backward compatibility
+					filtered_rows.append(row)
+			
+			# Return filtered rows with metadata
+			return {
+				'rows': filtered_rows,
+				'has_multiple_load_ref_nos': len(load_ref_nos_list) > 1,
+				'load_ref_nos': load_ref_nos_list,
+				'valid_load_ref_nos': valid_load_ref_nos,
+				'invalid_load_ref_nos': invalid_load_ref_nos,
+				'selected_load_ref_no': selected_load_ref_no,
+				'filtered': True
+			}
+		
+		# Return all rows with metadata about Load Ref Nos
+		return {
+			'rows': processed_rows,
+			'has_multiple_load_ref_nos': len(load_ref_nos_list) > 1,
+			'load_ref_nos': load_ref_nos_list,
+			'valid_load_ref_nos': valid_load_ref_nos,
+			'invalid_load_ref_nos': invalid_load_ref_nos,
+			'selected_load_ref_no': None,
+			'filtered': False
+		}
 		
 	except Exception as e:
 		frappe.log_error(
@@ -1775,28 +1665,10 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 		model_serial_no = getattr(item_data, "model_serial_no", None)
 		
 		# Get print_name - try multiple ways to access it
-		# First try the parameter passed directly
-		# Then try from frappe.local (set in _create_single_item_from_dispatch_item)
-		if not print_name and hasattr(frappe.local, 'item_print_name_map'):
-			print_name = frappe.local.item_print_name_map.get(item_code)
-		
-		# Try from item_data object
 		if not print_name:
-			try:
-				print_name = getattr(item_data, "print_name", None)
-			except:
-				pass
-		
-		# Try using get() method if available
-		if not print_name and hasattr(item_data, "get") and callable(getattr(item_data, "get")):
-			try:
-				print_name = item_data.get("print_name")
-			except:
-				pass
-		
-		# Try accessing as dictionary
-		if not print_name and isinstance(item_data, dict):
-			print_name = item_data.get("print_name")
+			print_name = (getattr(frappe.local, 'item_print_name_map', {}).get(item_code) if hasattr(frappe.local, 'item_print_name_map') else None
+				or (getattr(item_data, "print_name", None) if hasattr(item_data, "print_name") else None)
+				or (item_data.get("print_name") if isinstance(item_data, dict) else None))
 		
 		# Always calculate print_name if not set or empty
 		if not print_name or not str(print_name).strip():
@@ -1863,11 +1735,8 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 					setattr(item_doc, field, value)
 	
 	# Ensure print_name is set (backup in case it wasn't in initial dict)
-	if print_name_value:
-		if hasattr(item_doc, "print_name"):
-			item_doc.print_name = print_name_value
-		if frappe.db.has_column("Item", "print_name"):
-			item_doc.set("print_name", print_name_value)
+	if print_name_value and hasattr(item_doc, "print_name"):
+		item_doc.print_name = print_name_value
 	
 	try:
 		item_doc.insert(ignore_permissions=True)
