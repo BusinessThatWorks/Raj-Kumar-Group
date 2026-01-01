@@ -29,6 +29,22 @@ class LoadPlanDashboard {
 		this.page = page;
 		this.wrapper = $(page.body);
 		this.charts = {};
+		// State management for plans
+		this.allPlans = [];
+		this.filteredPlans = [];
+		this.planCurrentPage = 1;
+		this.planItemsPerPage = 50;
+		this.planViewMode = "grid"; // "table" or "grid"
+		this.planSortField = "dispatch_plan_date";
+		this.planSortOrder = "desc";
+		// State management for dispatches
+		this.allDispatches = [];
+		this.filteredDispatches = [];
+		this.dispatchCurrentPage = 1;
+		this.dispatchItemsPerPage = 50;
+		this.dispatchViewMode = "grid"; // "table" or "grid"
+		this.dispatchSortField = "modified";
+		this.dispatchSortOrder = "desc";
 		this.init();
 	}
 
@@ -107,9 +123,38 @@ class LoadPlanDashboard {
 
 				<div class="plans-section">
 					<div class="section-header">
-						<span><i class="fa fa-list"></i> Load Plans</span>
+						<div style="flex: 1;">
+							<span><i class="fa fa-list"></i> Load Plans</span>
+							<span class="plans-count-badge" id="plans-count">0</span>
+						</div>
+						<div class="plans-controls">
+							<div class="search-box">
+								<input type="text" class="form-control plan-search" placeholder="Search plans..." />
+								<i class="fa fa-search"></i>
+							</div>
+							<div class="view-toggle">
+								<button class="btn btn-sm btn-default view-btn active" data-view="grid" data-type="plan" title="Grid View">
+									<i class="fa fa-th"></i>
+								</button>
+								<button class="btn btn-sm btn-default view-btn" data-view="table" data-type="plan" title="Table View">
+									<i class="fa fa-table"></i>
+								</button>
+							</div>
+							<select class="form-control plan-sort-select" style="width: 180px;">
+								<option value="dispatch_plan_date-desc">Dispatch Date (Newest)</option>
+								<option value="dispatch_plan_date-asc">Dispatch Date (Oldest)</option>
+								<option value="payment_plan_date-desc">Payment Date (Newest)</option>
+								<option value="total_quantity-desc">Quantity (High to Low)</option>
+								<option value="total_quantity-asc">Quantity (Low to High)</option>
+								<option value="progress-desc">Progress (High to Low)</option>
+								<option value="progress-asc">Progress (Low to High)</option>
+								<option value="load_reference_no-asc">Reference No (A-Z)</option>
+								<option value="status-asc">Status (A-Z)</option>
+							</select>
+						</div>
 					</div>
 					<div id="plan-list"></div>
+					<div class="pagination-container" id="plan-pagination-container"></div>
 				</div>
 
 				<!-- Load Plan Details Section -->
@@ -151,9 +196,37 @@ class LoadPlanDashboard {
 
 					<div class="dispatches-section">
 						<div class="section-header">
-							<span><i class="fa fa-list"></i> Load Dispatch Progress</span>
+							<div style="flex: 1;">
+								<span><i class="fa fa-list"></i> Load Dispatch Progress</span>
+								<span class="dispatches-count-badge" id="dispatches-count">0</span>
+							</div>
+							<div class="dispatches-controls">
+								<div class="search-box">
+									<input type="text" class="form-control dispatch-search" placeholder="Search dispatches..." />
+									<i class="fa fa-search"></i>
+								</div>
+								<div class="view-toggle">
+									<button class="btn btn-sm btn-default view-btn active" data-view="grid" data-type="dispatch" title="Grid View">
+										<i class="fa fa-th"></i>
+									</button>
+									<button class="btn btn-sm btn-default view-btn" data-view="table" data-type="dispatch" title="Table View">
+										<i class="fa fa-table"></i>
+									</button>
+								</div>
+								<select class="form-control dispatch-sort-select" style="width: 180px;">
+									<option value="modified-desc">Modified (Newest)</option>
+									<option value="modified-asc">Modified (Oldest)</option>
+									<option value="total_dispatch_quantity-desc">Quantity (High to Low)</option>
+									<option value="total_dispatch_quantity-asc">Quantity (Low to High)</option>
+									<option value="receive_progress-desc">Receive Progress (High to Low)</option>
+									<option value="bill_progress-desc">Bill Progress (High to Low)</option>
+									<option value="dispatch_no-asc">Dispatch No (A-Z)</option>
+									<option value="status-asc">Status (A-Z)</option>
+								</select>
+							</div>
 						</div>
 						<div id="dispatch-list"></div>
+						<div class="pagination-container" id="dispatch-pagination-container"></div>
 					</div>
 				</div>
 			</div>
@@ -173,12 +246,54 @@ class LoadPlanDashboard {
 			this.wrapper.find(".filter-load-ref").val("");
 			this.wrapper.find(".filter-from-date").val("");
 			this.wrapper.find(".filter-to-date").val("");
+			this.wrapper.find(".plan-search").val("");
+			this.wrapper.find(".dispatch-search").val("");
 			this.refresh();
 		});
 
 		// Back to list button
 		this.wrapper.find(".btn-back-to-list").on("click", () => {
 			this.hide_load_plan_details();
+		});
+
+		// Search boxes
+		const self = this;
+		this.wrapper.find(".plan-search").on("input", function() {
+			self.filterAndRenderPlans();
+		});
+
+		this.wrapper.find(".dispatch-search").on("input", function() {
+			self.filterAndRenderDispatches();
+		});
+
+		// View toggle
+		this.wrapper.find(".view-btn").on("click", function() {
+			const viewMode = $(this).data("view");
+			const type = $(this).data("type");
+			self.wrapper.find(`.view-btn[data-type="${type}"]`).removeClass("active");
+			$(this).addClass("active");
+			if (type === "plan") {
+				self.planViewMode = viewMode;
+				self.filterAndRenderPlans();
+			} else {
+				self.dispatchViewMode = viewMode;
+				self.filterAndRenderDispatches();
+			}
+		});
+
+		// Sort selects
+		this.wrapper.find(".plan-sort-select").on("change", function() {
+			const value = $(this).val().split("-");
+			self.planSortField = value[0];
+			self.planSortOrder = value[1];
+			self.filterAndRenderPlans();
+		});
+
+		this.wrapper.find(".dispatch-sort-select").on("change", function() {
+			const value = $(this).val().split("-");
+			self.dispatchSortField = value[0];
+			self.dispatchSortOrder = value[1];
+			self.filterAndRenderDispatches();
 		});
 
 		this.current_tab = "load-plan";
@@ -192,10 +307,13 @@ class LoadPlanDashboard {
 		this.wrapper.find(".dashboard-content").hide();
 		this.load_filter_options(); // Reload filter options for the selected tab
 		
+		// Reset pagination when switching tabs
 		if (tab === "load-dispatch") {
+			this.dispatchCurrentPage = 1;
 			this.wrapper.find("#load-dispatch-content").show();
 			this.load_dispatch_data();
 		} else {
+			this.planCurrentPage = 1;
 			this.wrapper.find("#load-plan-content").show();
 			this.load_plan_data();
 		}
@@ -230,9 +348,12 @@ class LoadPlanDashboard {
 	}
 
 	refresh() {
+		// Reset pagination when refreshing
 		if (this.current_tab === "load-dispatch") {
+			this.dispatchCurrentPage = 1;
 			this.load_dispatch_data();
 		} else {
+			this.planCurrentPage = 1;
 			this.load_plan_data();
 		}
 	}
@@ -273,10 +394,12 @@ class LoadPlanDashboard {
 					
 					// Otherwise, show the list of plans
 					this.hide_load_plan_details();
-					this.render_plan_list(r.message.plans || []);
+					this.allPlans = r.message.plans || [];
+					this.filterAndRenderPlans();
 				} else {
 					this.hide_load_plan_details();
-					this.render_plan_list([]);
+					this.allPlans = [];
+					this.filterAndRenderPlans();
 				}
 			},
 			error: (r) => {
@@ -306,7 +429,11 @@ class LoadPlanDashboard {
 			callback: (r) => {
 				if (r.message) {
 					this.render_dispatch_summary(r.message.summary || {});
-					this.render_dispatch_list(r.message.dispatches);
+					this.allDispatches = r.message.dispatches || [];
+					this.filterAndRenderDispatches();
+				} else {
+					this.allDispatches = [];
+					this.filterAndRenderDispatches();
 				}
 			},
 			error: () => {
@@ -390,32 +517,183 @@ class LoadPlanDashboard {
 		});
 	}
 
-	render_plan_list(plans) {
+	filterAndRenderPlans() {
+		const searchTerm = this.wrapper.find(".plan-search").val().toLowerCase().trim();
+		this.filteredPlans = this.allPlans.filter(plan => {
+			if (!searchTerm) return true;
+			const searchable = [
+				plan.load_reference_no || "",
+				plan.status || "",
+				plan.dispatch_plan_date || "",
+				plan.payment_plan_date || "",
+				plan.total_quantity?.toString() || "",
+				plan.load_dispatch_quantity?.toString() || "",
+				plan.remaining?.toString() || ""
+			].join(" ").toLowerCase();
+			return searchable.includes(searchTerm);
+		});
+
+		// Sort plans
+		this.filteredPlans.sort((a, b) => {
+			let aVal = a[this.planSortField] || "";
+			let bVal = b[this.planSortField] || "";
+			
+			// Handle date fields
+			if (this.planSortField === "dispatch_plan_date" || this.planSortField === "payment_plan_date") {
+				aVal = aVal ? new Date(aVal) : new Date(0);
+				bVal = bVal ? new Date(bVal) : new Date(0);
+			} else if (this.planSortField === "total_quantity" || this.planSortField === "progress" || 
+					   this.planSortField === "load_dispatch_quantity" || this.planSortField === "remaining") {
+				aVal = parseFloat(aVal) || 0;
+				bVal = parseFloat(bVal) || 0;
+			} else {
+				aVal = String(aVal).toLowerCase();
+				bVal = String(bVal).toLowerCase();
+			}
+			
+			if (this.planSortOrder === "asc") {
+				return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+			} else {
+				return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+			}
+		});
+
+		this.wrapper.find("#plans-count").text(this.filteredPlans.length);
+
+		const totalPages = Math.ceil(this.filteredPlans.length / this.planItemsPerPage);
+		const startIndex = (this.planCurrentPage - 1) * this.planItemsPerPage;
+		const endIndex = startIndex + this.planItemsPerPage;
+		const paginatedPlans = this.filteredPlans.slice(startIndex, endIndex);
+
 		const container = this.wrapper.find("#plan-list");
-		if (!container.length) {
-			console.error("Plan list container not found!");
-			return;
-		}
-		
 		container.empty();
 
-		if (!plans || plans.length === 0) {
-			container.html(no_data("No Load Plans found for filters."));
+		if (paginatedPlans.length === 0) {
+			container.html(no_data("No Load Plans found."));
+			this.wrapper.find("#plan-pagination-container").empty();
 			return;
 		}
 
-		console.log("Rendering plans:", plans.length, plans);
-		const cards = plans.slice(0, 80).map((p) => this.build_plan_card(p)).join("");
-		container.html(cards);
-		
-		// Add click handlers
+		if (this.planViewMode === "table") {
+			container.html(this.build_plan_table_view(paginatedPlans));
+		} else {
+			const cards = paginatedPlans.map((p) => this.build_plan_card(p)).join("");
+			container.html(`<div class="plans-grid">${cards}</div>`);
+		}
+
 		const self = this;
-		container.find(".plan-card").on("click", (e) => {
-			const card = $(e.currentTarget);
-			const load_reference_no = card.data("name");
+		container.find(".plan-card, .plan-row").on("click", (e) => {
+			const element = $(e.currentTarget);
+			const load_reference_no = element.data("name");
 			if (load_reference_no) {
 				self.show_load_plan_details(load_reference_no);
 			}
+		});
+
+		this.render_plan_pagination(totalPages);
+	}
+
+	build_plan_table_view(plans) {
+		const rows = plans.map(plan => {
+			const progress = plan.progress || 0;
+			const statusClass = (plan.status || "").toLowerCase().replace(/\s+/g, "-");
+			const overdueBadge = plan.is_overdue ? `<span class="badge badge-danger">Overdue</span>` : "";
+			
+			return `
+				<tr class="plan-row ${statusClass}" data-name="${plan.load_reference_no || ''}" style="cursor: pointer;">
+					<td><strong>${plan.load_reference_no || "-"}</strong></td>
+					<td><span class="status-badge ${statusClass}">${plan.status || "Draft"} ${overdueBadge}</span></td>
+					<td>${plan.dispatch_plan_date || "-"}</td>
+					<td>${plan.payment_plan_date || "-"}</td>
+					<td>${plan.total_quantity || 0}</td>
+					<td>${plan.load_dispatch_quantity || 0}</td>
+					<td>${plan.remaining || 0}</td>
+					<td>
+						<div class="progress-bar">
+							<div class="progress-fill" style="width:${progress}%;"></div>
+						</div>
+						<div class="progress-label-small">${progress}%</div>
+					</td>
+				</tr>
+			`;
+		}).join("");
+
+		return `
+			<div class="table-container">
+				<table class="table table-bordered plans-table">
+					<thead>
+						<tr>
+							<th>Load Reference No</th>
+							<th>Status</th>
+							<th>Dispatch Plan Date</th>
+							<th>Payment Plan Date</th>
+							<th>Total Qty</th>
+							<th>Dispatched</th>
+							<th>Balance</th>
+							<th>Progress</th>
+						</tr>
+					</thead>
+					<tbody>
+						${rows}
+					</tbody>
+				</table>
+			</div>
+		`;
+	}
+
+	render_plan_pagination(totalPages) {
+		if (totalPages <= 1) {
+			this.wrapper.find("#plan-pagination-container").empty();
+			return;
+		}
+
+		const container = this.wrapper.find("#plan-pagination-container");
+		let paginationHTML = `<div class="pagination-info">Showing ${((this.planCurrentPage - 1) * this.planItemsPerPage) + 1} to ${Math.min(this.planCurrentPage * this.planItemsPerPage, this.filteredPlans.length)} of ${this.filteredPlans.length} plans</div>`;
+		paginationHTML += `<div class="pagination-buttons">`;
+
+		if (this.planCurrentPage > 1) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${this.planCurrentPage - 1}" data-type="plan"><i class="fa fa-chevron-left"></i> Previous</button>`;
+		}
+
+		const maxPages = 7;
+		let startPage = Math.max(1, this.planCurrentPage - Math.floor(maxPages / 2));
+		let endPage = Math.min(totalPages, startPage + maxPages - 1);
+		
+		if (endPage - startPage < maxPages - 1) {
+			startPage = Math.max(1, endPage - maxPages + 1);
+		}
+
+		if (startPage > 1) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="1" data-type="plan">1</button>`;
+			if (startPage > 2) {
+				paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+			}
+		}
+
+		for (let i = startPage; i <= endPage; i++) {
+			const activeClass = i === this.planCurrentPage ? "active" : "";
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn ${activeClass}" data-page="${i}" data-type="plan">${i}</button>`;
+		}
+
+		if (endPage < totalPages) {
+			if (endPage < totalPages - 1) {
+				paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+			}
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${totalPages}" data-type="plan">${totalPages}</button>`;
+		}
+
+		if (this.planCurrentPage < totalPages) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${this.planCurrentPage + 1}" data-type="plan">Next <i class="fa fa-chevron-right"></i></button>`;
+		}
+
+		paginationHTML += `</div>`;
+		container.html(paginationHTML);
+
+		const self = this;
+		container.find(".page-btn[data-type='plan']").on("click", function() {
+			self.planCurrentPage = parseInt($(this).data("page"));
+			self.filterAndRenderPlans();
+			self.wrapper.find(".plans-section")[0].scrollIntoView({ behavior: "smooth", block: "start" });
 		});
 	}
 
@@ -530,26 +808,196 @@ class LoadPlanDashboard {
 		});
 	}
 
-	render_dispatch_list(dispatches) {
+	filterAndRenderDispatches() {
+		const searchTerm = this.wrapper.find(".dispatch-search").val().toLowerCase().trim();
+		this.filteredDispatches = this.allDispatches.filter(dispatch => {
+			if (!searchTerm) return true;
+			const searchable = [
+				dispatch.dispatch_no || "",
+				dispatch.name || "",
+				dispatch.load_reference_no || "",
+				dispatch.invoice_no || "",
+				dispatch.status || "",
+				dispatch.total_dispatch_quantity?.toString() || "",
+				dispatch.total_received_quantity?.toString() || "",
+				dispatch.total_billed_quantity?.toString() || ""
+			].join(" ").toLowerCase();
+			return searchable.includes(searchTerm);
+		});
+
+		// Sort dispatches
+		this.filteredDispatches.sort((a, b) => {
+			let aVal = a[this.dispatchSortField] || "";
+			let bVal = b[this.dispatchSortField] || "";
+			
+			if (this.dispatchSortField === "modified") {
+				aVal = aVal ? new Date(aVal) : new Date(0);
+				bVal = bVal ? new Date(bVal) : new Date(0);
+			} else if (this.dispatchSortField === "total_dispatch_quantity" || 
+					   this.dispatchSortField === "total_received_quantity" ||
+					   this.dispatchSortField === "total_billed_quantity" ||
+					   this.dispatchSortField === "receive_progress" ||
+					   this.dispatchSortField === "bill_progress") {
+				aVal = parseFloat(aVal) || 0;
+				bVal = parseFloat(bVal) || 0;
+			} else {
+				aVal = String(aVal).toLowerCase();
+				bVal = String(bVal).toLowerCase();
+			}
+			
+			if (this.dispatchSortOrder === "asc") {
+				return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+			} else {
+				return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+			}
+		});
+
+		this.wrapper.find("#dispatches-count").text(this.filteredDispatches.length);
+
+		const totalPages = Math.ceil(this.filteredDispatches.length / this.dispatchItemsPerPage);
+		const startIndex = (this.dispatchCurrentPage - 1) * this.dispatchItemsPerPage;
+		const endIndex = startIndex + this.dispatchItemsPerPage;
+		const paginatedDispatches = this.filteredDispatches.slice(startIndex, endIndex);
+
 		const container = this.wrapper.find("#dispatch-list");
 		container.empty();
 
-		if (!dispatches || dispatches.length === 0) {
-			container.html(no_data("No Load Dispatches found for filters."));
+		if (paginatedDispatches.length === 0) {
+			container.html(no_data("No Load Dispatches found."));
+			this.wrapper.find("#dispatch-pagination-container").empty();
 			return;
 		}
 
-		const cards = dispatches.slice(0, 80).map((d) => this.build_dispatch_card(d)).join("");
-		container.html(cards);
+		if (this.dispatchViewMode === "table") {
+			container.html(this.build_dispatch_table_view(paginatedDispatches));
+		} else {
+			const cards = paginatedDispatches.map((d) => this.build_dispatch_card(d)).join("");
+			container.html(`<div class="dispatches-grid">${cards}</div>`);
+		}
 		
 		// Add click handlers
-		container.find(".plan-card").on("click", (e) => {
-			const card = $(e.currentTarget);
-			const doctype = card.data("doctype");
-			const name = card.data("name");
+		const self = this;
+		container.find(".plan-card, .dispatch-row").on("click", (e) => {
+			const element = $(e.currentTarget);
+			const doctype = element.data("doctype");
+			const name = element.data("name");
 			if (name) {
 				frappe.set_route("Form", doctype, name);
 			}
+		});
+
+		this.render_dispatch_pagination(totalPages);
+	}
+
+	build_dispatch_table_view(dispatches) {
+		const rows = dispatches.map(dispatch => {
+			const receive_progress = dispatch.receive_progress || 0;
+			const bill_progress = dispatch.bill_progress || 0;
+			const statusClass = (dispatch.status || "").toLowerCase().replace(/\s+/g, "-");
+			
+			return `
+				<tr class="dispatch-row ${statusClass}" data-doctype="Load Dispatch" data-name="${dispatch.name || ''}" style="cursor: pointer;">
+					<td><strong>${dispatch.dispatch_no || dispatch.name || "-"}</strong></td>
+					<td><span class="status-badge ${statusClass}">${dispatch.status || "In-Transit"}</span></td>
+					<td>${dispatch.load_reference_no || "-"}</td>
+					<td>${dispatch.invoice_no || "-"}</td>
+					<td>${dispatch.total_dispatch_quantity || 0}</td>
+					<td>${dispatch.total_received_quantity || 0}</td>
+					<td>${dispatch.total_billed_quantity || 0}</td>
+					<td>
+						<div class="progress-item">
+							<div class="progress-label-small">Receive: ${receive_progress}%</div>
+							<div class="progress-bar">
+								<div class="progress-fill" style="width:${receive_progress}%; background: #00d4aa;"></div>
+							</div>
+						</div>
+						<div class="progress-item">
+							<div class="progress-label-small">Bill: ${bill_progress}%</div>
+							<div class="progress-bar">
+								<div class="progress-fill" style="width:${bill_progress}%; background: #ffa726;"></div>
+							</div>
+						</div>
+					</td>
+				</tr>
+			`;
+		}).join("");
+
+		return `
+			<div class="table-container">
+				<table class="table table-bordered dispatches-table">
+					<thead>
+						<tr>
+							<th>Dispatch No</th>
+							<th>Status</th>
+							<th>Load Reference No</th>
+							<th>Invoice No</th>
+							<th>Dispatched</th>
+							<th>Received</th>
+							<th>Billed</th>
+							<th>Progress</th>
+						</tr>
+					</thead>
+					<tbody>
+						${rows}
+					</tbody>
+				</table>
+			</div>
+		`;
+	}
+
+	render_dispatch_pagination(totalPages) {
+		if (totalPages <= 1) {
+			this.wrapper.find("#dispatch-pagination-container").empty();
+			return;
+		}
+
+		const container = this.wrapper.find("#dispatch-pagination-container");
+		let paginationHTML = `<div class="pagination-info">Showing ${((this.dispatchCurrentPage - 1) * this.dispatchItemsPerPage) + 1} to ${Math.min(this.dispatchCurrentPage * this.dispatchItemsPerPage, this.filteredDispatches.length)} of ${this.filteredDispatches.length} dispatches</div>`;
+		paginationHTML += `<div class="pagination-buttons">`;
+
+		if (this.dispatchCurrentPage > 1) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${this.dispatchCurrentPage - 1}" data-type="dispatch"><i class="fa fa-chevron-left"></i> Previous</button>`;
+		}
+
+		const maxPages = 7;
+		let startPage = Math.max(1, this.dispatchCurrentPage - Math.floor(maxPages / 2));
+		let endPage = Math.min(totalPages, startPage + maxPages - 1);
+		
+		if (endPage - startPage < maxPages - 1) {
+			startPage = Math.max(1, endPage - maxPages + 1);
+		}
+
+		if (startPage > 1) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="1" data-type="dispatch">1</button>`;
+			if (startPage > 2) {
+				paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+			}
+		}
+
+		for (let i = startPage; i <= endPage; i++) {
+			const activeClass = i === this.dispatchCurrentPage ? "active" : "";
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn ${activeClass}" data-page="${i}" data-type="dispatch">${i}</button>`;
+		}
+
+		if (endPage < totalPages) {
+			if (endPage < totalPages - 1) {
+				paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+			}
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${totalPages}" data-type="dispatch">${totalPages}</button>`;
+		}
+
+		if (this.dispatchCurrentPage < totalPages) {
+			paginationHTML += `<button class="btn btn-sm btn-default page-btn" data-page="${this.dispatchCurrentPage + 1}" data-type="dispatch">Next <i class="fa fa-chevron-right"></i></button>`;
+		}
+
+		paginationHTML += `</div>`;
+		container.html(paginationHTML);
+
+		const self = this;
+		container.find(".page-btn[data-type='dispatch']").on("click", function() {
+			self.dispatchCurrentPage = parseInt($(this).data("page"));
+			self.filterAndRenderDispatches();
+			self.wrapper.find(".dispatches-section")[0].scrollIntoView({ behavior: "smooth", block: "start" });
 		});
 	}
 
@@ -736,9 +1184,39 @@ function add_styles() {
 		.chart-container { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
 		.chart-title { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
 
-		.plans-section { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
-		.section-header { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-		#plan-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+		.plans-section, .dispatches-section { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
+		.section-header { font-weight: 600; color: var(--heading-color); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+		.plans-count-badge, .dispatches-count-badge { background: var(--primary); color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+		.plans-controls, .dispatches-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+		.search-box { position: relative; width: 250px; }
+		.search-box input { padding-right: 30px; }
+		.search-box i { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+		.view-toggle { display: flex; gap: 4px; }
+		.view-btn { padding: 6px 12px; }
+		.view-btn.active { background: var(--primary); color: white; }
+		.plan-sort-select, .dispatch-sort-select { height: 32px; font-size: 12px; }
+		.plans-grid, .dispatches-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+		.table-container { overflow-x: auto; margin-top: 12px; }
+		.plans-table, .dispatches-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+		.plans-table thead, .dispatches-table thead { background: var(--bg-light-gray); position: sticky; top: 0; z-index: 10; }
+		.plans-table th, .dispatches-table th { padding: 12px 10px; text-align: left; font-weight: 600; color: var(--heading-color); border: 1px solid var(--border-color); white-space: nowrap; }
+		.plans-table td, .dispatches-table td { padding: 10px; border: 1px solid var(--border-color); }
+		.plans-table tbody tr, .dispatches-table tbody tr { background: var(--control-bg); }
+		.plans-table tbody tr:hover, .dispatches-table tbody tr:hover { background: var(--bg-color); cursor: pointer; }
+		.plans-table tbody tr:nth-child(even), .dispatches-table tbody tr:nth-child(even) { background: var(--card-bg); }
+		.plans-table tbody tr:nth-child(even):hover, .dispatches-table tbody tr:nth-child(even):hover { background: var(--bg-color); }
+		.plan-row, .dispatch-row { cursor: pointer; }
+		.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+		.status-badge.submitted { background: #e3e7ff; color: #2f49d0; }
+		.status-badge.in-transit, .status-badge["in-transit"] { background: #e0f3ff; color: #0b7ecb; }
+		.status-badge.partial-dispatched, .status-badge["partial-dispatched"] { background: #fff4e0; color: #f08a00; }
+		.status-badge.dispatched { background: #e0f7f2; color: #0b8c6b; }
+		.pagination-container { margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+		.pagination-info { color: var(--text-muted); font-size: 13px; }
+		.pagination-buttons { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+		.page-btn { padding: 6px 12px; min-width: 40px; }
+		.page-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+		.pagination-ellipsis { padding: 0 8px; color: var(--text-muted); }
 		.plan-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; background: var(--control-bg); box-shadow: 0 1px 4px rgba(0,0,0,0.04); margin: 10px; }
 		.plan-card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 		.plan-ref { font-weight: 700; color: var(--heading-color); }
