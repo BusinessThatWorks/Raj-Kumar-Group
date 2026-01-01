@@ -11,6 +11,18 @@ frappe.ui.form.on("Load Plan", {
 			child_table_rows: frm.doc.table_tezh ? frm.doc.table_tezh.length : 0
 		});
 		calculate_total_quantity(frm);
+		
+		// Add custom button to open Load Dispatch list filtered by current Load Plan
+		if (frm.doc.name && !frm.is_new()) {
+			frm.add_custom_button(__('Load Dispatches'), function() {
+				frappe.set_route('List', 'Load Dispatch', {
+					'load_reference_no': frm.doc.name
+				});
+			});
+			
+			// Display Load Dispatch IDs in dashboard
+			display_load_dispatch_ids(frm);
+		}
 	},
 
 	before_save(frm) {
@@ -388,4 +400,147 @@ function _populate_single_load_plan(frm, rows) {
 	// Clear file upload flag and restore mandatory fields after population
 	frm._from_file_upload = false;
 	_restore_mandatory_fields(frm);
+}
+
+// Display Load Dispatch IDs in the dashboard
+function display_load_dispatch_ids(frm) {
+	// Get Load Dispatch documents linked to this Load Plan
+	frappe.call({
+		method: 'frappe.client.get_list',
+		args: {
+			doctype: 'Load Dispatch',
+			filters: {
+				'load_reference_no': frm.doc.name
+			},
+			fields: ['name', 'dispatch_no', 'status', 'docstatus'],
+			order_by: 'creation desc',
+			limit_page_length: 100
+		},
+		callback: function(r) {
+			if (r.message && r.message.length > 0) {
+				// Try multiple ways to find the dashboard
+				let dashboard_wrapper = null;
+				
+				// Method 1: Try frm.dashboard.wrapper
+				if (frm.dashboard && frm.dashboard.wrapper) {
+					dashboard_wrapper = frm.dashboard.wrapper;
+				}
+				// Method 2: Try finding by class
+				else {
+					const dashboard_element = $('.form-dashboard, .dashboard-section, .dashboard-links').closest('.form-dashboard, .dashboard-section');
+					if (dashboard_element.length) {
+						dashboard_wrapper = dashboard_element;
+					}
+					// Method 3: Try finding in sidebar
+					else {
+						const sidebar_dashboard = $('.form-sidebar .dashboard-section, .form-sidebar .dashboard-links').closest('.form-sidebar, .dashboard-section');
+						if (sidebar_dashboard.length) {
+							dashboard_wrapper = sidebar_dashboard;
+						}
+					}
+				}
+				// Method 4: Try finding dashboard-links directly
+				if (!dashboard_wrapper || dashboard_wrapper.length === 0) {
+					const dashboard_links = $('.dashboard-links').parent();
+					if (dashboard_links.length) {
+						dashboard_wrapper = dashboard_links;
+					}
+				}
+				
+				// Remove existing Load Dispatch IDs display if any
+				$('.load-dispatch-ids-display').remove();
+				
+				// Create display element
+				const dispatch_count = r.message.length;
+				const dispatch_items_html = r.message.map(function(ld) {
+					const status_color = ld.docstatus === 1 ? '#28a745' : ld.docstatus === 2 ? '#dc3545' : '#6c757d';
+					const status_text = ld.docstatus === 1 ? 'Submitted' : ld.docstatus === 2 ? 'Cancelled' : 'Draft';
+					return '<a href="/app/load-dispatch/' + ld.name + '" ' +
+						'style="display: inline-block; padding: 4px 8px; background: #fff; border: 1px solid #d1d8dd; border-radius: 3px; text-decoration: none; color: #36414c; font-size: 12px;" ' +
+						'onmouseover="this.style.background=\'#e7f3ff\'; this.style.borderColor=\'#007bff\';" ' +
+						'onmouseout="this.style.background=\'#fff\'; this.style.borderColor=\'#d1d8dd\';">' +
+						ld.name +
+						'<span style="margin-left: 4px; color: ' + status_color + '; font-size: 10px;">(' + status_text + ')</span>' +
+						'</a>';
+				}).join('');
+				
+				const dispatch_ids_html = $(
+					'<div class="load-dispatch-ids-display" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; border: 1px solid #d1d8dd;">' +
+						'<div style="font-weight: 600; margin-bottom: 8px; color: #36414c; font-size: 13px;">' +
+						'<i class="fa fa-truck" style="margin-right: 5px;"></i>' + __('Load Dispatch Documents') + ' (' + dispatch_count + '):' +
+						'</div>' +
+						'<div style="display: flex; flex-wrap: wrap; gap: 8px;">' +
+						dispatch_items_html +
+						'</div>' +
+					'</div>'
+				);
+				
+				// Place Load Dispatch IDs below Total Quantity and Load Dispatch Quantity fields
+				// Find the section containing total_quantity and load_dispatch_quantity fields
+				const total_quantity_field = frm.fields_dict.total_quantity;
+				const load_dispatch_quantity_field = frm.fields_dict.load_dispatch_quantity;
+				
+				// Try to find the section break that contains these fields (section_break_jxkq)
+				let target_section = null;
+				
+				if (total_quantity_field && total_quantity_field.$wrapper) {
+					// Find the parent section break or form section
+					target_section = total_quantity_field.$wrapper.closest('.form-section, [data-fieldname="section_break_jxkq"]');
+					
+					// If not found, look for the row containing both quantity fields
+					if (!target_section || target_section.length === 0) {
+						target_section = total_quantity_field.$wrapper.closest('.form-row, .form-layout');
+					}
+					
+					// If still not found, use the load_dispatch_quantity field's parent
+					if ((!target_section || target_section.length === 0) && load_dispatch_quantity_field && load_dispatch_quantity_field.$wrapper) {
+						target_section = load_dispatch_quantity_field.$wrapper.closest('.form-section, .form-row, .form-layout');
+					}
+					
+					// Insert after the section containing the quantity fields
+					if (target_section && target_section.length) {
+						// Find the last field in the section (load_dispatch_quantity) and insert after it
+						if (load_dispatch_quantity_field && load_dispatch_quantity_field.$wrapper) {
+							const field_row = load_dispatch_quantity_field.$wrapper.closest('.form-row, .form-group');
+							if (field_row.length) {
+								dispatch_ids_html.insertAfter(field_row);
+							} else {
+								dispatch_ids_html.insertAfter(target_section);
+							}
+						} else {
+							dispatch_ids_html.insertAfter(target_section);
+						}
+					} else {
+						// Fallback: Insert after total_quantity field wrapper
+						if (total_quantity_field.$wrapper) {
+							const field_row = total_quantity_field.$wrapper.closest('.form-row, .form-group');
+							if (field_row.length) {
+								dispatch_ids_html.insertAfter(field_row);
+							} else {
+								dispatch_ids_html.insertAfter(total_quantity_field.$wrapper);
+							}
+						}
+					}
+				} else {
+					// Final fallback: Find by field name in DOM
+					const total_qty_element = $('[data-fieldname="total_quantity"]').closest('.form-section, .form-row');
+					if (total_qty_element.length) {
+						// Find load_dispatch_quantity in the same section
+						const dispatch_qty_element = total_qty_element.find('[data-fieldname="load_dispatch_quantity"]').closest('.form-row, .form-group');
+						if (dispatch_qty_element.length) {
+							dispatch_ids_html.insertAfter(dispatch_qty_element);
+						} else {
+							dispatch_ids_html.insertAfter(total_qty_element);
+						}
+					} else {
+						// Last resort: Append to form wrapper
+						const form_wrapper = frm.wrapper || $('.form-page');
+						if (form_wrapper && form_wrapper.length) {
+							form_wrapper.append(dispatch_ids_html);
+						}
+					}
+				}
+			}
+		}
+	});
 }

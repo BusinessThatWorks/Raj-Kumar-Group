@@ -149,6 +149,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "show_dashboard": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

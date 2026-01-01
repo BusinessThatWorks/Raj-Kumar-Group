@@ -83,6 +83,46 @@ class LoadPlan(Document):
 			for item in self.table_tezh:
 				total_quantity += flt(item.quantity) or 0
 		self.total_quantity = total_quantity
+	
+	def get_dashboard_data(self):
+		"""Return dashboard connections to show related Load Dispatch documents with their IDs."""
+		# Get all Load Dispatch documents linked to this Load Plan
+		load_dispatches = frappe.get_all(
+			'Load Dispatch',
+			filters={'load_reference_no': self.name},
+			fields=['name', 'dispatch_no', 'status', 'docstatus'],
+			order_by='creation desc'
+		)
+		
+		# Format the document names/IDs for display
+		dispatch_names = [ld.name for ld in load_dispatches]
+		dispatch_count = len(load_dispatches)
+		
+		# Build dashboard data with transactions and custom data
+		dashboard_data = {
+			'transactions': [
+				{
+					'label': _('Related Documents'),
+					'items': ['Load Dispatch']
+				}
+			]
+		}
+		
+		# Add custom data to show Load Dispatch IDs
+		if dispatch_count > 0:
+			dashboard_data['load_dispatch_ids'] = dispatch_names
+			dashboard_data['load_dispatch_count'] = dispatch_count
+			dashboard_data['load_dispatch_details'] = [
+				{
+					'name': ld.name,
+					'dispatch_no': ld.dispatch_no or ld.name,
+					'status': ld.status,
+					'docstatus': ld.docstatus
+				}
+				for ld in load_dispatches
+			]
+		
+		return dashboard_data
 
 
 def update_load_plan_status_from_document(doc, method=None):
