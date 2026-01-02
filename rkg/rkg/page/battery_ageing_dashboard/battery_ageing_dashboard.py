@@ -53,8 +53,12 @@ def get_battery_ageing_data(where_clause, params):
 		"bd.frame_no",
 		"bd.battery_charging_code",
 		"bd.charging_date",
+		"bd.battery_expiry_date",
 		"bd.battery_transaction",
 		"bd.status",
+		"bd.battery_swapping",
+		"bd.new_frame_number",
+		"bd.new_battery_details",
 		"bd.creation",
 		"bd.modified",
 	]
@@ -148,6 +152,12 @@ def get_battery_ageing_data(where_clause, params):
 		battery_type = battery.get("battery_type") or "Unknown"
 		battery_type_counts[battery_type] = battery_type_counts.get(battery_type, 0) + 1
 		
+		# Calculate days until expiry if expiry date exists
+		days_until_expiry = None
+		if battery.get("battery_expiry_date"):
+			expiry_date = getdate(battery.battery_expiry_date)
+			days_until_expiry = date_diff(expiry_date, today)
+		
 		battery_cards.append({
 			"name": battery.name,
 			"battery_serial_no": battery.battery_serial_no or "-",
@@ -156,12 +166,17 @@ def get_battery_ageing_data(where_clause, params):
 			"frame_no": battery.get("frame_no") or "-",
 			"charging_code": battery.get("battery_charging_code") or "-",
 			"charging_date": str(battery.charging_date) if battery.charging_date else None,
+			"battery_expiry_date": str(battery.battery_expiry_date) if battery.get("battery_expiry_date") else None,
+			"days_until_expiry": days_until_expiry,
 			"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 			"age_days": age_days,
 			"age_category": age_category,
 			"risk_level": risk_level,
 			"status": battery.get("status") or "In Stock",
 			"battery_transaction": battery.get("battery_transaction") or None,
+			"battery_swapping": battery.get("battery_swapping") or 0,
+			"new_frame_number": battery.get("new_frame_number") or None,
+			"new_battery_details": battery.get("new_battery_details") or None,
 			"creation": str(battery.creation) if battery.creation else None,
 			"modified": str(battery.modified) if battery.modified else None,
 		})
@@ -287,6 +302,12 @@ def get_battery_details(name):
 		charging_date = creation_date
 		age_days = date_diff(today, creation_date)
 	
+	# Calculate days until expiry if expiry date exists
+	days_until_expiry = None
+	if battery.battery_expiry_date:
+		expiry_date = getdate(battery.battery_expiry_date)
+		days_until_expiry = date_diff(expiry_date, today)
+	
 	result = {
 		"name": battery.name,
 		"battery_serial_no": battery.battery_serial_no or "-",
@@ -295,10 +316,15 @@ def get_battery_details(name):
 		"frame_no": battery.frame_no or "-",
 		"charging_code": battery.battery_charging_code or "-",
 		"charging_date": str(battery.charging_date) if battery.charging_date else None,
+		"battery_expiry_date": str(battery.battery_expiry_date) if battery.battery_expiry_date else None,
+		"days_until_expiry": days_until_expiry,
 		"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 		"age_days": age_days,
 		"status": battery.status or "In Stock",
 		"battery_transaction": battery.battery_transaction or None,
+		"battery_swapping": battery.battery_swapping or 0,
+		"new_frame_number": battery.new_frame_number or None,
+		"new_battery_details": battery.new_battery_details or None,
 		"creation": str(battery.creation) if battery.creation else None,
 		"modified": str(battery.modified) if battery.modified else None,
 	}

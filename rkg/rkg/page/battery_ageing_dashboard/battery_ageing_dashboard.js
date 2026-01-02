@@ -613,6 +613,7 @@ class BatteryAgeingDashboard {
 						<div><span class="muted">Status</span><div class="metric-value">${battery.status || "In Stock"}</div></div>
 					</div>
 					${battery.charging_date ? `<div class="battery-date"><i class="fa fa-bolt"></i> Charged: ${battery.charging_date.split(' ')[0]}</div>` : ""}
+					${battery.battery_expiry_date ? `<div class="battery-date ${battery.days_until_expiry !== null && battery.days_until_expiry < 30 ? 'expiry-warning' : ''}"><i class="fa fa-calendar-times-o"></i> Expires: ${battery.battery_expiry_date.split(' ')[0]} ${battery.days_until_expiry !== null ? `(${battery.days_until_expiry > 0 ? battery.days_until_expiry + ' days left' : 'Expired'})` : ''}</div>` : ""}
 					<div class="battery-date"><i class="fa fa-calendar"></i> Created: ${battery.creation_date ? battery.creation_date.split(' ')[0] : "-"}</div>
 				</div>
 			</div>
@@ -695,6 +696,38 @@ class BatteryAgeingDashboard {
 							<span><strong>${ageDays} days</strong></span>
 						</div>
 					</div>
+					${battery.battery_expiry_date ? `
+					<div class="details-row">
+						<div class="detail-item">
+							<label>Battery Expiry Date:</label>
+							<span class="${battery.days_until_expiry !== null && battery.days_until_expiry < 30 ? 'text-danger' : ''}"><strong>${battery.battery_expiry_date.split(' ')[0]}</strong></span>
+						</div>
+						<div class="detail-item">
+							<label>Days Until Expiry:</label>
+							<span class="${battery.days_until_expiry !== null && battery.days_until_expiry < 30 ? 'text-danger' : battery.days_until_expiry !== null && battery.days_until_expiry < 60 ? 'text-warning' : ''}"><strong>${battery.days_until_expiry !== null ? (battery.days_until_expiry > 0 ? battery.days_until_expiry + ' days' : 'Expired') : "-"}</strong></span>
+						</div>
+					</div>
+					` : ""}
+					${battery.battery_swapping ? `
+					<div class="details-row" style="background: #f0f9ff; padding: 12px; border-radius: 6px; margin-top: 12px;">
+						<div class="detail-item">
+							<label>Battery Swapping:</label>
+							<span><strong>Yes</strong></span>
+						</div>
+						${battery.new_frame_number ? `
+						<div class="detail-item">
+							<label>New Frame Number:</label>
+							<span><a href="/app/serial-no/${battery.new_frame_number}" target="_blank">${battery.new_frame_number}</a></span>
+						</div>
+						` : ""}
+						${battery.new_battery_details ? `
+						<div class="detail-item">
+							<label>New Battery Details:</label>
+							<span><a href="/app/battery-details/${battery.new_battery_details}" target="_blank">${battery.new_battery_details}</a></span>
+						</div>
+						` : ""}
+					</div>
+					` : ""}
 					${battery.battery_transaction ? `
 					<div class="details-row">
 						<div class="detail-item">
@@ -807,6 +840,9 @@ function add_styles() {
 		.metric-value { font-weight: 700; color: var(--heading-color); font-size: 13px; }
 		.muted { color: var(--text-muted); font-size: 12px; }
 		.battery-date { color: var(--text-muted); font-size: 11px; display: flex; align-items: center; gap: 4px; }
+		.battery-date.expiry-warning { color: #ff6b6b; font-weight: 600; }
+		.text-danger { color: #ff6b6b !important; }
+		.text-warning { color: #ffa726 !important; }
 		
 		.pagination-container { margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 		.pagination-info { color: var(--text-muted); font-size: 13px; }
