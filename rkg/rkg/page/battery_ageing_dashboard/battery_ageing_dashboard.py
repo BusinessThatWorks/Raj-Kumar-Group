@@ -7,23 +7,25 @@ from frappe.utils import flt, getdate, nowdate, date_diff
 
 def _build_where_clause(brand=None, battery_type=None, from_date=None, to_date=None):
 	"""Build WHERE clause for Battery Ageing queries."""
-	conditions = ["i.item_group = 'Batteries'"]
+	conditions = ["bd.status = 'In Stock'"]  # Only show batteries that are in stock
 	params = {}
 
 	if brand:
-		conditions.append("i.custom_battery_brand = %(brand)s")
+		conditions.append("bd.battery_brand = %(brand)s")
 		params["brand"] = brand
 
 	if battery_type:
-		conditions.append("i.custom_battery_type = %(battery_type)s")
+		conditions.append("bd.battery_type = %(battery_type)s")
 		params["battery_type"] = battery_type
 
 	if from_date:
-		conditions.append("DATE(i.creation) >= %(from_date)s")
+		# Filter by charging_date if available, otherwise use creation date
+		conditions.append("(DATE(bd.charging_date) >= %(from_date)s OR (bd.charging_date IS NULL AND DATE(bd.creation) >= %(from_date)s))")
 		params["from_date"] = getdate(from_date)
 
 	if to_date:
-		conditions.append("DATE(i.creation) <= %(to_date)s")
+		# Filter by charging_date if available, otherwise use creation date
+		conditions.append("(DATE(bd.charging_date) <= %(to_date)s OR (bd.charging_date IS NULL AND DATE(bd.creation) <= %(to_date)s))")
 		params["to_date"] = getdate(to_date)
 
 	return " AND ".join(conditions), params
@@ -42,31 +44,27 @@ def get_battery_ageing_data(where_clause, params):
 	# Get current date for age calculation
 	today = nowdate()
 	
-	# Build SELECT fields
+	# Build SELECT fields from Battery Details
 	select_fields = [
-		"i.name",
-		"i.item_code",
-		"i.item_name",
-		"i.creation",
-		"i.modified",
+		"bd.name",
+		"bd.battery_serial_no",
+		"bd.battery_brand",
+		"bd.battery_type",
+		"bd.frame_no",
+		"bd.battery_charging_code",
+		"bd.charging_date",
+		"bd.battery_transaction",
+		"bd.status",
+		"bd.creation",
+		"bd.modified",
 	]
-	
-	# Add custom fields if they exist
-	if frappe.db.has_column("Item", "custom_battery_brand"):
-		select_fields.append("i.custom_battery_brand")
-	if frappe.db.has_column("Item", "custom_battery_type"):
-		select_fields.append("i.custom_battery_type")
-	if frappe.db.has_column("Item", "custom_battery_charging_code"):
-		select_fields.append("i.custom_battery_charging_code")
-	if frappe.db.has_column("Item", "custom_charging_date"):
-		select_fields.append("i.custom_charging_date")
 	
 	batteries = frappe.db.sql(
 		f"""
 		SELECT {', '.join(select_fields)}
-		FROM `tabItem` i
+		FROM `tabBattery Details` bd
 		WHERE {where_clause}
-		ORDER BY i.creation DESC
+		ORDER BY bd.charging_date DESC, bd.creation DESC
 		LIMIT 1000
 		""",
 		params,
@@ -91,13 +89,28 @@ def get_battery_ageing_data(where_clause, params):
 		"critical": 0,  # 365+ days (Red)
 	}
 	
+	# 60-day count (batteries that are around 60 days old)
+	batteries_60_days = 0
+	
 	brand_counts = {}
 	battery_type_counts = {}
 	
 	battery_cards = []
 	for battery in batteries:
-		creation_date = getdate(battery.creation)
-		age_days = date_diff(today, creation_date)
+		# Calculate age based on charging_date (more relevant for battery ageing)
+		# Age is ALWAYS calculated from charging_date if available
+		if battery.get("charging_date"):
+			charging_date = getdate(battery.charging_date)
+			age_days = date_diff(today, charging_date)
+		else:
+			# Fallback to creation date only if charging_date is not available
+			creation_date = getdate(battery.creation)
+			charging_date = creation_date
+			age_days = date_diff(today, creation_date)
+		
+		# Count batteries that are around 60 days old (55-65 days range)
+		if 55 <= age_days <= 65:
+			batteries_60_days += 1
 		
 		# Categorize by age
 		if age_days <= 30:
@@ -128,25 +141,27 @@ def get_battery_ageing_data(where_clause, params):
 			risk_level = "critical"
 		
 		# Count by brand
-		brand = battery.get("custom_battery_brand") or "Unknown"
+		brand = battery.get("battery_brand") or "Unknown"
 		brand_counts[brand] = brand_counts.get(brand, 0) + 1
 		
 		# Count by battery type
-		battery_type = battery.get("custom_battery_type") or "Unknown"
+		battery_type = battery.get("battery_type") or "Unknown"
 		battery_type_counts[battery_type] = battery_type_counts.get(battery_type, 0) + 1
 		
 		battery_cards.append({
 			"name": battery.name,
-			"item_code": battery.item_code or "-",
-			"item_name": battery.item_name or "-",
-			"brand": battery.get("custom_battery_brand") or "-",
-			"battery_type": battery.get("custom_battery_type") or "-",
-			"charging_code": battery.get("custom_battery_charging_code") or "-",
-			"charging_date": str(battery.get("custom_charging_date")) if battery.get("custom_charging_date") else None,
-			"creation_date": str(creation_date),
+			"battery_serial_no": battery.battery_serial_no or "-",
+			"brand": battery.get("battery_brand") or "-",
+			"battery_type": battery.get("battery_type") or "-",
+			"frame_no": battery.get("frame_no") or "-",
+			"charging_code": battery.get("battery_charging_code") or "-",
+			"charging_date": str(battery.charging_date) if battery.charging_date else None,
+			"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 			"age_days": age_days,
 			"age_category": age_category,
 			"risk_level": risk_level,
+			"status": battery.get("status") or "In Stock",
+			"battery_transaction": battery.get("battery_transaction") or None,
 			"creation": str(battery.creation) if battery.creation else None,
 			"modified": str(battery.modified) if battery.modified else None,
 		})
@@ -171,16 +186,16 @@ def get_battery_ageing_data(where_clause, params):
 		"values": [row[1] for row in battery_type_chart_rows],
 	}
 
-	# Batteries by creation date
+	# Batteries by charging date
 	date_rows = frappe.db.sql(
 		f"""
 		SELECT 
-			DATE(i.creation) as date,
+			DATE(bd.charging_date) as date,
 			COUNT(*) as count
-		FROM `tabItem` i
-		WHERE {where_clause} AND i.creation IS NOT NULL
-		GROUP BY DATE(i.creation)
-		ORDER BY DATE(i.creation)
+		FROM `tabBattery Details` bd
+		WHERE {where_clause} AND bd.charging_date IS NOT NULL
+		GROUP BY DATE(bd.charging_date)
+		ORDER BY DATE(bd.charging_date)
 		""",
 		params,
 		as_dict=True,
@@ -203,7 +218,7 @@ def get_battery_ageing_data(where_clause, params):
 		expiry_risk_percentages = {"safe": 0, "warning": 0, "critical": 0}
 	
 	return {
-		"doctype": "Item",
+		"doctype": "Battery Details",
 		"summary": {
 			"total_batteries": total_batteries,
 			"age_ranges": age_ranges,
@@ -211,6 +226,7 @@ def get_battery_ageing_data(where_clause, params):
 			"expiry_risk_percentages": expiry_risk_percentages,
 			"brand_counts": brand_counts,
 			"battery_type_counts": battery_type_counts,
+			"batteries_60_days": batteries_60_days,  # Count of batteries around 60 days old
 		},
 		"age_chart": age_chart,
 		"brand_chart": brand_chart,
@@ -223,27 +239,27 @@ def get_battery_ageing_data(where_clause, params):
 @frappe.whitelist()
 def get_filter_options():
 	"""Get filter options for Battery Ageing dashboard."""
-	# Get distinct brands
+	# Get distinct brands from Battery Details (only In Stock)
 	brands = frappe.db.sql_list(
 		"""
-		SELECT DISTINCT custom_battery_brand
-		FROM `tabItem`
-		WHERE item_group = 'Batteries' 
-		  AND custom_battery_brand IS NOT NULL 
-		  AND custom_battery_brand != ''
-		ORDER BY custom_battery_brand
+		SELECT DISTINCT battery_brand
+		FROM `tabBattery Details`
+		WHERE status = 'In Stock'
+		  AND battery_brand IS NOT NULL 
+		  AND battery_brand != ''
+		ORDER BY battery_brand
 		"""
 	)
 
-	# Get distinct battery types
+	# Get distinct battery types from Battery Details (only In Stock)
 	battery_types = frappe.db.sql_list(
 		"""
-		SELECT DISTINCT custom_battery_type
-		FROM `tabItem`
-		WHERE item_group = 'Batteries' 
-		  AND custom_battery_type IS NOT NULL 
-		  AND custom_battery_type != ''
-		ORDER BY custom_battery_type
+		SELECT DISTINCT battery_type
+		FROM `tabBattery Details`
+		WHERE status = 'In Stock'
+		  AND battery_type IS NOT NULL 
+		  AND battery_type != ''
+		ORDER BY battery_type
 		"""
 	)
 
@@ -255,35 +271,37 @@ def get_filter_options():
 
 @frappe.whitelist()
 def get_battery_details(name):
-	"""Get detailed information about a specific Battery Item."""
-	if not frappe.db.exists("Item", name):
-		return {"error": f"Battery Item {name} not found"}
+	"""Get detailed information about a specific Battery Details record."""
+	if not frappe.db.exists("Battery Details", name):
+		return {"error": f"Battery Details {name} not found"}
 	
-	battery = frappe.get_doc("Item", name)
+	battery = frappe.get_doc("Battery Details", name)
 	today = nowdate()
-	creation_date = getdate(battery.creation)
-	age_days = date_diff(today, creation_date)
+	
+	# Calculate age based on charging_date (more relevant for battery ageing)
+	if battery.charging_date:
+		charging_date = getdate(battery.charging_date)
+		age_days = date_diff(today, charging_date)
+	else:
+		creation_date = getdate(battery.creation)
+		charging_date = creation_date
+		age_days = date_diff(today, creation_date)
 	
 	result = {
 		"name": battery.name,
-		"item_code": battery.item_code,
-		"item_name": battery.item_name,
-		"creation_date": str(creation_date),
+		"battery_serial_no": battery.battery_serial_no or "-",
+		"brand": battery.battery_brand or "-",
+		"battery_type": battery.battery_type or "-",
+		"frame_no": battery.frame_no or "-",
+		"charging_code": battery.battery_charging_code or "-",
+		"charging_date": str(battery.charging_date) if battery.charging_date else None,
+		"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 		"age_days": age_days,
+		"status": battery.status or "In Stock",
+		"battery_transaction": battery.battery_transaction or None,
 		"creation": str(battery.creation) if battery.creation else None,
 		"modified": str(battery.modified) if battery.modified else None,
 	}
-	
-	# Add custom fields if they exist
-	if frappe.db.has_column("Item", "custom_battery_brand"):
-		result["brand"] = getattr(battery, "custom_battery_brand", None) or "-"
-	if frappe.db.has_column("Item", "custom_battery_type"):
-		result["battery_type"] = getattr(battery, "custom_battery_type", None) or "-"
-	if frappe.db.has_column("Item", "custom_battery_charging_code"):
-		result["charging_code"] = getattr(battery, "custom_battery_charging_code", None) or "-"
-	if frappe.db.has_column("Item", "custom_charging_date"):
-		charging_date = getattr(battery, "custom_charging_date", None)
-		result["charging_date"] = str(charging_date) if charging_date else None
 	
 	return {"battery": result}
 

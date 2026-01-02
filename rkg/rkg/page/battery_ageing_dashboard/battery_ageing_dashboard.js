@@ -93,6 +93,11 @@ class BatteryAgeingDashboard {
 						<div class="card-value" id="age-0-30">0</div>
 						<div class="card-label">0-30 Days</div>
 					</div>
+					<div class="summary-card age-60-days">
+						<div class="card-icon"><i class="fa fa-calendar"></i></div>
+						<div class="card-value" id="age-60-days">0</div>
+						<div class="card-label">~60 Days Old</div>
+					</div>
 					<div class="summary-card age-31-90">
 						<div class="card-icon"><i class="fa fa-clock-o"></i></div>
 						<div class="card-value" id="age-31-90">0</div>
@@ -185,7 +190,7 @@ class BatteryAgeingDashboard {
 								<option value="creation-asc">Oldest First</option>
 								<option value="age_days-asc">Age (Low to High)</option>
 								<option value="age_days-desc">Age (High to Low)</option>
-								<option value="item_code-asc">Item Code (A-Z)</option>
+								<option value="battery_serial_no-asc">Serial No (A-Z)</option>
 								<option value="brand-asc">Brand (A-Z)</option>
 								<option value="battery_type-asc">Type (A-Z)</option>
 							</select>
@@ -317,9 +322,11 @@ class BatteryAgeingDashboard {
 		const age_ranges = summary.age_ranges || {};
 		const expiry_risk_counts = summary.expiry_risk_counts || {};
 		const expiry_risk_percentages = summary.expiry_risk_percentages || {};
+		const batteries_60_days = summary.batteries_60_days || 0;
 		
 		this.wrapper.find("#total-batteries").text(format_number(total, 0));
 		this.wrapper.find("#age-0-30").text(format_number(age_ranges["0-30 days"] || 0, 0));
+		this.wrapper.find("#age-60-days").text(format_number(batteries_60_days, 0));
 		this.wrapper.find("#age-31-90").text(format_number((age_ranges["31-90 days"] || 0) + (age_ranges["91-180 days"] || 0) + (age_ranges["181-365 days"] || 0), 0));
 		this.wrapper.find("#age-365-plus").text(format_number(age_ranges["365+ days"] || 0, 0));
 		
@@ -419,10 +426,10 @@ class BatteryAgeingDashboard {
 		this.filteredBatteries = this.allBatteries.filter(battery => {
 			if (!searchTerm) return true;
 			const searchable = [
-				battery.item_code || "",
-				battery.item_name || "",
+				battery.battery_serial_no || "",
 				battery.brand || "",
 				battery.battery_type || "",
+				battery.frame_no || "",
 				battery.charging_code || "",
 				battery.age_days?.toString() || ""
 			].join(" ").toLowerCase();
@@ -488,14 +495,14 @@ class BatteryAgeingDashboard {
 			const ageClass = ageDays <= 30 ? "age-new" : ageDays <= 365 ? "age-medium" : "age-old";
 			return `
 				<tr class="battery-row ${ageClass}" data-name="${battery.name}" style="cursor: pointer;">
-					<td><strong>${battery.item_code || "-"}</strong></td>
-					<td>${battery.item_name || "-"}</td>
+					<td><strong>${battery.battery_serial_no || "-"}</strong></td>
+					<td>${battery.frame_no || "-"}</td>
 					<td>${battery.brand || "-"}</td>
 					<td>${battery.battery_type || "-"}</td>
 					<td><span class="age-badge ${ageClass}">${ageDays} days</span></td>
-					<td>${battery.creation_date ? battery.creation_date.split(' ')[0] : "-"}</td>
-					<td>${battery.charging_code || "-"}</td>
 					<td>${battery.charging_date ? battery.charging_date.split(' ')[0] : "-"}</td>
+					<td>${battery.charging_code || "-"}</td>
+					<td>${battery.status || "In Stock"}</td>
 				</tr>
 			`;
 		}).join("");
@@ -505,14 +512,14 @@ class BatteryAgeingDashboard {
 				<table class="table table-bordered batteries-table">
 					<thead>
 						<tr>
-							<th>Item Code</th>
-							<th>Item Name</th>
+							<th>Battery Serial No</th>
+							<th>Frame No</th>
 							<th>Brand</th>
 							<th>Battery Type</th>
 							<th>Age</th>
-							<th>Creation Date</th>
-							<th>Charging Code</th>
 							<th>Charging Date</th>
+							<th>Charging Code</th>
+							<th>Status</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -589,11 +596,11 @@ class BatteryAgeingDashboard {
 		const ageClass = ageDays <= 30 ? "age-new" : ageDays <= 365 ? "age-medium" : "age-old";
 		
 		return `
-			<div class="battery-card ${ageClass}" data-doctype="Item" data-name="${battery.name || ''}" style="cursor: pointer;">
+			<div class="battery-card ${ageClass}" data-doctype="Battery Details" data-name="${battery.name || ''}" style="cursor: pointer;">
 				<div class="battery-card__header">
 					<div>
-						<div class="battery-code">${battery.item_code || "-"}</div>
-						<div class="battery-name">${battery.item_name || "-"}</div>
+						<div class="battery-code">${battery.battery_serial_no || "-"}</div>
+						<div class="battery-name">${battery.frame_no ? `Frame: ${battery.frame_no}` : "-"}</div>
 					</div>
 					<div class="age-badge ${ageClass}">
 						${ageDays} days
@@ -603,10 +610,10 @@ class BatteryAgeingDashboard {
 					<div class="battery-metrics">
 						<div><span class="muted">Brand</span><div class="metric-value">${battery.brand || "-"}</div></div>
 						<div><span class="muted">Type</span><div class="metric-value">${battery.battery_type || "-"}</div></div>
-						<div><span class="muted">Charging Code</span><div class="metric-value">${battery.charging_code || "-"}</div></div>
+						<div><span class="muted">Status</span><div class="metric-value">${battery.status || "In Stock"}</div></div>
 					</div>
-					<div class="battery-date"><i class="fa fa-calendar"></i> Created: ${battery.creation_date ? battery.creation_date.split(' ')[0] : "-"}</div>
 					${battery.charging_date ? `<div class="battery-date"><i class="fa fa-bolt"></i> Charged: ${battery.charging_date.split(' ')[0]}</div>` : ""}
+					<div class="battery-date"><i class="fa fa-calendar"></i> Created: ${battery.creation_date ? battery.creation_date.split(' ')[0] : "-"}</div>
 				</div>
 			</div>
 		`;
@@ -644,18 +651,18 @@ class BatteryAgeingDashboard {
 		container.html(`
 			<div class="battery-details-card">
 				<div class="details-header">
-					<h3>${battery.item_code || battery.name || "-"}</h3>
+					<h3>${battery.battery_serial_no || battery.name || "-"}</h3>
 					<span class="age-badge ${ageClass}">${ageDays} days old</span>
 				</div>
 				<div class="details-body">
 					<div class="details-row">
 						<div class="detail-item">
-							<label>Item Code:</label>
-							<span>${battery.item_code || "-"}</span>
+							<label>Battery Serial No:</label>
+							<span><strong>${battery.battery_serial_no || "-"}</strong></span>
 						</div>
 						<div class="detail-item">
-							<label>Item Name:</label>
-							<span>${battery.item_name || "-"}</span>
+							<label>Frame No:</label>
+							<span>${battery.frame_no || "-"}</span>
 						</div>
 					</div>
 					<div class="details-row">
@@ -674,20 +681,28 @@ class BatteryAgeingDashboard {
 							<span>${battery.charging_code || "-"}</span>
 						</div>
 						<div class="detail-item">
-							<label>Charging Date:</label>
-							<span>${battery.charging_date ? battery.charging_date.split(' ')[0] : "-"}</span>
+							<label>Status:</label>
+							<span><strong>${battery.status || "In Stock"}</strong></span>
 						</div>
 					</div>
 					<div class="details-row">
 						<div class="detail-item">
-							<label>Creation Date:</label>
-							<span>${battery.creation_date ? battery.creation_date.split(' ')[0] : "-"}</span>
+							<label>Charging Date:</label>
+							<span>${battery.charging_date ? battery.charging_date.split(' ')[0] : "-"}</span>
 						</div>
 						<div class="detail-item">
 							<label>Age:</label>
 							<span><strong>${ageDays} days</strong></span>
 						</div>
 					</div>
+					${battery.battery_transaction ? `
+					<div class="details-row">
+						<div class="detail-item">
+							<label>Battery Transaction:</label>
+							<span><a href="/app/battery-transaction/${battery.battery_transaction}" target="_blank">${battery.battery_transaction}</a></span>
+						</div>
+					</div>
+					` : ""}
 					<div class="details-row">
 						<div class="detail-item">
 							<label>Created:</label>
@@ -723,6 +738,7 @@ function add_styles() {
 		.summary-card .card-label { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 		.summary-card.total { border-left-color: #5e64ff; }
 		.summary-card.age-0-30 { border-left-color: #00d4aa; }
+		.summary-card.age-60-days { border-left-color: #ff9800; }
 		.summary-card.age-31-90 { border-left-color: #ffa726; }
 		.summary-card.age-365-plus { border-left-color: #ff6b6b; }
 
