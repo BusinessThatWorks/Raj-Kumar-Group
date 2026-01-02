@@ -22,10 +22,8 @@ class BatteryTransaction(Document):
 	
 	def before_submit(self):
 		"""Create Battery Details and update Serial No before submitting Battery Transaction."""
+		# For Out transactions, no special processing needed
 		if self.transaction_type == "Out":
-			# For Out transactions, update Battery Details status and clear Serial No
-			if self.battery_serial_no:
-				self._update_battery_details_status("Out")
 			return
 		
 		# For In transactions, process items
@@ -147,69 +145,35 @@ class BatteryTransaction(Document):
 			self.battery_charging_code_out = battery_details.battery_charging_code
 			self.charging_date_out = battery_details.charging_date
 	
-	def _update_battery_details_status(self, status):
-		"""Update Battery Details status for Out transactions and clear battery_no from Serial No."""
-		if not self.battery_serial_no:
-			return
+	def on_cancel(self):
+		"""Clear battery_transaction link in Battery Details when transaction is cancelled."""
+		self._clear_battery_details_links()
+
+	def on_trash(self):
+		"""Clear battery_transaction link in Battery Details when transaction is deleted."""
+		self._clear_battery_details_links()
+
+	def _clear_battery_details_links(self):
+		"""Clear battery_transaction field in all linked Battery Details."""
+		# Find all Battery Details linked to this transaction
+		linked_battery_details = frappe.get_all(
+			"Battery Details",
+			filters={"battery_transaction": self.name},
+			pluck="name"
+		)
 		
-		try:
-			# battery_serial_no is now a Link to Battery Details
-			battery_details = frappe.get_doc("Battery Details", self.battery_serial_no)
-			
-			# Validate status is "In Stock" before updating to "Out"
-			if battery_details.status == "In Stock":
-				battery_details.status = status
-				battery_details.save(ignore_permissions=True)
-				
-				# Clear battery_no from Serial No when battery goes Out
-				if status == "Out" and battery_details.frame_no:
-					self._clear_serial_no_battery_no(battery_details.frame_no)
-				
-				frappe.db.commit()
-			else:
-				frappe.throw(
-					_("Battery Details '{0}' is not in 'In Stock' status. Current status: {1}").format(
-						self.battery_serial_no, battery_details.status
-					)
-				)
-		except frappe.DoesNotExistError:
-			frappe.throw(_("Battery Details '{0}' does not exist.").format(self.battery_serial_no))
-		except Exception as e:
-			frappe.log_error(
-				f"Failed to update Battery Details status for {self.battery_serial_no}: {str(e)}",
-				"Battery Details Update Error"
+		for battery_details_name in linked_battery_details:
+			frappe.db.set_value(
+				"Battery Details",
+				battery_details_name,
+				"battery_transaction",
+				None,
+				update_modified=False
 			)
-			raise
-	
-	def _clear_serial_no_battery_no(self, frame_no):
-		"""Clear battery_no field from Serial No when battery goes Out."""
-		if not frame_no:
-			return
 		
-		frame_no = str(frame_no).strip()
-		if not frame_no:
-			return
-		
-		# Check if Serial No exists
-		if not frappe.db.exists("Serial No", frame_no):
-			return
-		
-		try:
-			# Determine the correct field name (battery_no or custom_battery_no)
-			field_name = "battery_no"
-			if not frappe.db.has_column("Serial No", "battery_no"):
-				field_name = "custom_battery_no"
-				if not frappe.db.has_column("Serial No", "custom_battery_no"):
-					return  # Field doesn't exist, nothing to clear
-			
-			# Clear the battery_no field
-			frappe.db.set_value("Serial No", frame_no, field_name, None, update_modified=False)
-		except Exception as e:
-			frappe.log_error(
-				f"Failed to clear battery_no from Serial No {frame_no}: {str(e)}",
-				"Serial No Battery Clear Error"
-			)
-	
+		if linked_battery_details:
+			frappe.db.commit()
+
 	def _update_serial_no_battery_no(self):
 		"""Update Serial No battery_no field with battery_serial_no for each frame_no."""
 		if not self.items:
@@ -414,7 +378,10 @@ def process_battery_file(file_url):
 							"frame_no": normalized_row.get('frame_no'),
 							"battery_charging_code": normalized_row.get('battery_charging_code'),
 							"charging_date": normalized_row.get('charging_date'),
-							"status": "In Stock"
+							"status": "In Stock",
+							"battery_swapping": 0,  # Explicitly set to 0 so dependent fields are not required
+							"new_frame_number": None,
+							"new_battery_details": None
 						})
 						battery_details.insert(ignore_permissions=True)
 						battery_details_name = battery_details.name

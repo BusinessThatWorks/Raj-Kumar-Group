@@ -6,7 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "default_hsn_code",
-  "default_supplier"
+  "default_supplier",
+  "default_no_of_days_for_the_expiration_of_the_battery"
  ],
  "fields": [
   {
@@ -19,13 +20,18 @@
    "fieldtype": "Link",
    "label": "Default Supplier",
    "options": "Supplier"
+  },
+  {
+   "fieldname": "default_no_of_days_for_the_expiration_of_the_battery",
+   "fieldtype": "Int",
+   "label": "Default No of Days for the expiration of the Battery"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-12-01 12:21:17.035770",
+ "modified": "2026-01-02 16:33:26.038694",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "RKG Settings",

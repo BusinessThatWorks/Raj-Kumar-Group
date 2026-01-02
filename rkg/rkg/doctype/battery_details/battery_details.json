@@ -15,9 +15,13 @@
   "column_break_1",
   "battery_charging_code",
   "charging_date",
+  "battery_expiry_date",
   "column_break_2",
   "battery_transaction",
-  "status"
+  "status",
+  "battery_swapping",
+  "new_frame_number",
+  "new_battery_details"
  ],
  "fields": [
   {
@@ -62,6 +66,13 @@
    "label": "Charging Date"
   },
   {
+   "description": "Battery Date calculated from Charging date with adding 60 days",
+   "fieldname": "battery_expiry_date",
+   "fieldtype": "Date",
+   "label": "Battery Expiry Date",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_2",
    "fieldtype": "Column Break"
   },
@@ -77,7 +88,29 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "In Stock\nOut",
-   "default": "In Stock"
+   "default": "In Stock",
+   "read_only": 1
+  },
+  {
+   "fieldname": "battery_swapping",
+   "fieldtype": "Check",
+   "label": "Battery Swapping (Yes / No)"
+  },
+  {
+   "fieldname": "new_frame_number",
+   "fieldtype": "Link",
+   "label": "New Frame Number",
+   "options": "Serial No",
+   "depends_on": "eval:doc.battery_swapping == 1",
+   "mandatory_depends_on": "eval:doc.battery_swapping == 1"
+  },
+  {
+   "fieldname": "new_battery_details",
+   "fieldtype": "Link",
+   "label": "New Battery Details",
+   "options": "Battery Details",
+   "depends_on": "eval:doc.battery_swapping == 1",
+   "mandatory_depends_on": "eval:doc.battery_swapping == 1"
   }
  ],
  "index_web_pages_for_search": 1,
