@@ -41,8 +41,9 @@ frappe.ui.form.on("Load Dispatch", {
 			// Apply custom styling to print_name and rate fields in child table
 			apply_custom_field_styling(frm);
 		}
-		if(frm.doc.docstatus==1){
-			// Check if Purchase Receipt or Purchase Invoice already exists
+		// Add "Create Load Receipt" button - only if Load Dispatch is submitted
+		if (frm.doc.docstatus === 1) {
+			// Check if Load Receipt already exists for this Load Dispatch
 			frappe.call({
 				method: "rkg.rkg.doctype.load_dispatch.load_dispatch.check_existing_documents",
 				args: {
@@ -50,34 +51,18 @@ frappe.ui.form.on("Load Dispatch", {
 				},
 				callback: function(r) {
 					if (r.message) {
-						const has_pr = r.message.has_purchase_receipt || false;
-						const has_pi = r.message.has_purchase_invoice || false;
+						const has_load_receipt = r.message.has_load_receipt || false;
 						
-						// Only show Purchase Receipt button if no Purchase Receipt exists
-						if (!has_pr) {
-							frm.add_custom_button(__("Purchase Receipt"),frm.cscript["Create Purchase Receipt"], __("Create"));
+						// Only show Load Receipt button if no Load Receipt exists
+						if (!has_load_receipt) {
+							frm.add_custom_button(__("Load Receipt"), function() {
+								create_load_receipt_from_dispatch(frm);
+							}, __("Create"));
 							frm.page.set_inner_btn_group_as_primary(__("Create"));
-						}
-						
-						// Only show Purchase Invoice button if no Purchase Invoice exists
-						if (!has_pi) {
-							frm.add_custom_button(__("Purchase Invoice"),frm.cscript["Create Purchase Invoice"], __("Create"));
-							frm.page.set_inner_btn_group_as_primary(__("Create"));
-						}
-						
-						// Show message if documents already exist
-						if (has_pr || has_pi) {
-							let message = __("Cannot create additional documents. ");
-							if (has_pr && has_pi) {
-								message += __("Purchase Receipt and Purchase Invoice already exist for this Load Dispatch.");
-							} else if (has_pr) {
-								message += __("Purchase Receipt already exists for this Load Dispatch.");
-							} else if (has_pi) {
-								message += __("Purchase Invoice already exists for this Load Dispatch.");
-							}
-							
+						} else {
+							// Show message if Load Receipt already exists
 							frappe.show_alert({
-								message: message,
+								message: __("Load Receipt already exists for this Load Dispatch."),
 								indicator: "orange"
 							}, 5);
 						}
@@ -635,131 +620,53 @@ function calculate_print_name_from_model_serial(model_serial_no, model_name) {
 	return `${serial_part} (BS-VI)`;
 }
 
-cur_frm.cscript["Create Purchase Receipt"] = function(){
-	show_frame_warehouse_dialog(cur_frm, "Purchase Receipt");
-}
-
-cur_frm.cscript["Create Purchase Invoice"] = function(){
-	show_frame_warehouse_dialog(cur_frm, "Purchase Invoice");
-}
-
-// Function to show dialog for selecting Warehouse
-function show_frame_warehouse_dialog(frm, doc_type) {
-	// Get all frame numbers from items
-	const frame_numbers = [];
-	if (frm.doc.items && frm.doc.items.length > 0) {
-		frm.doc.items.forEach(function(item) {
-			if (item.frame_no && item.frame_no.trim() !== "") {
-				// Avoid duplicates
-				if (frame_numbers.indexOf(item.frame_no.trim()) === -1) {
-					frame_numbers.push(item.frame_no.trim());
-				}
-			}
-		});
-	}
-	
-	// Check if there are any frame numbers
-	if (frame_numbers.length === 0) {
+// Create Load Receipt from Load Dispatch
+function create_load_receipt_from_dispatch(frm) {
+	if (!frm.doc.name) {
 		frappe.msgprint({
-			title: __("No Frame Numbers Found"),
-			message: __("Please add items with Frame Numbers before creating {0}.", [doc_type]),
-			indicator: "orange"
+			title: __("Error"),
+			message: __("Load Dispatch name is required."),
+			indicator: "red"
 		});
 		return;
 	}
 	
-	// Show simple dialog with just warehouse selection
-	const dialog = new frappe.ui.Dialog({
-		title: __("Select Warehouse"),
-		fields: [
-			{
-				label: __("Warehouse"),
-				fieldname: "warehouse",
-				fieldtype: "Link",
-				options: "Warehouse",
-				reqd: 1,
-				get_query: function() {
-					return {
-						filters: {}
-					};
-				}
-			},
-			{
-				fieldtype: "Section Break",
-				label: __("Frames Information")
-			},
-			{
-				fieldname: "frames_info",
-				fieldtype: "HTML",
-				options: `<div style="padding: 10px; background-color: #f8f9fa; border-radius: 4px;">
-					<p style="margin: 0;"><strong>${__("Total Frames")}:</strong> ${frame_numbers.length}</p>
-					<p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">
-						<em>${__("All frames will be assigned to the selected warehouse.")}</em>
-					</p>
-				</div>`
-			}
-		],
-		primary_action_label: __("Create"),
-		primary_action: function(values) {
-			if (!values.warehouse) {
+	// Check if Load Dispatch is submitted
+	if (frm.doc.docstatus !== 1) {
+		frappe.msgprint({
+			title: __("Error"),
+			message: __("Please submit Load Dispatch before creating Load Receipt."),
+			indicator: "red"
+		});
+		return;
+	}
+	
+	frappe.call({
+		method: "rkg.rkg.doctype.load_receipt.load_receipt.create_load_receipt",
+		args: {
+			source_name: frm.doc.name
+		},
+		callback: function(r) {
+			if (r.message && r.message.name) {
+				frappe.set_route("Form", "Load Receipt", r.message.name);
+				frappe.show_alert({
+					message: __("Load Receipt {0} created successfully", [r.message.name]),
+					indicator: "green"
+				}, 5);
+			} else {
 				frappe.msgprint({
-					title: __("Validation Error"),
-					message: __("Please select a warehouse."),
-					indicator: "orange"
+					title: __("Error"),
+					message: __("An error occurred while creating Load Receipt."),
+					indicator: "red"
 				});
-				return;
 			}
-			
-			dialog.hide();
-			
-			// Create mapping for all frames with the selected warehouse
-			const mapping = frame_numbers.map(function(frame_no) {
-				return {
-					frame_no: frame_no,
-					warehouse: values.warehouse
-				};
-			});
-			
-			// Call the appropriate creation method with mapping
-			const method_name = doc_type === "Purchase Receipt" 
-				? "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_receipt"
-				: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_invoice";
-			
-			frappe.call({
-				method: method_name,
-				args: {
-					source_name: frm.doc.name,
-					frame_warehouse_mapping: mapping
-				},
-				callback: function(r) {
-					if (r.message && r.message.name) {
-						// Open the created document
-						frappe.set_route("Form", doc_type, r.message.name);
-					} else if (r.message) {
-						// If response is the doc object, try to get name
-						const doc_name = r.message.name || (r.message.doc && r.message.doc.name);
-						if (doc_name) {
-							frappe.set_route("Form", doc_type, doc_name);
-						} else {
-							frappe.msgprint({
-								title: __("Success"),
-								message: __("{0} created successfully.", [doc_type]),
-								indicator: "green"
-							});
-							frm.reload_doc();
-						}
-					}
-				},
-				error: function(r) {
-					frappe.msgprint({
-						title: __("Error"),
-						message: r.message || __("An error occurred while creating {0}.", [doc_type]),
-						indicator: "red"
-					});
-				}
+		},
+		error: function(r) {
+			frappe.msgprint({
+				title: __("Error"),
+				message: r.message || __("An error occurred while creating Load Receipt."),
+				indicator: "red"
 			});
 		}
 	});
-	
-	dialog.show();
 }

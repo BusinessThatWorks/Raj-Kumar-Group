@@ -151,20 +151,27 @@ doc_events = {
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
         ],
         "on_cancel": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_receipt_status_from_document"
         ]
     },
     "Purchase Invoice": {
         "validate": [
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.validate_purchase_invoice_requires_receipt",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_uom",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_serial_no_from_receipt"
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_receipt_status_from_document"
         ],
         "on_cancel": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_receipt_status_from_document"
+        ],
+        "on_trash": [
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_receipt_status_from_document"
         ]
     }    
 }

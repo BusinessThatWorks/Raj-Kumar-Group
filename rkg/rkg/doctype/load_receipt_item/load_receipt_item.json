@@ -1,0 +1,184 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-22 17:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_z2a1",
+  "hmsi_load_reference_no",
+  "model_variant",
+  "frame_no",
+  "color_code",
+  "hsn_code",
+  "price_unit",
+  "amended_from",
+  "rate",
+  "column_break_anog",
+  "invoice_no",
+  "model_name",
+  "engnie_no_motor_no",
+  "tax_rate",
+  "qty",
+  "key_no",
+  "column_break_emyv",
+  "dispatch_date",
+  "model_serial_no",
+  "item_code",
+  "print_name",
+  "dor",
+  "unit",
+  "battery_no"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_z2a1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "model_variant",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Variant"
+  },
+  {
+   "fieldname": "model_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Name"
+  },
+  {
+   "fieldname": "color_code",
+   "fieldtype": "Data",
+   "label": "Color"
+  },
+  {
+   "fieldname": "column_break_anog",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "frame_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Frame No"
+  },
+  {
+   "fieldname": "engnie_no_motor_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Engine No"
+  },
+  {
+   "fieldname": "key_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Key No"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Load Receipt Item",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_emyv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "dispatch_date",
+   "fieldtype": "Date",
+   "label": "Dispatch Date"
+  },
+  {
+   "fieldname": "hmsi_load_reference_no",
+   "fieldtype": "Link",
+   "label": "HMSI Load Reference No",
+   "options": "Load Plan"
+  },
+  {
+   "fieldname": "tax_rate",
+   "fieldtype": "Data",
+   "label": "Tax Rate"
+  },
+  {
+   "fieldname": "print_name",
+   "fieldtype": "Data",
+   "label": "Print Name",
+   "options": "Item"
+  },
+  {
+   "fieldname": "dor",
+   "fieldtype": "Date",
+   "label": "DOR"
+  },
+  {
+   "fieldname": "hsn_code",
+   "fieldtype": "Int",
+   "label": "HSN Code"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Int",
+   "label": "Qty"
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Small Text",
+   "label": "Unit"
+  },
+  {
+   "fieldname": "price_unit",
+   "fieldtype": "Currency",
+   "label": "Price/Unit"
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "label": "Invoice No"
+  },
+  {
+   "fieldname": "model_serial_no",
+   "fieldtype": "Data",
+   "label": "Model Serial No"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "battery_no",
+   "fieldtype": "Data",
+   "label": "Battery No"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "label": "Rate",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-12-22 17:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Load Receipt Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
+

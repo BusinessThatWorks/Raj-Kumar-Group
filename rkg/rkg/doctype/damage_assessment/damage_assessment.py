@@ -8,9 +8,21 @@ class DamageAssessment(Document):
 	def validate(self):
 		"""Validate and calculate totals."""
 		self.set_stock_entry_type()
-		self.remove_ok_items()  # Remove items with Status "OK" before validation
-		self.validate_damage_items()
+		# Don't remove OK items here - allow saving draft with all OK items
+		# User can mark items as "Not OK" and save, then submit
+		# OK items will be removed in before_submit() only when submitting
+		# Don't validate damage items here - allow saving as draft without damage details
+		# Validation for damage items will be done in before_submit (only when submitting)
 		self.calculate_total_estimated_cost()
+	
+	def before_submit(self):
+		"""Validate damage items and remove OK items before submitting."""
+		# Remove OK items only when submitting (not when saving as draft)
+		# This allows saving draft with all frames, then user marks damaged ones as "Not OK"
+		self.remove_ok_items()
+		# Validate damage items only when submitting (not when saving as draft)
+		# This allows creating Damage Assessment from Load Receipt with items pre-populated but without damage details
+		self.validate_damage_items()
 	
 	def set_stock_entry_type(self):
 		"""Set Stock Entry Type to Material Transfer if not already set."""
@@ -72,7 +84,8 @@ class DamageAssessment(Document):
 			)
 	
 	def validate_damage_items(self):
-		"""Validate that Not OK items have at least one damage/issue (type_of_damage_1 is mandatory), estimated cost, and warehouses."""
+		"""Validate that Not OK items have at least one damage/issue (type_of_damage_1 is mandatory), estimated cost, and warehouses.
+		This method is called from before_submit, so it only runs when submitting, not when saving as draft."""
 		if self.damage_assessment_item:
 			for item in self.damage_assessment_item:
 				if item.status == "Not OK":
@@ -99,6 +112,9 @@ class DamageAssessment(Document):
 		# Create stock entries for damaged frames (grouped by warehouse pairs)
 		if self.stock_entry_type:
 			self.create_stock_entries()
+		
+		# Update frames status counts in linked Load Receipt
+		self.update_load_receipt_frames_counts()
 	
 	def on_cancel(self):
 		"""Cancel linked Stock Entries when Damage Assessment is cancelled."""
@@ -174,38 +190,149 @@ class DamageAssessment(Document):
 				if not item_code:
 					frappe.throw(_("Item Code not found for Serial No: {0}").format(serial_no))
 				
-				stock_entry.append("items", {
+				# Verify Serial No exists
+				if not frappe.db.exists("Serial No", serial_no):
+					frappe.throw(_("Serial No {0} does not exist").format(serial_no))
+				
+				# Get actual warehouse where Serial No is located
+				# Priority: 1) Serial No warehouse field, 2) Latest Stock Ledger Entry, 3) Load Receipt warehouse, 4) from_warehouse from Damage Assessment
+				actual_warehouse = frappe.db.get_value("Serial No", serial_no, "warehouse")
+				
+				# If Serial No warehouse is not set, get from latest Stock Ledger Entry
+				if not actual_warehouse:
+					stock_ledger = frappe.db.sql("""
+						SELECT warehouse
+						FROM `tabStock Ledger Entry`
+						WHERE serial_no = %s
+						ORDER BY posting_date DESC, posting_time DESC, creation DESC
+						LIMIT 1
+					""", (serial_no,), as_dict=True)
+					if stock_ledger:
+						actual_warehouse = stock_ledger[0].warehouse
+				
+				# If still not found, try to get from Load Receipt warehouse
+				if not actual_warehouse and self.load_plan_reference_no:
+					load_receipt = frappe.db.get_value(
+						"Load Receipt",
+						{"load_reference_no": self.load_plan_reference_no},
+						"warehouse"
+					)
+					if load_receipt:
+						actual_warehouse = load_receipt
+				
+				# Use actual warehouse if available, otherwise use from_warehouse
+				source_warehouse = actual_warehouse or from_wh
+				
+				# If Serial No warehouse is empty but we have a valid source warehouse, update Serial No warehouse
+				# This ensures consistency for future operations
+				serial_warehouse = frappe.db.get_value("Serial No", serial_no, "warehouse")
+				if not serial_warehouse and source_warehouse:
+					try:
+						frappe.db.set_value("Serial No", serial_no, "warehouse", source_warehouse, update_modified=False)
+						frappe.db.commit()
+					except Exception as e:
+						frappe.log_error(
+							f"Error updating Serial No {serial_no} warehouse: {str(e)}",
+							"Serial No Warehouse Update Error"
+						)
+				
+				# Validate source warehouse is not empty
+				if not source_warehouse:
+					frappe.throw(_("Cannot determine source warehouse for Serial No {0}. Please ensure Serial No warehouse is set or item is in stock.").format(serial_no))
+				
+				stock_entry_item = stock_entry.append("items", {
 					"item_code": item_code,
-					"custom_serial_no": serial_no,
 					"qty": 1,
-					"s_warehouse": from_wh,
+					"s_warehouse": source_warehouse,
 					"t_warehouse": to_wh,
 				})
+				
+				# Set serial_no field (not custom_serial_no) - this is the standard field for serial numbers in Stock Entry
+				stock_entry_item.serial_no = serial_no
 			
 			if stock_entry.items:
 				stock_entry.insert(ignore_permissions=True)
-				stock_entry.submit()
-				created_stock_entries.append(stock_entry.name)
+				# Try to submit Stock Entry
+				# If items are not in stock yet (Material Transfer before PR/PI), save as draft
+				try:
+					stock_entry.submit()
+					created_stock_entries.append(stock_entry.name)
+				except Exception as e:
+					# If submission fails due to stock not available, save as draft
+					# User workflow: Material Transfer first (draft) -> PR/PI -> Submit Stock Entry
+					error_msg = str(e)
+					if "needed in Warehouse" in error_msg or "not present" in error_msg.lower() or "insufficient stock" in error_msg.lower():
+						# Stock Entry already inserted, just keep it as draft
+						# User will submit it after creating Purchase Receipt
+						# Keep error message short to avoid truncation (max 140 chars)
+						frappe.log_error(
+							f"Stock Entry {stock_entry.name} saved as draft. Submit PR first, then submit this Stock Entry.",
+							"SE Draft - Stock Not Available"
+						)
+						created_stock_entries.append(stock_entry.name)
+						frappe.msgprint(
+							_("Stock Entry {0} created as draft because items are not in stock yet. Please create and submit Purchase Receipt first, then submit this Stock Entry.").format(
+								frappe.utils.get_link_to_form("Stock Entry", stock_entry.name)
+							),
+							alert=True,
+							indicator="orange"
+						)
+					else:
+						# Re-raise other errors
+						raise
 		
 		if created_stock_entries:
-			# Show message with links to created stock entries
+			# Check which Stock Entries were submitted vs saved as draft
+			submitted_entries = []
+			draft_entries = []
+			for se_name in created_stock_entries:
+				docstatus = frappe.db.get_value("Stock Entry", se_name, "docstatus")
+				if docstatus == 1:
+					submitted_entries.append(se_name)
+				else:
+					draft_entries.append(se_name)
+			
+			# Show appropriate message
 			if len(created_stock_entries) == 1:
-				frappe.msgprint(
-					_("Stock Entry {0} created - Items moved to Damage Godown").format(
-						frappe.utils.get_link_to_form("Stock Entry", created_stock_entries[0])
-					),
-					alert=True,
-					indicator="green"
-				)
+				se_name = created_stock_entries[0]
+				docstatus = frappe.db.get_value("Stock Entry", se_name, "docstatus")
+				if docstatus == 1:
+					frappe.msgprint(
+						_("Stock Entry {0} created and submitted - Items moved to Damage Godown").format(
+							frappe.utils.get_link_to_form("Stock Entry", se_name)
+						),
+						alert=True,
+						indicator="green"
+					)
+				else:
+					frappe.msgprint(
+						_("Stock Entry {0} created as draft - Submit after Purchase Receipt").format(
+							frappe.utils.get_link_to_form("Stock Entry", se_name)
+						),
+						alert=True,
+						indicator="orange"
+					)
 			else:
-				links = ", ".join([
+				submitted_links = ", ".join([
 					frappe.utils.get_link_to_form("Stock Entry", se_name)
-					for se_name in created_stock_entries
-				])
+					for se_name in submitted_entries
+				]) if submitted_entries else None
+				
+				draft_links = ", ".join([
+					frappe.utils.get_link_to_form("Stock Entry", se_name)
+					for se_name in draft_entries
+				]) if draft_entries else None
+				
+				message_parts = []
+				if submitted_links:
+					message_parts.append(_("Submitted: {0}").format(submitted_links))
+				if draft_links:
+					message_parts.append(_("Draft (submit after PR): {0}").format(draft_links))
+				
 				frappe.msgprint(
-					_("Created {0} Stock Entries: {1}").format(len(created_stock_entries), links),
+					_("Created {0} Stock Entries. {1}").format(len(created_stock_entries), " | ".join(message_parts)),
 					alert=True,
-					indicator="green"
+					indicator="green" if not draft_entries else "orange"
 				)
 	
 	def cancel_stock_entry(self, stock_entry_name):
@@ -226,6 +353,29 @@ class DamageAssessment(Document):
 			alert=True,
 			indicator="orange"
 		)
+	
+	def update_load_receipt_frames_counts(self):
+		"""Update frames OK/Not OK counts in linked Load Receipt."""
+		# Find Load Receipt linked to this Damage Assessment
+		load_receipt = frappe.db.get_value("Load Receipt", {"damage_assessment": self.name}, "name")
+		if not load_receipt:
+			return
+		
+		# Get total receipt quantity from Load Receipt
+		total_frames = frappe.db.get_value("Load Receipt", load_receipt, "total_receipt_quantity") or 0
+		
+		# Count Not OK items (OK items are removed on submit)
+		not_ok_count = len([item for item in (self.damage_assessment_item or []) if item.status == "Not OK"])
+		
+		# Calculate OK count as total - Not OK
+		ok_count = max(0, total_frames - not_ok_count)
+		
+		# Update Load Receipt
+		frappe.db.set_value("Load Receipt", load_receipt, {
+			"frames_ok": ok_count,
+			"frames_not_ok": not_ok_count
+		}, update_modified=False)
+		frappe.db.commit()
 
 
 @frappe.whitelist()
