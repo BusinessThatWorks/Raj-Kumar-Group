@@ -1,2 +1,0 @@
-# Battery Details DocType
-

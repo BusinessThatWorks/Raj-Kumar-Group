@@ -728,14 +728,6 @@ class BatteryAgeingDashboard {
 						` : ""}
 					</div>
 					` : ""}
-					${battery.battery_transaction ? `
-					<div class="details-row">
-						<div class="detail-item">
-							<label>Battery Transaction:</label>
-							<span><a href="/app/battery-transaction/${battery.battery_transaction}" target="_blank">${battery.battery_transaction}</a></span>
-						</div>
-					</div>
-					` : ""}
 					<div class="details-row">
 						<div class="detail-item">
 							<label>Created:</label>

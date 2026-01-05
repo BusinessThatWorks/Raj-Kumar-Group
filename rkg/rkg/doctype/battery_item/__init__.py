@@ -1,2 +1,0 @@
-# Battery Item Child Table
-
