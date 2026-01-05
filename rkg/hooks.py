@@ -144,7 +144,8 @@ doc_events = {
     "Purchase Receipt": {
         "validate": [
             "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_receipt_uom",
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.set_purchase_receipt_serial_batch_fields_readonly"
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.set_purchase_receipt_serial_batch_fields_readonly",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.set_expense_account_for_purchase_receipt_items_hook"
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
