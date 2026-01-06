@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:EXP-BAT-{####}",
+ "creation": "2025-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_basic",
+  "battery_serial_no",
+  "column_break_1",
+  "expired_date",
+  "section_break_frame",
+  "old_frame_number",
+  "section_break_swapping",
+  "swapped_from_battery_swapping",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_basic",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
+  },
+  {
+   "fieldname": "battery_serial_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Battery Serial No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "expired_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Expired Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_frame",
+   "fieldtype": "Section Break",
+   "label": "Frame Information"
+  },
+  {
+   "fieldname": "old_frame_number",
+   "fieldtype": "Link",
+   "label": "Old Frame Number",
+   "options": "Serial No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_swapping",
+   "fieldtype": "Section Break",
+   "label": "Reference"
+  },
+  {
+   "fieldname": "swapped_from_battery_swapping",
+   "fieldtype": "Link",
+   "label": "Swapped From Battery Swapping",
+   "options": "Battery Swapping",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Expired Battery Details",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Expired Battery Details",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "battery_serial_no"
+}
+
