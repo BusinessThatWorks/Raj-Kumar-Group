@@ -47,14 +47,14 @@ frappe.ui.form.on("Damage Assessment", {
 		}
 	},
 	
-	load_plan_reference_no(frm) {
-		// Auto-populate all frames when Load Plan Reference No is selected
-		if (frm.doc.load_plan_reference_no) {
-			// Fetch all frames from all Load Dispatches linked to this Load Plan
+	load_receipt_number(frm) {
+		// Auto-populate all frames when Load Receipt Number is selected
+		if (frm.doc.load_receipt_number) {
+			// Fetch all frames from Load Receipt
 			frappe.call({
-				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_frames_from_load_plan",
+				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_frames_from_load_receipt",
 				args: {
-					load_plan_reference_no: frm.doc.load_plan_reference_no
+					load_receipt_number: frm.doc.load_receipt_number
 				},
 				callback: function(r) {
 					if (r.message && r.message.length > 0) {
@@ -78,16 +78,16 @@ frappe.ui.form.on("Damage Assessment", {
 						frm.trigger("calculate_total_estimated_cost");
 						
 						frappe.show_alert({
-							message: __("Auto-populated {0} frames from Load Reference No", [r.message.length]),
+							message: __("Auto-populated {0} frames from Load Receipt Number", [r.message.length]),
 							indicator: "green"
 						}, 3);
 					} else {
-						frappe.msgprint(__("No frames found for the selected Load Reference No"));
+						frappe.msgprint(__("No frames found for the selected Load Receipt Number"));
 					}
 				}
 			});
 		} else {
-			// Clear items if Load Plan Reference No is cleared
+			// Clear items if Load Receipt Number is cleared
 			frm.clear_table("damage_assessment_item");
 			frm.refresh_field("damage_assessment_item");
 		}

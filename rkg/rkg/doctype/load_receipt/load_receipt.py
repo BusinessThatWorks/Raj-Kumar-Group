@@ -143,7 +143,7 @@ def create_damage_assessment(source_name, target_doc=None):
 	# Create Damage Assessment
 	damage_assessment = frappe.new_doc("Damage Assessment")
 	damage_assessment.date = frappe.utils.today()
-	damage_assessment.load_plan_reference_no = load_receipt.load_reference_no
+	damage_assessment.load_receipt_number = load_receipt.name
 	
 	# Pre-populate all frames from Load Receipt
 	for receipt_item in items_with_frame:

@@ -211,14 +211,12 @@ class DamageAssessment(Document):
 						actual_warehouse = stock_ledger[0].warehouse
 				
 				# If still not found, try to get from Load Receipt warehouse
-				if not actual_warehouse and self.load_plan_reference_no:
-					load_receipt = frappe.db.get_value(
+				if not actual_warehouse and self.load_receipt_number:
+					actual_warehouse = frappe.db.get_value(
 						"Load Receipt",
-						{"load_reference_no": self.load_plan_reference_no},
+						self.load_receipt_number,
 						"warehouse"
 					)
-					if load_receipt:
-						actual_warehouse = load_receipt
 				
 				# Use actual warehouse if available, otherwise use from_warehouse
 				source_warehouse = actual_warehouse or from_wh
@@ -403,62 +401,52 @@ def get_load_dispatch_from_serial_no(serial_no):
 
 
 @frappe.whitelist()
-def get_frames_from_load_plan(load_plan_reference_no):
-	"""Get all frames (frame_no) from all Load Dispatch documents linked to a Load Plan. Also includes the warehouse where each frame is currently located. Args: load_plan_reference_no: The Load Plan Reference No (Load Plan name). Returns: list of dicts with frame_no, warehouse, and related information."""
-	if not load_plan_reference_no:
+def get_frames_from_load_receipt(load_receipt_number):
+	"""Get all frames (frame_no) from Load Receipt items. Also includes the warehouse where each frame is currently located. Args: load_receipt_number: The Load Receipt Number (Load Receipt name). Returns: list of dicts with frame_no, warehouse, and related information."""
+	if not load_receipt_number:
 		return []
 	
-	if not frappe.db.exists("Load Plan", load_plan_reference_no):
+	if not frappe.db.exists("Load Receipt", load_receipt_number):
 		return []
 	
-	# Get all Load Dispatch documents linked to this Load Plan
-	load_dispatches = frappe.db.get_all(
-		"Load Dispatch",
-		filters={
-			"load_reference_no": load_plan_reference_no
-		},
-		fields=["name"],
-		order_by="name"
-	)
+	# Get Load Receipt document
+	load_receipt = frappe.get_doc("Load Receipt", load_receipt_number)
 	
-	if not load_dispatches:
-		return []
+	# Get warehouse from Load Receipt (allocated warehouse)
+	receipt_warehouse = load_receipt.warehouse
 	
-	# Get all Load Dispatch Item names from all Load Dispatches
-	load_dispatch_names = [ld.name for ld in load_dispatches]
+	# Get load_dispatch from parent Load Receipt
+	load_dispatch = load_receipt.load_dispatch or ""
 	
-	# Get all Load Dispatch Items with frame_no from all these Load Dispatches
+	# Get all Load Receipt Items with frame_no
 	frames = frappe.db.get_all(
-		"Load Dispatch Item",
+		"Load Receipt Item",
 		filters={
-			"parent": ["in", load_dispatch_names],
+			"parent": load_receipt_number,
 			"frame_no": ["!=", ""]
 		},
-		fields=["frame_no", "item_code", "model_name", "model_serial_no", "parent"],
-		order_by="parent, idx"
+		fields=["frame_no", "item_code", "model_name", "model_serial_no"],
+		order_by="idx"
 	)
 	
 	# Return list of frame information with warehouse
 	result = []
-	seen_frames = set()  # To avoid duplicates if same frame appears in multiple dispatches
 	for frame in frames:
 		if frame.frame_no and str(frame.frame_no).strip():
 			frame_no = str(frame.frame_no).strip()
-			# Only add if we haven't seen this frame_no before
-			if frame_no not in seen_frames:
-				seen_frames.add(frame_no)
-				
-				# Get warehouse from Serial No
-				warehouse = frappe.db.get_value("Serial No", frame_no, "warehouse")
-				
-				result.append({
-					"frame_no": frame_no,
-					"serial_no": frame_no,  # frame_no is the serial_no name
-					"item_code": frame.item_code,
-					"model_name": frame.model_name,
-					"model_serial_no": frame.model_serial_no,
-					"load_dispatch": frame.parent,
-					"warehouse": warehouse  # Add warehouse
-				})
+			
+			# Get warehouse - prioritize Load Receipt warehouse, fallback to Serial No warehouse
+			serial_warehouse = frappe.db.get_value("Serial No", frame_no, "warehouse")
+			warehouse = receipt_warehouse or serial_warehouse
+			
+			result.append({
+				"frame_no": frame_no,
+				"serial_no": frame_no,  # frame_no is the serial_no name
+				"item_code": frame.item_code,
+				"model_name": frame.model_name,
+				"model_serial_no": frame.model_serial_no,
+				"load_dispatch": load_dispatch,  # Get from parent Load Receipt
+				"warehouse": warehouse  # Add warehouse
+			})
 	
 	return result

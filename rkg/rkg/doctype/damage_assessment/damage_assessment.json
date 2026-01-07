@@ -9,7 +9,7 @@
   "basic_info_section",
   "date",
   "column_break_basic",
-  "load_plan_reference_no",
+  "load_receipt_number",
   "warehouse_section",
   "from_warehouse",
   "stock_entry_type",
@@ -41,11 +41,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "load_plan_reference_no",
+   "fieldname": "load_receipt_number",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Load Reference No",
-   "options": "Load Plan",
+   "label": "Load Receipt Number",
+   "options": "Load Receipt",
    "reqd": 1
   },
   {
