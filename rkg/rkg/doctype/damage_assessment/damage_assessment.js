@@ -61,18 +61,14 @@ frappe.ui.form.on("Damage Assessment", {
 						// Clear existing items
 						frm.clear_table("damage_assessment_item");
 						
-					// Add all frames
-					r.message.forEach(function(frame) {
-						let row = frm.add_child("damage_assessment_item");
-						row.serial_no = frame.serial_no;
-						row.load_dispatch = frame.load_dispatch || "";  // Set from frame data
-						row.from_warehouse = frame.warehouse || "";  // Set warehouse from frame data
-						row.status = "OK";  // Default to OK
-						row.type_of_damage_1 = "";
-						row.type_of_damage_2 = "";
-						row.type_of_damage_3 = "";
-						row.estimated_cost = 0;
-					});
+						// Add all frames
+						r.message.forEach(function(frame) {
+							let row = frm.add_child("damage_assessment_item");
+							row.serial_no = frame.serial_no;
+							row.from_warehouse = frame.warehouse || "";  // Set warehouse from frame data
+							row.status = "OK";  // Default to OK
+							row.estimated_cost = 0;
+						});
 						
 						frm.refresh_field("damage_assessment_item");
 						frm.trigger("calculate_total_estimated_cost");
@@ -109,7 +105,7 @@ frappe.ui.form.on("Damage Assessment Item", {
 		let row = locals[cdt][cdn];
 		
 		if (row.serial_no) {
-			// Auto-fetch Load Dispatch and Warehouse from which this frame originated
+			// Auto-fetch Warehouse from which this frame originated
 			frappe.call({
 				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_load_dispatch_from_serial_no",
 				args: {
@@ -117,12 +113,6 @@ frappe.ui.form.on("Damage Assessment Item", {
 				},
 				callback: function(r) {
 					if (r.message) {
-						if (r.message.load_dispatch) {
-							frappe.model.set_value(cdt, cdn, "load_dispatch", r.message.load_dispatch);
-						} else {
-							frappe.model.set_value(cdt, cdn, "load_dispatch", "");
-						}
-						
 						// Set warehouse if available (only if not already set, to preserve existing value)
 						if (r.message.warehouse && !row.from_warehouse) {
 							frappe.model.set_value(cdt, cdn, "from_warehouse", r.message.warehouse);
@@ -133,7 +123,6 @@ frappe.ui.form.on("Damage Assessment Item", {
 				}
 			});
 		} else {
-			frappe.model.set_value(cdt, cdn, "load_dispatch", "");
 			frappe.model.set_value(cdt, cdn, "from_warehouse", "");
 		}
 	},
@@ -141,18 +130,17 @@ frappe.ui.form.on("Damage Assessment Item", {
 	status(frm, cdt, cdn) {
 		let row = locals[cdt][cdn];
 		
-		// Clear damage/issue fields, estimated cost, and warehouses if status is OK
+		// Clear estimated cost and to_warehouse if status is OK
 		if (row.status === "OK") {
-			frappe.model.set_value(cdt, cdn, "type_of_damage_1", "");
-			frappe.model.set_value(cdt, cdn, "type_of_damage_2", "");
-			frappe.model.set_value(cdt, cdn, "type_of_damage_3", "");
 			frappe.model.set_value(cdt, cdn, "estimated_cost", 0);
 			frappe.model.set_value(cdt, cdn, "to_warehouse", "");
 			// Note: from_warehouse is kept as it's already fetched
 		}
 		
-		// Refresh the row to show/hide fields based on status
-		frm.refresh_field("damage_assessment_item");
+		// Refresh the row
+		setTimeout(function() {
+			frm.refresh_field("damage_assessment_item");
+		}, 100);
 		frm.trigger("calculate_total_estimated_cost");
 	},
 	
@@ -163,21 +151,6 @@ frappe.ui.form.on("Damage Assessment Item", {
 		if (row.status === "OK") {
 			frappe.model.set_value(cdt, cdn, "to_warehouse", "");
 		}
-	},
-	
-	type_of_damage_1(frm, cdt, cdn) {
-		// Recalculate total when damage/issue changes (in case it affects cost)
-		frm.trigger("calculate_total_estimated_cost");
-	},
-	
-	type_of_damage_2(frm, cdt, cdn) {
-		// Recalculate total when damage/issue changes (in case it affects cost)
-		frm.trigger("calculate_total_estimated_cost");
-	},
-	
-	type_of_damage_3(frm, cdt, cdn) {
-		// Recalculate total when damage/issue changes (in case it affects cost)
-		frm.trigger("calculate_total_estimated_cost");
 	},
 	
 	estimated_cost(frm, cdt, cdn) {

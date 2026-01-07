@@ -5,17 +5,13 @@
  "creation": "2025-12-03 14:57:35.192329",
  "doctype": "DocType",
  "engine": "InnoDB",
-  "field_order": [
+ "field_order": [
   "basic_info_section",
   "date",
   "column_break_basic",
   "load_receipt_number",
   "warehouse_section",
-  "from_warehouse",
   "stock_entry_type",
-  "column_break_warehouse",
-  "to_warehouse",
-  "stock_entry",
   "damage_items_section",
   "damage_assessment_item",
   "estimation_section",
@@ -65,7 +61,6 @@
    "reqd": 1
   },
   {
-   "description": "Each frame can have up to 3 damages/issues. Damage/Issue 1 is mandatory for frames marked as Not OK.",
    "fieldname": "damage_items_section",
    "fieldtype": "Section Break",
    "label": "Damaged Frames"
@@ -102,7 +97,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-19 15:33:16.223423",
+ "modified": "2026-01-07 13:00:49.838527",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Damage Assessment",
@@ -123,6 +118,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

@@ -59,6 +59,22 @@ class LoadReceipt(Document):
 	
 	def on_cancel(self):
 		"""Set status on cancel."""
+		# Break circular dependency: Clear damage_assessment link if it exists
+		if self.damage_assessment:
+			try:
+				# Clear the link and reset frame counts
+				frappe.db.set_value("Load Receipt", self.name, {
+					"damage_assessment": None,
+					"frames_ok": 0,
+					"frames_not_ok": 0
+				}, update_modified=False)
+				frappe.db.commit()
+			except Exception as e:
+				frappe.log_error(
+					f"Error clearing damage_assessment link when cancelling Load Receipt {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					"Load Receipt Cancel Error"
+				)
+		
 		self.status = "Draft"
 		# Save status to database using db_set to ensure it's persisted
 		# Use update_modified=False to avoid changing modified timestamp
@@ -66,6 +82,27 @@ class LoadReceipt(Document):
 		frappe.db.commit()
 		# Reload the document to ensure status is synced
 		self.reload()
+	
+	def on_trash(self):
+		"""Break circular dependency before deletion: Clear damage_assessment link if it exists."""
+		# Break the circular dependency by clearing the link
+		# This must be done before Frappe's link validation
+		if self.damage_assessment:
+			try:
+				# Clear the link and reset frame counts
+				frappe.db.set_value("Load Receipt", self.name, {
+					"damage_assessment": None,
+					"frames_ok": 0,
+					"frames_not_ok": 0
+				}, update_modified=False)
+				frappe.db.commit()
+				# Set flag to ignore links check for this deletion
+				frappe.flags.ignore_links = True
+			except Exception as e:
+				frappe.log_error(
+					f"Error clearing damage_assessment link when deleting Load Receipt {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					"Load Receipt Delete Error"
+				)
 
 
 @frappe.whitelist()
@@ -189,7 +226,7 @@ def create_damage_assessment(source_name, target_doc=None):
 		# Set status to "OK" by default - user can change to "Not OK" for damaged frames
 		damage_assessment_item.status = "OK"
 		damage_assessment_item.from_warehouse = warehouse
-		# type_of_damage_1, to_warehouse, and estimated_cost will be filled by user when marking as "Not OK"
+		# type_of_damage, to_warehouse, and estimated_cost will be filled by user when marking as "Not OK"
 		
 		# Update Serial No warehouse to match Load Receipt warehouse if different or empty
 		# This ensures Serial No warehouse matches the allocated warehouse for stock entry validation
