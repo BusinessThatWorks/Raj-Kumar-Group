@@ -50,53 +50,93 @@ class LoadReceipt(Document):
 	def on_submit(self):
 		"""Set status on submit."""
 		self.status = "Submitted"
-		# Save status to database using db_set to ensure it's persisted
-		# Use update_modified=False to avoid changing modified timestamp
 		frappe.db.set_value("Load Receipt", self.name, "status", "Submitted", update_modified=False)
-		frappe.db.commit()
-		# Reload the document to ensure status is synced
 		self.reload()
+	
+	def validate(self):
+		"""Validate Load Receipt."""
+		# For submitted documents, ALWAYS ensure status is "Submitted"
+		# This prevents "Not Saved" status from appearing in form view
+		if self.docstatus == 1:
+			# Always set status to "Submitted" for submitted documents
+			# This fixes the issue where status shows "Not Saved" after PI submission
+			if self.status != "Submitted":
+				# Reload status from database first to ensure accuracy
+				db_status = frappe.db.get_value("Load Receipt", self.name, "status")
+				if db_status == "Submitted":
+					self.status = "Submitted"
+				else:
+					# If database status is also wrong, force it to "Submitted"
+					self.status = "Submitted"
+					# Update database to ensure consistency
+					frappe.db.set_value("Load Receipt", self.name, "status", "Submitted", update_modified=False)
+		elif self.docstatus == 0:
+			# For draft documents, set status to "Draft" if not set
+			if not self.status:
+				self.status = "Draft"
+			elif self.status not in ["Draft", "Not Saved"]:
+				# If status is something else for a draft, set to Draft
+				self.status = "Draft"
+		
+		if self.load_dispatch:
+			# Validate Load Dispatch exists and is submitted
+			if not frappe.db.exists("Load Dispatch", self.load_dispatch):
+				frappe.throw(_("Load Dispatch {0} does not exist").format(self.load_dispatch))
+			
+			load_dispatch = frappe.get_doc("Load Dispatch", self.load_dispatch)
+			if load_dispatch.docstatus != 1:
+				frappe.throw(_("Load Dispatch {0} must be submitted before creating Load Receipt").format(self.load_dispatch))
+		
+		# Calculate total receipt quantity
+		self.calculate_total_receipt_quantity()
+	
+	def before_cancel(self):
+		"""Cancel linked Damage Assessment before cancelling Load Receipt (parent-child hierarchy)."""
+		if self.damage_assessment:
+			try:
+				da_name = self.damage_assessment
+				
+				# Check if Damage Assessment exists and is submitted
+				if frappe.db.exists("Damage Assessment", da_name):
+					da_docstatus = frappe.db.get_value("Damage Assessment", da_name, "docstatus")
+					
+					# Auto-cancel Damage Assessment if it's submitted
+					if da_docstatus == 1:
+						da_doc = frappe.get_doc("Damage Assessment", da_name)
+						da_doc.cancel()
+				
+				# Clear the link and reset frame counts
+				frappe.db.set_value("Load Receipt", self.name, {
+					"damage_assessment": None,
+					"frames_ok": 0,
+					"frames_not_ok": 0
+				}, update_modified=False)
+				
+				# Update the in-memory document as well
+				self.damage_assessment = None
+				self.frames_ok = 0
+				self.frames_not_ok = 0
+			except Exception as e:
+				frappe.log_error(
+					f"Error cancelling Damage Assessment {self.damage_assessment} when cancelling Load Receipt {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					"Load Receipt Cancel Error"
+				)
 	
 	def on_cancel(self):
 		"""Set status on cancel."""
-		# Break circular dependency: Clear damage_assessment link if it exists
-		if self.damage_assessment:
-			try:
-				# Clear the link and reset frame counts
-				frappe.db.set_value("Load Receipt", self.name, {
-					"damage_assessment": None,
-					"frames_ok": 0,
-					"frames_not_ok": 0
-				}, update_modified=False)
-				frappe.db.commit()
-			except Exception as e:
-				frappe.log_error(
-					f"Error clearing damage_assessment link when cancelling Load Receipt {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-					"Load Receipt Cancel Error"
-				)
-		
 		self.status = "Draft"
-		# Save status to database using db_set to ensure it's persisted
-		# Use update_modified=False to avoid changing modified timestamp
 		frappe.db.set_value("Load Receipt", self.name, "status", "Draft", update_modified=False)
-		frappe.db.commit()
-		# Reload the document to ensure status is synced
 		self.reload()
 	
-	def on_trash(self):
-		"""Break circular dependency before deletion: Clear damage_assessment link if it exists."""
-		# Break the circular dependency by clearing the link
-		# This must be done before Frappe's link validation
+	def before_trash(self):
+		"""Clear damage_assessment link before deletion."""
 		if self.damage_assessment:
 			try:
-				# Clear the link and reset frame counts
 				frappe.db.set_value("Load Receipt", self.name, {
 					"damage_assessment": None,
 					"frames_ok": 0,
 					"frames_not_ok": 0
 				}, update_modified=False)
-				frappe.db.commit()
-				# Set flag to ignore links check for this deletion
 				frappe.flags.ignore_links = True
 			except Exception as e:
 				frappe.log_error(
@@ -339,6 +379,9 @@ def create_purchase_receipt_from_load_receipt(source_name, target_doc=None):
 	from rkg.rkg.doctype.load_dispatch.load_dispatch import create_purchase_receipt
 	
 	load_receipt = frappe.get_doc("Load Receipt", source_name)
+	
+	# Reload warehouse from database in case it was just set
+	load_receipt.reload()
 	
 	if not load_receipt.warehouse:
 		frappe.throw(_("Warehouse must be set in Load Receipt before creating Purchase Receipt"))

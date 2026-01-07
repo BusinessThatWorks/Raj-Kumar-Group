@@ -65,34 +65,14 @@ class BatteryKeyUpload(Document):
 							total_errors += 1
 							continue
 						
-						# Update Serial No custom fields
-						update_fields = {}
-						if item.key_no:
-							if frappe.db.has_column("Serial No", "custom_key_no"):
-								update_fields["custom_key_no"] = str(item.key_no).strip()
-						
-						# Always update battery_serial_no to battery_no in Serial No if provided
-						# Check if battery_serial_no has a value (not None and not empty string)
-						battery_serial_no_value = getattr(item, 'battery_serial_no', None)
-						if battery_serial_no_value and str(battery_serial_no_value).strip():
-							# Try both battery_no and custom_battery_no fields
-							if frappe.db.has_column("Serial No", "battery_no"):
-								update_fields["battery_no"] = str(battery_serial_no_value).strip()
-							elif frappe.db.has_column("Serial No", "custom_battery_no"):
-								update_fields["custom_battery_no"] = str(battery_serial_no_value).strip()
-						
-						# Update Serial No with custom fields
-						if update_fields:
-							frappe.db.set_value("Serial No", serial_no, update_fields, update_modified=False)
-							frappe.db.commit()  # Commit immediately to ensure it's saved
-						
-						# Create/Update Battery Details
-						if item.battery_serial_no or item.battery_brand or item.battery_type or item.charging_date:
-							self.create_or_update_battery_details(
-								serial_no=serial_no,
+						# Create/Update Battery Information
+						if item.battery_serial_no:
+							sample_charging_date = getattr(item, 'sample_charging_date', None)
+							self.create_or_update_battery_information(
 								battery_serial_no=item.battery_serial_no,
 								battery_brand=item.battery_brand,
 								battery_type=item.battery_type,
+								sample_charging_date=sample_charging_date,
 								charging_date=item.charging_date
 							)
 						
@@ -192,9 +172,16 @@ class BatteryKeyUpload(Document):
 			])
 			battery_brand = self.get_value(row, column_map, ['battery_brand', 'battery brand', 'brand'])
 			battery_type = self.get_value(row, column_map, ['battery_type', 'battery type', 'type', 'batery type'])
-			charging_date_str = self.get_value(row, column_map, [
-				'charging_date', 'charging date', 'sample battery charging date'
+			# Extract sample_charging_date as raw string
+			sample_charging_date = self.get_value(row, column_map, [
+				'sample_charging_date', 'sample charging date', 'sample battery charging date'
 			])
+			charging_date_str = self.get_value(row, column_map, [
+				'charging_date', 'charging date'
+			])
+			# If charging_date not found but sample_charging_date exists, use that for parsing
+			if not charging_date_str and sample_charging_date:
+				charging_date_str = sample_charging_date
 			# Parse charging date to proper format
 			charging_date = self.parse_date(charging_date_str) if charging_date_str else None
 			
@@ -202,7 +189,14 @@ class BatteryKeyUpload(Document):
 			if not frame_no:
 				child_table_data.append({
 					'frame_no': '',
+					'key_no': '',
+					'battery_serial_no': '',
+					'battery_brand': '',
+					'battery_type': '',
+					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
+					'charging_date': None,
 					'status': 'Error',
+					'item_code': '',
 					'error_message': f'Row {idx}: Frame No is required'
 				})
 				total_errors += 1
@@ -214,7 +208,14 @@ class BatteryKeyUpload(Document):
 			if not serial_no:
 				child_table_data.append({
 					'frame_no': frame_no,
+					'key_no': str(key_no).strip() if key_no else '',
+					'battery_serial_no': str(battery_serial_no).strip() if battery_serial_no else '',
+					'battery_brand': str(battery_brand).strip() if battery_brand else '',
+					'battery_type': str(battery_type).strip() if battery_type else '',
+					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
+					'charging_date': None,
 					'status': 'Error',
+					'item_code': '',
 					'error_message': f'Row {idx}: Serial No {frame_no} not found'
 				})
 				total_errors += 1
@@ -224,33 +225,13 @@ class BatteryKeyUpload(Document):
 			try:
 				item_code = frappe.db.get_value('Serial No', serial_no, 'item_code')
 				
-				# Update Serial No custom fields
-				update_fields = {}
-				if key_no:
-					if frappe.db.has_column("Serial No", "custom_key_no"):
-						update_fields["custom_key_no"] = str(key_no).strip()
-				
-				# Always update battery_serial_no to battery_no in Serial No if provided
-				# Check if battery_serial_no has a value (not None and not empty string)
-				if battery_serial_no and str(battery_serial_no).strip():
-					# Try both battery_no and custom_battery_no fields
-					if frappe.db.has_column("Serial No", "battery_no"):
-						update_fields["battery_no"] = str(battery_serial_no).strip()
-					elif frappe.db.has_column("Serial No", "custom_battery_no"):
-						update_fields["custom_battery_no"] = str(battery_serial_no).strip()
-				
-				# Update Serial No with custom fields
-				if update_fields:
-					frappe.db.set_value("Serial No", serial_no, update_fields, update_modified=False)
-					frappe.db.commit()  # Commit immediately to ensure it's saved
-				
-				# Create/Update Battery Details if battery information is provided
-				if battery_serial_no or battery_brand or battery_type or charging_date:
-					self.create_or_update_battery_details(
-						serial_no=serial_no,
+				# Create/Update Battery Information
+				if battery_serial_no:
+					self.create_or_update_battery_information(
 						battery_serial_no=battery_serial_no,
 						battery_brand=battery_brand,
 						battery_type=battery_type,
+						sample_charging_date=sample_charging_date,
 						charging_date=charging_date
 					)
 				
@@ -260,6 +241,7 @@ class BatteryKeyUpload(Document):
 					'battery_serial_no': str(battery_serial_no).strip() if battery_serial_no else '',
 					'battery_brand': str(battery_brand).strip() if battery_brand else '',
 					'battery_type': str(battery_type).strip() if battery_type else '',
+					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
 					'charging_date': charging_date,  # Already parsed to date object or None
 					'status': 'Updated',
 					'item_code': item_code or '',
@@ -270,7 +252,14 @@ class BatteryKeyUpload(Document):
 			except Exception as e:
 				child_table_data.append({
 					'frame_no': serial_no,
+					'key_no': str(key_no).strip() if key_no else '',
+					'battery_serial_no': str(battery_serial_no).strip() if battery_serial_no else '',
+					'battery_brand': str(battery_brand).strip() if battery_brand else '',
+					'battery_type': str(battery_type).strip() if battery_type else '',
+					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
+					'charging_date': None,
 					'status': 'Error',
+					'item_code': '',
 					'error_message': f'Row {idx}: {str(e)}'
 				})
 				total_errors += 1
@@ -294,6 +283,7 @@ class BatteryKeyUpload(Document):
 				child_row.battery_serial_no = row_data.get("battery_serial_no", "") or ""
 				child_row.battery_brand = row_data.get("battery_brand", "") or ""
 				child_row.battery_type = row_data.get("battery_type", "") or ""
+				child_row.sample_charging_date = row_data.get("sample_charging_date", "") or ""
 				child_row.charging_date = row_data.get("charging_date")  # Already parsed date or None
 				child_row.status = row_data.get("status", "") or ""
 				child_row.item_code = row_data.get("item_code", "") or ""
@@ -416,12 +406,18 @@ class BatteryKeyUpload(Document):
 		return None
 	
 	
-	def create_or_update_battery_details(self, serial_no, battery_serial_no=None, battery_brand=None, 
-	                                    battery_type=None, charging_date=None):
-		"""Create or update Battery Details record linked to Serial No."""
-		if not frappe.db.exists("DocType", "Battery Details"):
-			# Battery Details doctype doesn't exist, skip
+	def create_or_update_battery_information(self, battery_serial_no=None, battery_brand=None, 
+	                                        battery_type=None, sample_charging_date=None, charging_date=None):
+		"""Create or update Battery Information record based on battery_serial_no."""
+		if not frappe.db.exists("DocType", "Battery Information"):
+			# Battery Information doctype doesn't exist, skip
 			return
+		
+		# Battery Information must have battery_serial_no
+		if not battery_serial_no or not str(battery_serial_no).strip():
+			return
+		
+		battery_serial_no = str(battery_serial_no).strip()
 		
 		# Parse charging date (should already be a date object, but handle string just in case)
 		parsed_charging_date = None
@@ -436,46 +432,46 @@ class BatteryKeyUpload(Document):
 				except:
 					pass
 		
-		# Check if Battery Details already exists for this frame_no
-		existing_battery = frappe.db.get_value(
-			"Battery Details",
-			{"frame_no": serial_no},
+		# Check if Battery Information already exists for this battery_serial_no
+		existing_battery_info = frappe.db.get_value(
+			"Battery Information",
+			{"battery_serial_no": battery_serial_no},
 			"name"
 		)
 		
-		if existing_battery:
-			# Update existing Battery Details
+		if existing_battery_info:
+			# Update existing Battery Information
 			update_fields = {}
-			if battery_serial_no:
-				update_fields["battery_serial_no"] = str(battery_serial_no).strip()
 			if battery_brand:
 				update_fields["battery_brand"] = str(battery_brand).strip()
 			if battery_type:
 				update_fields["battery_type"] = str(battery_type).strip()
+			if sample_charging_date:
+				update_fields["sample_charging_date"] = str(sample_charging_date).strip()
 			if parsed_charging_date:
 				update_fields["charging_date"] = parsed_charging_date
 			
 			if update_fields:
-				frappe.db.set_value("Battery Details", existing_battery, update_fields, update_modified=False)
+				frappe.db.set_value("Battery Information", existing_battery_info, update_fields, update_modified=False)
+				frappe.db.commit()
 		else:
-			# Create new Battery Details
+			# Create new Battery Information
 			try:
-				battery_doc = frappe.get_doc({
-					"doctype": "Battery Details",
-					"frame_no": serial_no,
-					"battery_serial_no": str(battery_serial_no).strip() if battery_serial_no else "",
+				battery_info_doc = frappe.get_doc({
+					"doctype": "Battery Information",
+					"battery_serial_no": battery_serial_no,
 					"battery_brand": str(battery_brand).strip() if battery_brand else "",
 					"battery_type": str(battery_type).strip() if battery_type else "",
-					"charging_date": parsed_charging_date if parsed_charging_date else None,
-					"status": "In Stock"
+					"sample_charging_date": str(sample_charging_date).strip() if sample_charging_date else "",
+					"charging_date": parsed_charging_date if parsed_charging_date else None
 				})
-				battery_doc.insert(ignore_permissions=True)
+				battery_info_doc.insert(ignore_permissions=True)
 				frappe.db.commit()
 			except Exception as e:
 				# Log error but don't fail the whole process
 				frappe.log_error(
-					f"Error creating Battery Details for Serial No {serial_no}: {str(e)}",
-					"Battery Details Creation Error"
+					f"Error creating Battery Information for battery_serial_no {battery_serial_no}: {str(e)}",
+					"Battery Information Creation Error"
 				)
 
 
@@ -540,9 +536,16 @@ def process_excel_file_for_preview(file_url):
 			])
 			battery_brand = _get_value_from_row(row, column_map, ['battery_brand', 'battery brand', 'brand'])
 			battery_type = _get_value_from_row(row, column_map, ['battery_type', 'battery type', 'type', 'batery type'])
-			charging_date_str = _get_value_from_row(row, column_map, [
-				'charging_date', 'charging date', 'sample battery charging date'
+			# Extract sample_charging_date as raw string
+			sample_charging_date = _get_value_from_row(row, column_map, [
+				'sample_charging_date', 'sample charging date', 'sample battery charging date'
 			])
+			charging_date_str = _get_value_from_row(row, column_map, [
+				'charging_date', 'charging date'
+			])
+			# If charging_date not found but sample_charging_date exists, use that for parsing
+			if not charging_date_str and sample_charging_date:
+				charging_date_str = sample_charging_date
 			
 			# Parse charging date
 			charging_date = None
@@ -557,6 +560,7 @@ def process_excel_file_for_preview(file_url):
 					'battery_serial_no': '',
 					'battery_brand': '',
 					'battery_type': '',
+					'sample_charging_date': '',
 					'charging_date': None,
 					'status': 'Error',
 					'item_code': '',
@@ -575,6 +579,7 @@ def process_excel_file_for_preview(file_url):
 					'battery_serial_no': battery_serial_no or '',
 					'battery_brand': battery_brand or '',
 					'battery_type': battery_type or '',
+					'sample_charging_date': sample_charging_date or '',
 					'charging_date': charging_date,
 					'status': 'Error',
 					'item_code': '',
@@ -591,6 +596,7 @@ def process_excel_file_for_preview(file_url):
 				'battery_serial_no': battery_serial_no or '',
 				'battery_brand': battery_brand or '',
 				'battery_type': battery_type or '',
+				'sample_charging_date': sample_charging_date or '',
 				'charging_date': charging_date,
 				'status': 'Pending',  # Will be updated to 'Updated' on submit
 				'item_code': item_code,
@@ -839,6 +845,7 @@ def _update_upload_items_child_table(parent_name, child_table_data):
 			battery_serial_no = row_data.get("battery_serial_no", "") or ""
 			battery_brand = row_data.get("battery_brand", "") or ""
 			battery_type = row_data.get("battery_type", "") or ""
+			sample_charging_date = row_data.get("sample_charging_date", "") or ""
 			status = row_data.get("status", "") or ""
 			item_code = row_data.get("item_code", "") or ""
 			error_message = row_data.get("error_message", "") or ""
@@ -847,10 +854,10 @@ def _update_upload_items_child_table(parent_name, child_table_data):
 			frappe.db.sql("""
 				INSERT INTO `tabBattery Key Upload Item`
 				(name, creation, modified, modified_by, owner, docstatus, parent, parentfield, parenttype, idx,
-				 frame_no, key_no, battery_serial_no, battery_brand, battery_type, charging_date, status, item_code, error_message)
+				 frame_no, key_no, battery_serial_no, battery_brand, battery_type, sample_charging_date, charging_date, status, item_code, error_message)
 				VALUES
 				(%s, NOW(), NOW(), %s, %s, 0, %s, 'upload_items', 'Battery Key Upload', %s,
-				 %s, %s, %s, %s, %s, %s, %s, %s, %s)
+				 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 			""", (
 				child_name,
 				frappe.session.user,
@@ -862,6 +869,7 @@ def _update_upload_items_child_table(parent_name, child_table_data):
 				battery_serial_no,
 				battery_brand,
 				battery_type,
+				sample_charging_date,
 				charging_date,
 				status,
 				item_code,

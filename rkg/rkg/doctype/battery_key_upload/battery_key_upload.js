@@ -143,6 +143,7 @@ frappe.ui.form.on("Battery Key Upload", {
 								child_row.battery_serial_no = row_data.battery_serial_no || "";
 								child_row.battery_brand = row_data.battery_brand || "";
 								child_row.battery_type = row_data.battery_type || "";
+								child_row.sample_charging_date = row_data.sample_charging_date || "";
 								child_row.charging_date = row_data.charging_date || null;
 								child_row.status = row_data.status || "Pending";
 								child_row.item_code = row_data.item_code || "";

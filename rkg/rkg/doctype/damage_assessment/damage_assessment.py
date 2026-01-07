@@ -11,7 +11,22 @@ class DamageAssessment(Document):
 		self.calculate_total_estimated_cost()
 	
 	def before_submit(self):
-		"""Remove OK items before submitting."""
+		"""Remove OK items before submitting and validate Load Receipt is submitted."""
+		# Validate that linked Load Receipt is submitted (parent-child rule)
+		if self.load_receipt_number:
+			if not frappe.db.exists("Load Receipt", self.load_receipt_number):
+				frappe.throw(_("Load Receipt {0} does not exist").format(self.load_receipt_number))
+			
+			lr_docstatus = frappe.db.get_value("Load Receipt", self.load_receipt_number, "docstatus")
+			if lr_docstatus != 1:
+				frappe.throw(
+					_("Cannot submit Damage Assessment {0} because Load Receipt {1} is not submitted. Please submit the Load Receipt first.").format(
+						frappe.utils.get_link_to_form("Damage Assessment", self.name),
+						frappe.utils.get_link_to_form("Load Receipt", self.load_receipt_number)
+					),
+					title=_("Submit Load Receipt First")
+				)
+		
 		self.remove_ok_items()
 	
 	def set_stock_entry_type(self):
@@ -83,7 +98,7 @@ class DamageAssessment(Document):
 	
 	def on_cancel(self):
 		"""Cancel linked Stock Entries when Damage Assessment is cancelled."""
-		# Break circular dependency: Clear damage_assessment link in Load Receipt
+		# Clear link in Load Receipt if it exists (no checks - parent controls cancellation)
 		if self.load_receipt_number:
 			try:
 				if frappe.db.exists("Load Receipt", self.load_receipt_number):
@@ -95,43 +110,40 @@ class DamageAssessment(Document):
 							"frames_ok": 0,
 							"frames_not_ok": 0
 						}, update_modified=False)
-						frappe.db.commit()
 			except Exception as e:
 				frappe.log_error(
 					f"Error clearing damage_assessment link in Load Receipt {self.load_receipt_number} when cancelling Damage Assessment {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
 					"Damage Assessment Cancel Error"
 				)
 		
-		# Check if custom_damage_assessment field exists before querying
+		# Find stock entries created by this Damage Assessment
+		# We find them by matching serial numbers, date, and warehouse pairs
 		stock_entries = []
-		try:
-			# Check if the custom field column exists
-			if frappe.db.has_column("Stock Entry", "custom_damage_assessment"):
-				stock_entries = frappe.get_all(
-					"Stock Entry",
-					filters={
-						"custom_damage_assessment": self.name,
-						"docstatus": 1
-					},
-					fields=["name"]
-				)
-			else:
-				# If field doesn't exist, try to find stock entries by checking items
-				# This is a fallback method if the custom field wasn't created
+		if self.damage_assessment_item:
+			try:
+				# Get all serial numbers from damage assessment items
+				serial_nos = [item.serial_no for item in self.damage_assessment_item if item.serial_no and item.status == "Not OK"]
+				
+				if serial_nos:
+					# Find stock entries that contain these serial numbers and match the date
+					# This is a best-effort approach to find related stock entries
+					stock_entry_names = frappe.db.sql("""
+						SELECT DISTINCT se.name
+						FROM `tabStock Entry` se
+						INNER JOIN `tabStock Entry Detail` sed ON se.name = sed.parent
+						WHERE se.docstatus = 1
+							AND se.posting_date = %s
+							AND sed.serial_no IN %s
+					""", (self.date or frappe.utils.today(), tuple(serial_nos)), as_dict=True)
+					
+					stock_entries = [se.name for se in stock_entry_names]
+			except Exception as e:
+				# If query fails, log error and continue without cancelling stock entries
 				frappe.log_error(
-					f"custom_damage_assessment field not found on Stock Entry. Using fallback method to find linked stock entries for Damage Assessment {self.name}",
-					"Damage Assessment Cancel Warning"
+					f"Error finding stock entries for Damage Assessment {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					"Damage Assessment Cancel Error"
 				)
-				# Try to find stock entries by date and items (less reliable but works if field is missing)
-				# For now, skip stock entry cancellation if field doesn't exist
 				stock_entries = []
-		except Exception as e:
-			# If query fails, log error and continue without cancelling stock entries
-			frappe.log_error(
-				f"Error querying stock entries for Damage Assessment {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-				"Damage Assessment Cancel Error"
-			)
-			stock_entries = []
 		
 		if not stock_entries:
 			return
@@ -140,27 +152,27 @@ class DamageAssessment(Document):
 		successful_entries = []
 		critical_errors = []  # Errors that should prevent Damage Assessment cancellation
 		
-		for se in stock_entries:
+		for se_name in stock_entries:
 			try:
-				result = self.cancel_stock_entry(se.name)
+				result = self.cancel_stock_entry(se_name)
 				if result:
-					successful_entries.append(se.name)
+					successful_entries.append(se_name)
 				else:
-					failed_entries.append(se.name)
+					failed_entries.append(se_name)
 			except (frappe.ValidationError, frappe.LinkExistsError) as e:
 				# Critical errors - prevent Damage Assessment cancellation
 				error_msg = str(e)
-				critical_errors.append((se.name, error_msg))
+				critical_errors.append((se_name, error_msg))
 				frappe.log_error(
-					f"Critical error cancelling Stock Entry {se.name} for Damage Assessment {self.name}: {error_msg}\nTraceback: {frappe.get_traceback()}",
+					f"Critical error cancelling Stock Entry {se_name} for Damage Assessment {self.name}: {error_msg}\nTraceback: {frappe.get_traceback()}",
 					"Damage Assessment Cancel Error"
 				)
 			except Exception as e:
 				# Non-critical errors - log but allow cancellation to proceed
 				error_msg = str(e)
-				failed_entries.append(se.name)
+				failed_entries.append(se_name)
 				frappe.log_error(
-					f"Error cancelling Stock Entry {se.name} for Damage Assessment {self.name}: {error_msg}\nTraceback: {frappe.get_traceback()}",
+					f"Error cancelling Stock Entry {se_name} for Damage Assessment {self.name}: {error_msg}\nTraceback: {frappe.get_traceback()}",
 					"Damage Assessment Cancel Error"
 				)
 		
@@ -217,29 +229,26 @@ class DamageAssessment(Document):
 					indicator="green"
 				)
 	
-	def on_trash(self):
-		"""Break circular dependency before deletion: Clear damage_assessment link in Load Receipt."""
-		# Break the circular dependency by clearing the link in Load Receipt
-		# This must be done before Frappe's link validation
+	def before_trash(self):
+		"""Clear damage_assessment link before deletion."""
 		if self.load_receipt_number:
 			try:
 				if frappe.db.exists("Load Receipt", self.load_receipt_number):
 					current_da = frappe.db.get_value("Load Receipt", self.load_receipt_number, "damage_assessment")
 					if current_da == self.name:
-						# Clear the link and reset frame counts
 						frappe.db.set_value("Load Receipt", self.load_receipt_number, {
 							"damage_assessment": None,
 							"frames_ok": 0,
 							"frames_not_ok": 0
 						}, update_modified=False)
-						frappe.db.commit()
-						# Set flag to ignore links check for this deletion
-						frappe.flags.ignore_links = True
+				frappe.flags.ignore_links = True
 			except Exception as e:
 				frappe.log_error(
-					f"Error clearing damage_assessment link in Load Receipt {self.load_receipt_number} when deleting Damage Assessment {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					f"Error clearing damage_assessment link when deleting Damage Assessment {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
 					"Damage Assessment Delete Error"
 				)
+		else:
+			frappe.flags.ignore_links = True
 	
 	def create_stock_entries(self):
 		"""Create Stock Entries to move damaged items to Damage Godowns. Groups items by warehouse pairs (from_warehouse, to_warehouse) and creates separate stock entries for each unique warehouse combination. Handles multiple damages per frame by deduplicating serial_no entries."""
@@ -275,11 +284,6 @@ class DamageAssessment(Document):
 			stock_entry = frappe.new_doc("Stock Entry")
 			stock_entry.stock_entry_type = self.stock_entry_type
 			stock_entry.posting_date = self.date or frappe.utils.today()
-			
-			try:
-				stock_entry.custom_damage_assessment = self.name
-			except AttributeError:
-				pass
 			
 			for serial_no, item in serial_no_items.items():
 				item_code = frappe.db.get_value("Serial No", serial_no, "item_code")

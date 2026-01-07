@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{battery_serial_no}",
+ "creation": "2026-01-07 16:21:07.337401",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_qtbc",
+  "amended_from",
+  "battery_brand",
+  "battery_type",
+  "battery_serial_no",
+  "sample_charging_date",
+  "charging_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_qtbc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Battery Information",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "battery_brand",
+   "fieldtype": "Data",
+   "label": "Battery Brand"
+  },
+  {
+   "fieldname": "battery_type",
+   "fieldtype": "Data",
+   "label": "Battery Type"
+  },
+  {
+   "fieldname": "battery_serial_no",
+   "fieldtype": "Data",
+   "label": "Battery Serial No"
+  },
+  {
+   "fieldname": "sample_charging_date",
+   "fieldtype": "Data",
+   "label": "Sample Battery Charging Date"
+  },
+  {
+   "fieldname": "charging_date",
+   "fieldtype": "Date",
+   "label": "Charging Date"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-01-07 17:13:52.956092",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Battery Information",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

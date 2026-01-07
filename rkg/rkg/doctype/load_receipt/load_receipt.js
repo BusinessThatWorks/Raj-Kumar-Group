@@ -102,19 +102,11 @@ frappe.ui.form.on("Load Receipt", {
 							}
 							
 							// Only show Purchase Receipt button if no Purchase Receipt exists
-							if (!has_pr && frm.doc.warehouse) {
+							if (!has_pr) {
 								frm.add_custom_button(__("Purchase Receipt"), function() {
 									create_purchase_receipt_from_load_receipt(frm);
 								}, __("Create"));
 								frm.page.set_inner_btn_group_as_primary(__("Create"));
-							}
-							
-							// Show message if warehouse is not set
-							if (!frm.doc.warehouse) {
-								frappe.show_alert({
-									message: __("Please set Warehouse before creating Purchase Receipt."),
-									indicator: "orange"
-								}, 5);
 							}
 						}
 					}
@@ -373,15 +365,78 @@ function show_warehouse_selection_dialog(frm) {
 
 // Create Purchase Receipt from Load Receipt
 function create_purchase_receipt_from_load_receipt(frm) {
+	// If warehouse is not set, prompt user to select warehouse first
 	if (!frm.doc.warehouse) {
-		frappe.msgprint({
-			title: __("Error"),
-			message: __("Please set Warehouse before creating Purchase Receipt."),
-			indicator: "red"
+		const dialog = new frappe.ui.Dialog({
+			title: __("Select Warehouse"),
+			fields: [
+				{
+					label: __("Warehouse"),
+					fieldname: "warehouse",
+					fieldtype: "Link",
+					options: "Warehouse",
+					reqd: 1,
+					get_query: function() {
+						return {
+							filters: {}
+						};
+					},
+					description: __("Select warehouse for creating Purchase Receipt")
+				}
+			],
+			primary_action_label: __("Create Purchase Receipt"),
+			primary_action: function(values) {
+				if (!values.warehouse) {
+					frappe.msgprint({
+						title: __("Validation Error"),
+						message: __("Please select a warehouse."),
+						indicator: "orange"
+					});
+					return;
+				}
+				
+				dialog.hide();
+				
+				// Set warehouse in Load Receipt and save, then create Purchase Receipt
+				frm.set_value("warehouse", values.warehouse);
+				frm.save().then(function() {
+					// After warehouse is set and saved, create Purchase Receipt
+					frappe.call({
+						method: "rkg.rkg.doctype.load_receipt.load_receipt.create_purchase_receipt_from_load_receipt",
+						args: {
+							source_name: frm.doc.name
+						},
+						callback: function(r) {
+							if (r.message && r.message.name) {
+								frappe.set_route("Form", "Purchase Receipt", r.message.name);
+								calculate_total_billed_quantity(frm);
+							} else {
+								frappe.msgprint({
+									title: __("Success"),
+									message: __("Purchase Receipt created successfully."),
+									indicator: "green"
+								});
+								frm.reload_doc();
+								calculate_total_billed_quantity(frm);
+							}
+						},
+						error: function(r) {
+							frappe.msgprint({
+								title: __("Error"),
+								message: r.message || __("An error occurred while creating Purchase Receipt."),
+								indicator: "red"
+							});
+						}
+					});
+				});
+			}
 		});
+		
+		dialog.show();
 		return;
 	}
 	
+	// Warehouse is already set, proceed with creating Purchase Receipt
 	frappe.call({
 		method: "rkg.rkg.doctype.load_receipt.load_receipt.create_purchase_receipt_from_load_receipt",
 		args: {

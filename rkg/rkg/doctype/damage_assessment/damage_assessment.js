@@ -15,6 +15,7 @@ frappe.ui.form.on("Damage Assessment", {
 		});
 	},
 	
+	
 	before_save(frm) {
 		// Allow saving as draft without damage details
 		// Validation for damage items will be done on submit (in before_submit hook)
