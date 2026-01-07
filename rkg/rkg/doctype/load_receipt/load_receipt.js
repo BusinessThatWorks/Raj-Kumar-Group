@@ -93,21 +93,12 @@ frappe.ui.form.on("Load Receipt", {
 						if (r.message) {
 							const has_pr = r.message.has_purchase_receipt || false;
 							
-							// Add "Create Damage Assessment" button - only if Purchase Receipt exists
-							if (frm.doc.load_reference_no && has_pr) {
-								if (frm.doc.damage_assessment) {
-									// If damage assessment exists, show button to open it
-									frm.add_custom_button(__("Open Damage Assessment"), function() {
-										frappe.set_route("Form", "Damage Assessment", frm.doc.damage_assessment);
-									}, __("Create"));
-									frm.page.set_inner_btn_group_as_primary(__("Create"));
-								} else {
-									// Show button to create new Damage Assessment
-									frm.add_custom_button(__("Create Damage Assessment"), function() {
-										create_damage_assessment(frm);
-									}, __("Create"));
-									frm.page.set_inner_btn_group_as_primary(__("Create"));
-								}
+							// Add "Create Damage Assessment" button - only if Purchase Receipt exists and Damage Assessment doesn't exist
+							if (frm.doc.load_reference_no && has_pr && !frm.doc.damage_assessment) {
+								frm.add_custom_button(__("Create Damage Assessment"), function() {
+									create_damage_assessment(frm);
+								}, __("Create"));
+								frm.page.set_inner_btn_group_as_primary(__("Create"));
 							}
 							
 							// Only show Purchase Receipt button if no Purchase Receipt exists
@@ -122,14 +113,6 @@ frappe.ui.form.on("Load Receipt", {
 							if (!frm.doc.warehouse) {
 								frappe.show_alert({
 									message: __("Please set Warehouse before creating Purchase Receipt."),
-									indicator: "orange"
-								}, 5);
-							}
-							
-							// Show message if Purchase Receipt already exists
-							if (has_pr) {
-								frappe.show_alert({
-									message: __("Purchase Receipt already exists for this Load Dispatch."),
 									indicator: "orange"
 								}, 5);
 							}
