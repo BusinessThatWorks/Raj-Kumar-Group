@@ -9,6 +9,8 @@ frappe.ui.form.on("Frame Bundle", {
 		update_battery_serial_no_readonly(frm);
 		// Show/hide discarded history section
 		update_discarded_history_visibility(frm);
+		// Make Swap History child table read-only and system-controlled
+		make_swap_history_readonly(frm);
 		// Add Swap Battery button for saved documents
 		if (frm.doc.name) {
 			frm.add_custom_button(__("Swap Battery"), function() {
@@ -24,6 +26,8 @@ frappe.ui.form.on("Frame Bundle", {
 		update_battery_serial_no_readonly(frm);
 		// Show/hide discarded history section
 		update_discarded_history_visibility(frm);
+		// Make Swap History child table read-only and system-controlled
+		make_swap_history_readonly(frm);
 	},
 
 	is_battery_expired(frm) {
@@ -35,6 +39,11 @@ frappe.ui.form.on("Frame Bundle", {
 		if (frm.doc.is_battery_expired && !frm.is_new()) {
 			update_discarded_history(frm);
 		}
+	},
+
+	swap_history(frm) {
+		// Ensure Swap History remains read-only when rows are added
+		make_swap_history_readonly(frm);
 	}
 });
 
@@ -79,6 +88,26 @@ function update_discarded_history(frm) {
 		frm.set_value("discarded_date", frappe.datetime.now_datetime());
 		frm.set_value("discarded_by", frappe.user.name);
 		frm.set_value("discarded_battery_serial_no", frm.doc.battery_serial_no || "");
+	}
+}
+
+function make_swap_history_readonly(frm) {
+	// Make Swap History child table read-only and system-controlled
+	frm.set_df_property("swap_history", "read_only", 1);
+	
+	// Get the grid and disable add/delete/edit
+	let grid = frm.get_field("swap_history").grid;
+	if (grid) {
+		grid.cannot_add_rows = true;
+		grid.cannot_delete_rows = true;
+		// Make all existing rows non-editable
+		if (grid.grid_rows) {
+			grid.grid_rows.forEach(function(row) {
+				row.toggle_editable(false);
+			});
+		}
+		// Prevent new rows from being added
+		grid.wrapper.find(".grid-add-row").hide();
 	}
 }
 

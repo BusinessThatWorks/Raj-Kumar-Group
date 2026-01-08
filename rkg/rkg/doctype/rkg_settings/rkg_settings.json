@@ -7,7 +7,8 @@
  "field_order": [
   "default_hsn_code",
   "default_supplier",
-  "default_no_of_days_for_the_expiration_of_the_battery"
+  "default_no_of_days_for_the_expiration_of_the_battery",
+  "battery_entry_default_time"
  ],
  "fields": [
   {
@@ -25,13 +26,18 @@
    "fieldname": "default_no_of_days_for_the_expiration_of_the_battery",
    "fieldtype": "Int",
    "label": "Default No of Days for the expiration of the Battery"
+  },
+  {
+   "fieldname": "battery_entry_default_time",
+   "fieldtype": "Int",
+   "label": "Battery Entry Default Time"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-01-02 16:33:26.038694",
+ "modified": "2026-01-08 15:49:56.882288",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "RKG Settings",

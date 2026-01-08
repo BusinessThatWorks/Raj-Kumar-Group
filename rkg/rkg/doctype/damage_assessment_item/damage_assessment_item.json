@@ -8,7 +8,9 @@
   "field_order": [
   "serial_no",
   "status",
-  "issue",
+  "issue_1",
+  "issue_2",
+  "issue_3",
   "damage_image",
   "damage_description",
   "from_warehouse",
@@ -34,9 +36,30 @@
    "reqd": 1
   },
   {
-   "fieldname": "issue",
-   "fieldtype": "Text",
-   "label": "Issue",
+   "fieldname": "issue_1",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Issue 1",
+   "options": "\nDent\nPaint\nScratches\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nTail Light\nSeat\nHandle Bar\nMudguard\nSide Panel\nFuel Tank\nEngine Cover\nWheel/Tyre\nBattery\nElectrical\nOther",
+   "depends_on": "eval:doc.status == 'Not OK'",
+   "reqd": 0
+  },
+  {
+   "fieldname": "issue_2",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Issue 2",
+   "options": "\nDent\nPaint\nScratches\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nTail Light\nSeat\nHandle Bar\nMudguard\nSide Panel\nFuel Tank\nEngine Cover\nWheel/Tyre\nBattery\nElectrical\nOther",
+   "depends_on": "eval:doc.status == 'Not OK'",
+   "reqd": 0
+  },
+  {
+   "fieldname": "issue_3",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Issue 3",
+   "options": "\nDent\nPaint\nScratches\nSticker Damage\nMirror\nHorn\nIndicator\nHead Light\nTail Light\nSeat\nHandle Bar\nMudguard\nSide Panel\nFuel Tank\nEngine Cover\nWheel/Tyre\nBattery\nElectrical\nOther",
+   "depends_on": "eval:doc.status == 'Not OK'",
    "reqd": 0
   },
   {

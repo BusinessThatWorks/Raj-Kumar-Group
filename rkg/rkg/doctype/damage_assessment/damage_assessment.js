@@ -131,10 +131,13 @@ frappe.ui.form.on("Damage Assessment Item", {
 	status(frm, cdt, cdn) {
 		let row = locals[cdt][cdn];
 		
-		// Clear estimated cost and to_warehouse if status is OK
+		// Clear estimated cost, to_warehouse, and issue fields if status is OK
 		if (row.status === "OK") {
 			frappe.model.set_value(cdt, cdn, "estimated_cost", 0);
 			frappe.model.set_value(cdt, cdn, "to_warehouse", "");
+			frappe.model.set_value(cdt, cdn, "issue_1", "");
+			frappe.model.set_value(cdt, cdn, "issue_2", "");
+			frappe.model.set_value(cdt, cdn, "issue_3", "");
 			// Note: from_warehouse is kept as it's already fetched
 		}
 		

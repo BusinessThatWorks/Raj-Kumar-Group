@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "creation": "2026-01-08 15:00:00.000000",
  "doctype": "DocType",
- "editable_grid": 1,
+ "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
   "swap_date",

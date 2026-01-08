@@ -7,7 +7,7 @@ from frappe.utils import flt, getdate, nowdate, date_diff
 
 def _build_where_clause(brand=None, battery_type=None, from_date=None, to_date=None):
 	"""Build WHERE clause for Battery Ageing queries."""
-	conditions = ["bd.status = 'In Stock'"]  # Only show batteries that are in stock
+	conditions = ["bd.status = 'Active'"]  # Only show batteries that are active
 	params = {}
 
 	if brand:
@@ -44,20 +44,14 @@ def get_battery_ageing_data(where_clause, params):
 	# Get current date for age calculation
 	today = nowdate()
 	
-	# Build SELECT fields from Battery Details
+	# Build SELECT fields from Battery Information
 	select_fields = [
 		"bd.name",
 		"bd.battery_serial_no",
 		"bd.battery_brand",
 		"bd.battery_type",
-		"bd.frame_no",
-		"bd.battery_charging_code",
 		"bd.charging_date",
-		"bd.battery_expiry_date",
 		"bd.status",
-		"bd.battery_swapping",
-		"bd.new_frame_number",
-		"bd.new_battery_details",
 		"bd.creation",
 		"bd.modified",
 	]
@@ -65,7 +59,7 @@ def get_battery_ageing_data(where_clause, params):
 	batteries = frappe.db.sql(
 		f"""
 		SELECT {', '.join(select_fields)}
-		FROM `tabBattery Details` bd
+		FROM `tabBattery Information` bd
 		WHERE {where_clause}
 		ORDER BY bd.charging_date DESC, bd.creation DESC
 		LIMIT 1000
@@ -151,30 +145,27 @@ def get_battery_ageing_data(where_clause, params):
 		battery_type = battery.get("battery_type") or "Unknown"
 		battery_type_counts[battery_type] = battery_type_counts.get(battery_type, 0) + 1
 		
-		# Calculate days until expiry if expiry date exists
+		# Note: battery_expiry_date field is not available in Battery Information doctype
 		days_until_expiry = None
-		if battery.get("battery_expiry_date"):
-			expiry_date = getdate(battery.battery_expiry_date)
-			days_until_expiry = date_diff(expiry_date, today)
 		
 		battery_cards.append({
 			"name": battery.name,
 			"battery_serial_no": battery.battery_serial_no or "-",
 			"brand": battery.get("battery_brand") or "-",
 			"battery_type": battery.get("battery_type") or "-",
-			"frame_no": battery.get("frame_no") or "-",
-			"charging_code": battery.get("battery_charging_code") or "-",
+			"frame_no": None,  # Field not available in Battery Information
+			"charging_code": None,  # Field not available in Battery Information
 			"charging_date": str(battery.charging_date) if battery.charging_date else None,
-			"battery_expiry_date": str(battery.battery_expiry_date) if battery.get("battery_expiry_date") else None,
-			"days_until_expiry": days_until_expiry,
+			"battery_expiry_date": None,  # Field not available in Battery Information
+			"days_until_expiry": None,  # Field not available in Battery Information
 			"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 			"age_days": age_days,
 			"age_category": age_category,
 			"risk_level": risk_level,
-			"status": battery.get("status") or "In Stock",
-			"battery_swapping": battery.get("battery_swapping") or 0,
-			"new_frame_number": battery.get("new_frame_number") or None,
-			"new_battery_details": battery.get("new_battery_details") or None,
+			"status": battery.get("status") or "Active",
+			"battery_swapping": 0,  # Field not available in Battery Information
+			"new_frame_number": None,  # Field not available in Battery Information
+			"new_battery_details": None,  # Field not available in Battery Information
 			"creation": str(battery.creation) if battery.creation else None,
 			"modified": str(battery.modified) if battery.modified else None,
 		})
@@ -205,7 +196,7 @@ def get_battery_ageing_data(where_clause, params):
 		SELECT 
 			DATE(bd.charging_date) as date,
 			COUNT(*) as count
-		FROM `tabBattery Details` bd
+		FROM `tabBattery Information` bd
 		WHERE {where_clause} AND bd.charging_date IS NOT NULL
 		GROUP BY DATE(bd.charging_date)
 		ORDER BY DATE(bd.charging_date)
@@ -231,7 +222,7 @@ def get_battery_ageing_data(where_clause, params):
 		expiry_risk_percentages = {"safe": 0, "warning": 0, "critical": 0}
 	
 	return {
-		"doctype": "Battery Details",
+		"doctype": "Battery Information",
 		"summary": {
 			"total_batteries": total_batteries,
 			"age_ranges": age_ranges,
@@ -252,24 +243,24 @@ def get_battery_ageing_data(where_clause, params):
 @frappe.whitelist()
 def get_filter_options():
 	"""Get filter options for Battery Ageing dashboard."""
-	# Get distinct brands from Battery Details (only In Stock)
+	# Get distinct brands from Battery Information (only Active)
 	brands = frappe.db.sql_list(
 		"""
 		SELECT DISTINCT battery_brand
-		FROM `tabBattery Details`
-		WHERE status = 'In Stock'
+		FROM `tabBattery Information`
+		WHERE status = 'Active'
 		  AND battery_brand IS NOT NULL 
 		  AND battery_brand != ''
 		ORDER BY battery_brand
 		"""
 	)
 
-	# Get distinct battery types from Battery Details (only In Stock)
+	# Get distinct battery types from Battery Information (only Active)
 	battery_types = frappe.db.sql_list(
 		"""
 		SELECT DISTINCT battery_type
-		FROM `tabBattery Details`
-		WHERE status = 'In Stock'
+		FROM `tabBattery Information`
+		WHERE status = 'Active'
 		  AND battery_type IS NOT NULL 
 		  AND battery_type != ''
 		ORDER BY battery_type
@@ -284,11 +275,11 @@ def get_filter_options():
 
 @frappe.whitelist()
 def get_battery_details(name):
-	"""Get detailed information about a specific Battery Details record."""
-	if not frappe.db.exists("Battery Details", name):
-		return {"error": f"Battery Details {name} not found"}
+	"""Get detailed information about a specific Battery Information record."""
+	if not frappe.db.exists("Battery Information", name):
+		return {"error": f"Battery Information {name} not found"}
 	
-	battery = frappe.get_doc("Battery Details", name)
+	battery = frappe.get_doc("Battery Information", name)
 	today = nowdate()
 	
 	# Calculate age based on charging_date (more relevant for battery ageing)
@@ -300,28 +291,25 @@ def get_battery_details(name):
 		charging_date = creation_date
 		age_days = date_diff(today, creation_date)
 	
-	# Calculate days until expiry if expiry date exists
+	# Calculate days until expiry if expiry date exists (not available in Battery Information)
 	days_until_expiry = None
-	if battery.battery_expiry_date:
-		expiry_date = getdate(battery.battery_expiry_date)
-		days_until_expiry = date_diff(expiry_date, today)
 	
 	result = {
 		"name": battery.name,
 		"battery_serial_no": battery.battery_serial_no or "-",
 		"brand": battery.battery_brand or "-",
 		"battery_type": battery.battery_type or "-",
-		"frame_no": battery.frame_no or "-",
-		"charging_code": battery.battery_charging_code or "-",
+		"frame_no": None,  # Field not available in Battery Information
+		"charging_code": None,  # Field not available in Battery Information
 		"charging_date": str(battery.charging_date) if battery.charging_date else None,
-		"battery_expiry_date": str(battery.battery_expiry_date) if battery.battery_expiry_date else None,
+		"battery_expiry_date": None,  # Field not available in Battery Information
 		"days_until_expiry": days_until_expiry,
 		"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 		"age_days": age_days,
-		"status": battery.status or "In Stock",
-		"battery_swapping": battery.battery_swapping or 0,
-		"new_frame_number": battery.new_frame_number or None,
-		"new_battery_details": battery.new_battery_details or None,
+		"status": battery.status or "Active",
+		"battery_swapping": 0,  # Field not available in Battery Information
+		"new_frame_number": None,  # Field not available in Battery Information
+		"new_battery_details": None,  # Field not available in Battery Information
 		"creation": str(battery.creation) if battery.creation else None,
 		"modified": str(battery.modified) if battery.modified else None,
 	}

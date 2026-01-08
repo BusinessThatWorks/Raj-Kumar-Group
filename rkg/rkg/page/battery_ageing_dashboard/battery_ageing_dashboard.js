@@ -200,13 +200,13 @@ class BatteryAgeingDashboard {
 					<div class="pagination-container" id="pagination-container"></div>
 				</div>
 
-				<!-- Battery Details Section -->
+				<!-- Battery Information Section -->
 				<div class="battery-details-section" id="battery-details-section" style="display: none;">
 					<div class="section-header">
 						<button class="btn btn-sm btn-default btn-back-to-list" style="margin-right: 10px;">
 							<i class="fa fa-arrow-left"></i> Back to List
 						</button>
-						<span><i class="fa fa-info-circle"></i> Battery Details</span>
+						<span><i class="fa fa-info-circle"></i> Battery Information</span>
 					</div>
 					<div id="battery-details"></div>
 				</div>
@@ -496,13 +496,11 @@ class BatteryAgeingDashboard {
 			return `
 				<tr class="battery-row ${ageClass}" data-name="${battery.name}" style="cursor: pointer;">
 					<td><strong>${battery.battery_serial_no || "-"}</strong></td>
-					<td>${battery.frame_no || "-"}</td>
 					<td>${battery.brand || "-"}</td>
 					<td>${battery.battery_type || "-"}</td>
 					<td><span class="age-badge ${ageClass}">${ageDays} days</span></td>
 					<td>${battery.charging_date ? battery.charging_date.split(' ')[0] : "-"}</td>
-					<td>${battery.charging_code || "-"}</td>
-					<td>${battery.status || "In Stock"}</td>
+					<td>${battery.status || "Active"}</td>
 				</tr>
 			`;
 		}).join("");
@@ -513,12 +511,10 @@ class BatteryAgeingDashboard {
 					<thead>
 						<tr>
 							<th>Battery Serial No</th>
-							<th>Frame No</th>
 							<th>Brand</th>
 							<th>Battery Type</th>
 							<th>Age</th>
 							<th>Charging Date</th>
-							<th>Charging Code</th>
 							<th>Status</th>
 						</tr>
 					</thead>
@@ -596,11 +592,11 @@ class BatteryAgeingDashboard {
 		const ageClass = ageDays <= 30 ? "age-new" : ageDays <= 365 ? "age-medium" : "age-old";
 		
 		return `
-			<div class="battery-card ${ageClass}" data-doctype="Battery Details" data-name="${battery.name || ''}" style="cursor: pointer;">
+			<div class="battery-card ${ageClass}" data-doctype="Battery Information" data-name="${battery.name || ''}" style="cursor: pointer;">
 				<div class="battery-card__header">
 					<div>
 						<div class="battery-code">${battery.battery_serial_no || "-"}</div>
-						<div class="battery-name">${battery.frame_no ? `Frame: ${battery.frame_no}` : "-"}</div>
+						<div class="battery-name">${battery.brand || "-"}</div>
 					</div>
 					<div class="age-badge ${ageClass}">
 						${ageDays} days
@@ -610,10 +606,9 @@ class BatteryAgeingDashboard {
 					<div class="battery-metrics">
 						<div><span class="muted">Brand</span><div class="metric-value">${battery.brand || "-"}</div></div>
 						<div><span class="muted">Type</span><div class="metric-value">${battery.battery_type || "-"}</div></div>
-						<div><span class="muted">Status</span><div class="metric-value">${battery.status || "In Stock"}</div></div>
+						<div><span class="muted">Status</span><div class="metric-value">${battery.status || "Active"}</div></div>
 					</div>
 					${battery.charging_date ? `<div class="battery-date"><i class="fa fa-bolt"></i> Charged: ${battery.charging_date.split(' ')[0]}</div>` : ""}
-					${battery.battery_expiry_date ? `<div class="battery-date ${battery.days_until_expiry !== null && battery.days_until_expiry < 30 ? 'expiry-warning' : ''}"><i class="fa fa-calendar-times-o"></i> Expires: ${battery.battery_expiry_date.split(' ')[0]} ${battery.days_until_expiry !== null ? `(${battery.days_until_expiry > 0 ? battery.days_until_expiry + ' days left' : 'Expired'})` : ''}</div>` : ""}
 					<div class="battery-date"><i class="fa fa-calendar"></i> Created: ${battery.creation_date ? battery.creation_date.split(' ')[0] : "-"}</div>
 				</div>
 			</div>
@@ -633,7 +628,7 @@ class BatteryAgeingDashboard {
 				}
 			},
 			error: () => {
-				frappe.msgprint(__("Unable to load Battery details."));
+				frappe.msgprint(__("Unable to load Battery Information."));
 			},
 		});
 	}
@@ -662,8 +657,8 @@ class BatteryAgeingDashboard {
 							<span><strong>${battery.battery_serial_no || "-"}</strong></span>
 						</div>
 						<div class="detail-item">
-							<label>Frame No:</label>
-							<span>${battery.frame_no || "-"}</span>
+							<label>Status:</label>
+							<span><strong>${battery.status || "Active"}</strong></span>
 						</div>
 					</div>
 					<div class="details-row">
@@ -678,16 +673,6 @@ class BatteryAgeingDashboard {
 					</div>
 					<div class="details-row">
 						<div class="detail-item">
-							<label>Charging Code:</label>
-							<span>${battery.charging_code || "-"}</span>
-						</div>
-						<div class="detail-item">
-							<label>Status:</label>
-							<span><strong>${battery.status || "In Stock"}</strong></span>
-						</div>
-					</div>
-					<div class="details-row">
-						<div class="detail-item">
 							<label>Charging Date:</label>
 							<span>${battery.charging_date ? battery.charging_date.split(' ')[0] : "-"}</span>
 						</div>
@@ -696,38 +681,6 @@ class BatteryAgeingDashboard {
 							<span><strong>${ageDays} days</strong></span>
 						</div>
 					</div>
-					${battery.battery_expiry_date ? `
-					<div class="details-row">
-						<div class="detail-item">
-							<label>Battery Expiry Date:</label>
-							<span class="${battery.days_until_expiry !== null && battery.days_until_expiry < 30 ? 'text-danger' : ''}"><strong>${battery.battery_expiry_date.split(' ')[0]}</strong></span>
-						</div>
-						<div class="detail-item">
-							<label>Days Until Expiry:</label>
-							<span class="${battery.days_until_expiry !== null && battery.days_until_expiry < 30 ? 'text-danger' : battery.days_until_expiry !== null && battery.days_until_expiry < 60 ? 'text-warning' : ''}"><strong>${battery.days_until_expiry !== null ? (battery.days_until_expiry > 0 ? battery.days_until_expiry + ' days' : 'Expired') : "-"}</strong></span>
-						</div>
-					</div>
-					` : ""}
-					${battery.battery_swapping ? `
-					<div class="details-row" style="background: #f0f9ff; padding: 12px; border-radius: 6px; margin-top: 12px;">
-						<div class="detail-item">
-							<label>Battery Swapping:</label>
-							<span><strong>Yes</strong></span>
-						</div>
-						${battery.new_frame_number ? `
-						<div class="detail-item">
-							<label>New Frame Number:</label>
-							<span><a href="/app/serial-no/${battery.new_frame_number}" target="_blank">${battery.new_frame_number}</a></span>
-						</div>
-						` : ""}
-						${battery.new_battery_details ? `
-						<div class="detail-item">
-							<label>New Battery Details:</label>
-							<span><a href="/app/battery-details/${battery.new_battery_details}" target="_blank">${battery.new_battery_details}</a></span>
-						</div>
-						` : ""}
-					</div>
-					` : ""}
 					<div class="details-row">
 						<div class="detail-item">
 							<label>Created:</label>

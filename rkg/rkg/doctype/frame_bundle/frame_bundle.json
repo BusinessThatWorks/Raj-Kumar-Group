@@ -121,7 +121,8 @@
    "fieldname": "swap_history",
    "fieldtype": "Table",
    "label": "Swap History",
-   "options": "Frame Bundle Swap History"
+   "options": "Frame Bundle Swap History",
+   "allow_on_submit": 1
   }
  ],
  "grid_page_length": 50,
@@ -151,5 +152,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
+ "is_submittable": 1,
  "states": []
 }

@@ -500,9 +500,26 @@ class BatteryandKeyUpload(Document):
 		try:
 			if existing_frame_bundle:
 				# Update existing Frame Bundle
+				frame_bundle_doc = frappe.get_doc("Frame Bundle", existing_frame_bundle)
 				if update_fields:
-					frappe.db.set_value("Frame Bundle", existing_frame_bundle, update_fields, update_modified=False)
-					frappe.db.commit()
+					for field, value in update_fields.items():
+						setattr(frame_bundle_doc, field, value)
+					frame_bundle_doc.save(ignore_permissions=True)
+				
+				# Submit if not already submitted
+				if frame_bundle_doc.docstatus == 0:
+					try:
+						frame_bundle_doc.submit()
+					except Exception as submit_error:
+						frappe.log_error(
+							f"Error submitting Frame Bundle {existing_frame_bundle}: {str(submit_error)}",
+							"Frame Bundle Submit Error"
+						)
+						frappe.throw(
+							f"Failed to submit Frame Bundle {existing_frame_bundle}: {str(submit_error)}",
+							title="Frame Bundle Submit Error"
+						)
+				frappe.db.commit()
 			else:
 				# Create new Frame Bundle
 				frame_bundle_doc = frappe.get_doc({
@@ -513,6 +530,18 @@ class BatteryandKeyUpload(Document):
 					"key_number": str(key_number).strip() if key_number else None
 				})
 				frame_bundle_doc.insert(ignore_permissions=True)
+				# Submit the Frame Bundle automatically
+				try:
+					frame_bundle_doc.submit()
+				except Exception as submit_error:
+					frappe.log_error(
+						f"Error submitting Frame Bundle {frame_bundle_doc.name}: {str(submit_error)}",
+						"Frame Bundle Submit Error"
+					)
+					frappe.throw(
+						f"Failed to submit Frame Bundle for frame_no {actual_frame_no}: {str(submit_error)}",
+						title="Frame Bundle Submit Error"
+					)
 				frappe.db.commit()
 				frame_bundle_name = frame_bundle_doc.name
 			
@@ -841,4 +870,40 @@ def _find_serial_no(frame_no):
 		return frame_no
 	
 	return None
+
+
+@frappe.whitelist()
+def check_frame_age(frame_no, date):
+	"""Check if frame is older than configured default time.
+	Compares frame creation time with the date field from Battery and Key Upload.
+	Returns dict with time_difference_hours and default_time_hours."""
+	if not frame_no:
+		return {"error": "Frame No is required"}
+	
+	if not date:
+		return {"error": "Date is required"}
+	
+	# Get frame creation time
+	frame_creation = frappe.db.get_value("Serial No", frame_no, "creation")
+	if not frame_creation:
+		return {"error": f"Frame No {frame_no} not found"}
+	
+	# Get Battery Entry Default Time from RKG Settings
+	default_time_hours = frappe.db.get_single_value("RKG Settings", "battery_entry_default_time")
+	if not default_time_hours:
+		default_time_hours = 0
+	
+	# Calculate time difference in hours using the date field
+	from frappe.utils import get_datetime, getdate
+	frame_creation_time = get_datetime(frame_creation)
+	# Convert date to datetime (start of day)
+	date_datetime = get_datetime(getdate(date))
+	time_difference = date_datetime - frame_creation_time
+	time_difference_hours = time_difference.total_seconds() / 3600
+	
+	return {
+		"time_difference_hours": time_difference_hours,
+		"default_time_hours": default_time_hours,
+		"frame_creation": str(frame_creation)
+	}
 
