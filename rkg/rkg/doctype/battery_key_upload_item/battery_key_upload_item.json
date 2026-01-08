@@ -14,10 +14,7 @@
   "battery_brand",
   "battery_type",
   "charging_date",
-  "column_break_status",
-  "status",
-  "item_code",
-  "error_message"
+  "item_code"
  ],
  "fields": [
   {
@@ -59,18 +56,6 @@
    "label": "Charging Date"
   },
   {
-   "fieldname": "column_break_status",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Status",
-   "options": "Pending\nUpdated\nSkipped\nError",
-   "read_only": 1
-  },
-  {
    "fieldname": "item_code",
    "fieldtype": "Link",
    "label": "Item Code",
@@ -78,22 +63,16 @@
    "read_only": 1
   },
   {
-   "fieldname": "error_message",
-   "fieldtype": "Small Text",
-   "label": "Error Message",
-   "read_only": 1
-  },
-  {
    "fieldname": "sample_charging_date",
    "fieldtype": "Data",
-   "label": "Sample Charning Date"
+   "label": "Battery Charging Date"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-01-07 16:42:41.071102",
+ "modified": "2026-01-08 11:30:15.120306",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Battery Key Upload Item",

@@ -1,12 +1,5 @@
-frappe.ui.form.on("Battery Key Upload", {
+frappe.ui.form.on("Battery and Key Upload", {
 	refresh(frm) {
-		// Show link to Serial No list if upload was successful
-		if (frm.doc.total_frames_updated > 0) {
-			frm.add_custom_button(__("View Serial Nos"), function() {
-				frappe.set_route("List", "Serial No");
-			}, __("Actions"));
-		}
-		
 		// Add Preview File button if file is attached and not submitted
 		if (frm.doc.excel_file && frm.doc.docstatus === 0) {
 			frm.add_custom_button(__("Preview File"), function() {
@@ -30,17 +23,6 @@ frappe.ui.form.on("Battery Key Upload", {
 		if (frm.doc.docstatus === 1) {
 			if (frm.doc.upload_items && frm.doc.upload_items.length > 0) {
 				frm.refresh_field("upload_items");
-			}
-			
-			// If upload_items is empty but total count > 0, we need to reload
-			if (frm.doc.total_frames_updated > 0 && 
-			    (!frm.doc.upload_items || frm.doc.upload_items.length === 0)) {
-				// Reload to get child table data immediately
-				frm.reload_doc().then(() => {
-					if (frm.doc.upload_items && frm.doc.upload_items.length > 0) {
-						frm.refresh_field("upload_items");
-					}
-				});
 			}
 		}
 	},
@@ -67,24 +49,13 @@ frappe.ui.form.on("Battery Key Upload", {
 			frm.reload_doc().then(() => {
 				// Show success message
 				frappe.show_alert({
-					message: __("File processed successfully. {0} frames updated.", [
-						frm.doc.total_frames_updated || 0
-					]),
+					message: __("File processed successfully."),
 					indicator: "green"
 				}, 5);
 				
 				// Ensure child table is visible
 				if (frm.doc.upload_items && frm.doc.upload_items.length > 0) {
 					frm.refresh_field("upload_items");
-				} else if (frm.doc.total_frames_updated > 0) {
-					// If counts show data but table is empty, reload again
-					setTimeout(() => {
-						frm.reload_doc().then(() => {
-							if (frm.doc.upload_items && frm.doc.upload_items.length > 0) {
-								frm.refresh_field("upload_items");
-							}
-						});
-					}, 500);
 				}
 			});
 		}, 1000);
@@ -100,7 +71,7 @@ frappe.ui.form.on("Battery Key Upload", {
 
 			// Call server method to process file and get rows
 			frappe.call({
-				method: "rkg.rkg.doctype.battery_key_upload.battery_key_upload.process_excel_file_for_preview",
+				method: "rkg.rkg.doctype.battery_and_key_upload.battery_and_key_upload.process_excel_file_for_preview",
 				args: {
 					file_url: frm.doc.excel_file
 				},
@@ -145,16 +116,11 @@ frappe.ui.form.on("Battery Key Upload", {
 								child_row.battery_type = row_data.battery_type || "";
 								child_row.sample_charging_date = row_data.sample_charging_date || "";
 								child_row.charging_date = row_data.charging_date || null;
-								child_row.status = row_data.status || "Pending";
 								child_row.item_code = row_data.item_code || "";
-								child_row.error_message = row_data.error_message || "";
 							});
 							
 							// Refresh child table to make it visible
 							frm.refresh_field("upload_items");
-							
-							// Update summary fields
-							frm.set_value("total_frames_updated", result.total_updated || 0);
 							
 							// Save the document to persist child table data
 							frm.save().then(function() {
@@ -196,7 +162,6 @@ frappe.ui.form.on("Battery Key Upload", {
 			});
 		} else {
 			// File cleared - reset values
-			frm.set_value("total_frames_updated", 0);
 			frm.clear_table("upload_items");
 		}
 	},
@@ -215,7 +180,7 @@ function preview_file(frm) {
 	}
 	
 	frappe.call({
-		method: "rkg.rkg.doctype.battery_key_upload.battery_key_upload.preview_excel_file",
+		method: "rkg.rkg.doctype.battery_and_key_upload.battery_and_key_upload.preview_excel_file",
 		args: {
 			file_url: frm.doc.excel_file
 		},
@@ -270,28 +235,26 @@ function show_preview_summary(result) {
 			${result.sample_rows ? `
 				<p style="margin-top: 15px;"><b>Sample Rows (first 5):</b></p>
 				<table class="table table-bordered" style="width: 100%; font-size: 11px;">
-					<thead>
+				<thead>
+					<tr>
+						<th>Frame No</th>
+						<th>Key No</th>
+						<th>Battery Serial No</th>
+						<th>Battery Brand</th>
+						<th>Battery Type</th>
+					</tr>
+				</thead>
+				<tbody>
+					${result.sample_rows.map(row => `
 						<tr>
-							<th>Frame No</th>
-							<th>Key No</th>
-							<th>Battery Serial No</th>
-							<th>Battery Brand</th>
-							<th>Battery Type</th>
-							<th>Status</th>
+							<td>${row.frame_no || "-"}</td>
+							<td>${row.key_no || "-"}</td>
+							<td>${row.battery_serial_no || "-"}</td>
+							<td>${row.battery_brand || "-"}</td>
+							<td>${row.battery_type || "-"}</td>
 						</tr>
-					</thead>
-					<tbody>
-						${result.sample_rows.map(row => `
-							<tr>
-								<td>${row.frame_no || "-"}</td>
-								<td>${row.key_no || "-"}</td>
-								<td>${row.battery_serial_no || "-"}</td>
-								<td>${row.battery_brand || "-"}</td>
-								<td>${row.battery_type || "-"}</td>
-								<td><span class="badge ${row.status === 'Valid' ? 'badge-success' : 'badge-danger'}">${row.status || "-"}</span></td>
-							</tr>
-						`).join('')}
-					</tbody>
+					`).join('')}
+				</tbody>
 				</table>
 			` : ''}
 			<p style="margin-top: 15px; color: #666; font-size: 11px;">

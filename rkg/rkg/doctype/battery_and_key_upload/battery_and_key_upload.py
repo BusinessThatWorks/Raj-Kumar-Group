@@ -10,7 +10,7 @@ import re
 from frappe.utils import get_site_path, getdate
 
 
-class BatteryKeyUpload(Document):
+class BatteryandKeyUpload(Document):
 	def validate(self):
 		"""Validate the document before save."""
 		# Only validate file attachment on submit, not on save
@@ -19,7 +19,6 @@ class BatteryKeyUpload(Document):
 		# Clear child table when new file is attached
 		if self.has_value_changed("excel_file"):
 			self.upload_items = []
-			self.total_frames_updated = 0
 	
 	def on_submit(self):
 		"""Process the file and update Serial No records on submit."""
@@ -34,65 +33,59 @@ class BatteryKeyUpload(Document):
 		except Exception as e:
 			# Log error
 			frappe.log_error(
-				f"Error processing Battery Key Upload {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-				"Battery Key Upload Error"
+				f"Error processing Battery and Key Upload {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+				"Battery and Key Upload Error"
 			)
 			# Show user-friendly error
 			frappe.throw(_("Error processing file: {0}").format(str(e)))
 	
 	def process_excel_file(self):
-		"""Read Excel and update Serial No records. Uses existing child table data if available."""
+		"""Read Excel and update Battery Information and Frame Bundle records. Uses existing child table data if available."""
 		# If child table already has data (from file upload), use it instead of reprocessing
 		if self.upload_items and len(self.upload_items) > 0:
 			# Process existing child table data
-			total_updated = 0
 			total_errors = 0
 			
 			for item in self.upload_items:
-				if item.status == 'Error':
-					total_errors += 1
-					continue
-				elif item.status == 'Skipped':
-					# Skip rows with Skipped status, but don't count them
-					continue
-				elif item.status == 'Pending' or item.status == 'Updated':
-					# Process this row
-					try:
-						serial_no = item.frame_no
-						if not serial_no:
-							item.status = 'Error'
-							item.error_message = 'Frame No is missing'
-							total_errors += 1
-							continue
-						
-						# Create/Update Battery Information
-						if item.battery_serial_no:
-							sample_charging_date = getattr(item, 'sample_charging_date', None)
-							self.create_or_update_battery_information(
-								battery_serial_no=item.battery_serial_no,
-								battery_brand=item.battery_brand,
-								battery_type=item.battery_type,
-								sample_charging_date=sample_charging_date,
-								charging_date=item.charging_date
-							)
-						
-						item.status = 'Updated'
-						total_updated += 1
-						
-					except Exception as e:
-						item.status = 'Error'
-						item.error_message = str(e)
+				# Process this row
+				try:
+					serial_no = item.frame_no
+					if not serial_no:
 						total_errors += 1
-						frappe.log_error(
-							f"Error updating Serial No {item.frame_no}: {str(e)}",
-							"Battery Key Upload Error"
+						continue
+					
+					# Create/Update Battery Information
+					battery_info_name = None
+					if item.battery_serial_no:
+						sample_charging_date = getattr(item, 'sample_charging_date', None)
+						battery_info_name = self.create_or_update_battery_information(
+							battery_serial_no=item.battery_serial_no,
+							battery_brand=item.battery_brand,
+							battery_type=item.battery_type,
+							sample_charging_date=sample_charging_date,
+							charging_date=item.charging_date
 						)
+						
+						# Create/Update Frame Bundle
+						if battery_info_name:
+							item_code = frappe.db.get_value('Serial No', serial_no, 'item_code')
+							if item_code:
+								self.create_or_update_frame_bundle(
+									frame_no=serial_no,
+									item_code=item_code,
+									battery_serial_no=battery_info_name,
+									key_number=getattr(item, 'key_no', None)
+								)
+					
+				except Exception as e:
+					total_errors += 1
+					frappe.log_error(
+						f"Error updating Serial No {item.frame_no}: {str(e)}",
+						"Battery and Key Upload Error"
+					)
 			
-			# Update summary
-			self.total_frames_updated = total_updated
-			
-			# Update child table status in database using frame_no to match rows
-			# This ensures status updates persist even during submit
+			# Update child table in database using frame_no to match rows
+			# This ensures updates persist even during submit
 			if self.name:  # Document must be saved first (it should be before on_submit)
 				for item in self.upload_items:
 					if item.frame_no:
@@ -108,8 +101,6 @@ class BatteryKeyUpload(Document):
 								"Battery Key Upload Item",
 								child_row_name,
 								{
-									"status": item.status,
-									"error_message": getattr(item, 'error_message', '') or '',
 									"item_code": getattr(item, 'item_code', '') or ''
 								},
 								update_modified=False
@@ -156,7 +147,6 @@ class BatteryKeyUpload(Document):
 		column_map = self.normalize_columns([col for col in rows[0].keys()] if rows else [])
 		
 		# Process rows
-		total_updated = 0
 		total_errors = 0
 		
 		# Clear existing items
@@ -195,9 +185,7 @@ class BatteryKeyUpload(Document):
 					'battery_type': '',
 					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
 					'charging_date': None,
-					'status': 'Error',
-					'item_code': '',
-					'error_message': f'Row {idx}: Frame No is required'
+					'item_code': ''
 				})
 				total_errors += 1
 				continue
@@ -214,9 +202,7 @@ class BatteryKeyUpload(Document):
 					'battery_type': str(battery_type).strip() if battery_type else '',
 					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
 					'charging_date': None,
-					'status': 'Error',
-					'item_code': '',
-					'error_message': f'Row {idx}: Serial No {frame_no} not found'
+					'item_code': ''
 				})
 				total_errors += 1
 				continue
@@ -226,14 +212,24 @@ class BatteryKeyUpload(Document):
 				item_code = frappe.db.get_value('Serial No', serial_no, 'item_code')
 				
 				# Create/Update Battery Information
+				battery_info_name = None
 				if battery_serial_no:
-					self.create_or_update_battery_information(
+					battery_info_name = self.create_or_update_battery_information(
 						battery_serial_no=battery_serial_no,
 						battery_brand=battery_brand,
 						battery_type=battery_type,
 						sample_charging_date=sample_charging_date,
 						charging_date=charging_date
 					)
+					
+					# Create/Update Frame Bundle
+					if battery_info_name and item_code:
+						self.create_or_update_frame_bundle(
+							frame_no=serial_no,
+							item_code=item_code,
+							battery_serial_no=battery_info_name,
+							key_number=key_no
+						)
 				
 				child_table_data.append({
 					'frame_no': serial_no,
@@ -243,11 +239,8 @@ class BatteryKeyUpload(Document):
 					'battery_type': str(battery_type).strip() if battery_type else '',
 					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
 					'charging_date': charging_date,  # Already parsed to date object or None
-					'status': 'Updated',
-					'item_code': item_code or '',
-					'error_message': ''
+					'item_code': item_code or ''
 				})
-				total_updated += 1
 				
 			except Exception as e:
 				child_table_data.append({
@@ -258,18 +251,13 @@ class BatteryKeyUpload(Document):
 					'battery_type': str(battery_type).strip() if battery_type else '',
 					'sample_charging_date': str(sample_charging_date).strip() if sample_charging_date else '',
 					'charging_date': None,
-					'status': 'Error',
-					'item_code': '',
-					'error_message': f'Row {idx}: {str(e)}'
+					'item_code': ''
 				})
 				total_errors += 1
 				frappe.log_error(
 					f"Error updating Serial No {serial_no}: {str(e)}",
-					"Battery Key Upload Error"
+					"Battery and Key Upload Error"
 				)
-		
-		# Update summary fields in document object
-		self.total_frames_updated = total_updated
 		
 		# Clear existing child table and populate with new data
 		self.upload_items = []
@@ -285,9 +273,7 @@ class BatteryKeyUpload(Document):
 				child_row.battery_type = row_data.get("battery_type", "") or ""
 				child_row.sample_charging_date = row_data.get("sample_charging_date", "") or ""
 				child_row.charging_date = row_data.get("charging_date")  # Already parsed date or None
-				child_row.status = row_data.get("status", "") or ""
 				child_row.item_code = row_data.get("item_code", "") or ""
-				child_row.error_message = row_data.get("error_message", "") or ""
 		
 		# Save the document with child table populated (this happens in on_submit, so it will be saved)
 		# Note: In on_submit, the document is automatically saved after this method completes
@@ -405,17 +391,17 @@ class BatteryKeyUpload(Document):
 		
 		return None
 	
-	
 	def create_or_update_battery_information(self, battery_serial_no=None, battery_brand=None, 
 	                                        battery_type=None, sample_charging_date=None, charging_date=None):
-		"""Create or update Battery Information record based on battery_serial_no."""
+		"""Create or update Battery Information record based on battery_serial_no.
+		Returns the name of the Battery Information record (which is the battery_serial_no)."""
 		if not frappe.db.exists("DocType", "Battery Information"):
 			# Battery Information doctype doesn't exist, skip
-			return
+			return None
 		
 		# Battery Information must have battery_serial_no
 		if not battery_serial_no or not str(battery_serial_no).strip():
-			return
+			return None
 		
 		battery_serial_no = str(battery_serial_no).strip()
 		
@@ -454,6 +440,7 @@ class BatteryKeyUpload(Document):
 			if update_fields:
 				frappe.db.set_value("Battery Information", existing_battery_info, update_fields, update_modified=False)
 				frappe.db.commit()
+			return existing_battery_info
 		else:
 			# Create new Battery Information
 			try:
@@ -466,18 +453,82 @@ class BatteryKeyUpload(Document):
 					"charging_date": parsed_charging_date if parsed_charging_date else None
 				})
 				battery_info_doc.insert(ignore_permissions=True)
+				# Submit the document to make it in submitted state
+				battery_info_doc.submit()
 				frappe.db.commit()
+				# Return the name (which is the battery_serial_no based on autoname format)
+				return battery_info_doc.name
 			except Exception as e:
 				# Log error but don't fail the whole process
 				frappe.log_error(
 					f"Error creating Battery Information for battery_serial_no {battery_serial_no}: {str(e)}",
 					"Battery Information Creation Error"
 				)
+				return None
+	
+	def create_or_update_frame_bundle(self, frame_no=None, item_code=None, battery_serial_no=None, key_number=None):
+		"""Create or update Frame Bundle record based on frame_no and item_code.
+		Frame Bundle autoname format: {frame_no}-{item_code}"""
+		if not frappe.db.exists("DocType", "Frame Bundle"):
+			# Frame Bundle doctype doesn't exist, skip
+			return None
+		
+		# Frame Bundle must have frame_no and item_code (required fields)
+		if not frame_no or not item_code:
+			return None
+		
+		# Get the actual frame number from Serial No (serial_no field)
+		actual_frame_no = frappe.db.get_value('Serial No', frame_no, 'serial_no') or frame_no
+		
+		# Frame Bundle name format is: {frame_no}-{item_code}
+		frame_bundle_name = f"{actual_frame_no}-{item_code}"
+		
+		# Check if Frame Bundle already exists
+		existing_frame_bundle = None
+		if frappe.db.exists("Frame Bundle", frame_bundle_name):
+			existing_frame_bundle = frame_bundle_name
+		
+		# Prepare update/create fields
+		update_fields = {}
+		if battery_serial_no:
+			# Verify Battery Information exists before linking
+			if frappe.db.exists("Battery Information", battery_serial_no):
+				update_fields["battery_serial_no"] = battery_serial_no
+		if key_number:
+			update_fields["key_number"] = str(key_number).strip()
+		
+		try:
+			if existing_frame_bundle:
+				# Update existing Frame Bundle
+				if update_fields:
+					frappe.db.set_value("Frame Bundle", existing_frame_bundle, update_fields, update_modified=False)
+					frappe.db.commit()
+			else:
+				# Create new Frame Bundle
+				frame_bundle_doc = frappe.get_doc({
+					"doctype": "Frame Bundle",
+					"frame_no": actual_frame_no,
+					"item_code": item_code,
+					"battery_serial_no": battery_serial_no if (battery_serial_no and frappe.db.exists("Battery Information", battery_serial_no)) else None,
+					"key_number": str(key_number).strip() if key_number else None
+				})
+				frame_bundle_doc.insert(ignore_permissions=True)
+				frappe.db.commit()
+				frame_bundle_name = frame_bundle_doc.name
+			
+			return frame_bundle_name
+		except Exception as e:
+			# Log error but don't fail the whole process
+			frappe.log_error(
+				f"Error creating/updating Frame Bundle for frame_no {actual_frame_no}, item_code {item_code}: {str(e)}",
+				"Frame Bundle Creation Error"
+			)
+			return None
 
 
 @frappe.whitelist()
 def process_excel_file_for_preview(file_url):
-	"""Process Excel file and return all rows data for populating child table immediately. Does NOT update Serial No records."""
+	"""Process Excel file and return all rows data for populating child table immediately. Does NOT update Battery Information or Frame Bundle records."""
 	try:
 		# Get file path
 		if file_url.startswith('/files/'):
@@ -562,9 +613,7 @@ def process_excel_file_for_preview(file_url):
 					'battery_type': '',
 					'sample_charging_date': '',
 					'charging_date': None,
-					'status': 'Error',
-					'item_code': '',
-					'error_message': f'Row {idx}: Frame No is required'
+					'item_code': ''
 				})
 				total_errors += 1
 				continue
@@ -581,9 +630,7 @@ def process_excel_file_for_preview(file_url):
 					'battery_type': battery_type or '',
 					'sample_charging_date': sample_charging_date or '',
 					'charging_date': charging_date,
-					'status': 'Error',
-					'item_code': '',
-					'error_message': f'Row {idx}: Serial No {frame_no} not found'
+					'item_code': ''
 				})
 				total_errors += 1
 				continue
@@ -598,9 +645,7 @@ def process_excel_file_for_preview(file_url):
 				'battery_type': battery_type or '',
 				'sample_charging_date': sample_charging_date or '',
 				'charging_date': charging_date,
-				'status': 'Pending',  # Will be updated to 'Updated' on submit
-				'item_code': item_code,
-				'error_message': ''
+				'item_code': item_code
 			})
 			total_updated += 1
 		
@@ -612,7 +657,7 @@ def process_excel_file_for_preview(file_url):
 		}
 		
 	except Exception as e:
-		frappe.log_error(f"Error processing file for preview: {str(e)}", "Battery Key Upload Preview Error")
+		frappe.log_error(f"Error processing file for preview: {str(e)}", "Battery and Key Upload Preview Error")
 		return {"error": str(e)}
 
 
@@ -721,8 +766,7 @@ def preview_excel_file(file_url):
 					'key_no': '',
 					'battery_serial_no': '',
 					'battery_brand': '',
-					'battery_type': '',
-					'status': 'Error: Frame No missing'
+					'battery_type': ''
 				})
 				continue
 			
@@ -736,8 +780,7 @@ def preview_excel_file(file_url):
 					'key_no': _get_value_from_row(row, column_map, ['key_no', 'key no', 'key number']) or '',
 					'battery_serial_no': _get_value_from_row(row, column_map, ['battery_serial_no', 'battery serial no', 'sample battery serial no', 'battery_no', 'battery no']) or '',
 					'battery_brand': _get_value_from_row(row, column_map, ['battery_brand', 'battery brand', 'brand']) or '',
-					'battery_type': _get_value_from_row(row, column_map, ['battery_type', 'battery type', 'type', 'batery type']) or '',
-					'status': 'Error: Frame No not found'
+					'battery_type': _get_value_from_row(row, column_map, ['battery_type', 'battery type', 'type', 'batery type']) or ''
 				})
 				continue
 			
@@ -747,8 +790,7 @@ def preview_excel_file(file_url):
 				'key_no': _get_value_from_row(row, column_map, ['key_no', 'key no', 'key number']) or '',
 				'battery_serial_no': _get_value_from_row(row, column_map, ['battery_serial_no', 'battery serial no', 'sample battery serial no', 'battery_no', 'battery no']) or '',
 				'battery_brand': _get_value_from_row(row, column_map, ['battery_brand', 'battery brand', 'brand']) or '',
-				'battery_type': _get_value_from_row(row, column_map, ['battery_type', 'battery type', 'type', 'batery type']) or '',
-				'status': 'Valid'
+				'battery_type': _get_value_from_row(row, column_map, ['battery_type', 'battery type', 'type', 'batery type']) or ''
 			})
 		
 		return {
@@ -759,7 +801,7 @@ def preview_excel_file(file_url):
 		}
 		
 	except Exception as e:
-		frappe.log_error(f"Error previewing file: {str(e)}", "Battery Key Upload Preview Error")
+		frappe.log_error(f"Error previewing file: {str(e)}", "Battery and Key Upload Preview Error")
 		return {"error": str(e)}
 
 
@@ -799,92 +841,4 @@ def _find_serial_no(frame_no):
 		return frame_no
 	
 	return None
-
-
-
-
-def _update_upload_items_child_table(parent_name, child_table_data):
-	"""Helper function to update child table after document submission."""
-	if not parent_name:
-		raise ValueError("Parent name is required")
-	
-	if not child_table_data:
-		return  # Nothing to insert
-	
-	try:
-		# Delete existing child table rows
-		frappe.db.sql("""
-			DELETE FROM `tabBattery Key Upload Item`
-			WHERE parent = %s
-		""", (parent_name,))
-		
-		# Insert new rows directly
-		for idx, row_data in enumerate(child_table_data, start=1):
-			# Parse charging_date if it's a string
-			charging_date = row_data.get("charging_date")
-			if charging_date:
-				if isinstance(charging_date, str):
-					try:
-						charging_date = getdate(charging_date)
-					except:
-						charging_date = None
-				# If it's already a date object, keep it
-				elif hasattr(charging_date, 'strftime'):
-					pass  # Already a date object
-				else:
-					charging_date = None
-			else:
-				charging_date = None
-			
-			# Generate unique name for child row
-			child_name = frappe.generate_hash(length=10)
-			
-			# Get all field values with defaults
-			frame_no = row_data.get("frame_no", "") or ""
-			key_no = row_data.get("key_no", "") or ""
-			battery_serial_no = row_data.get("battery_serial_no", "") or ""
-			battery_brand = row_data.get("battery_brand", "") or ""
-			battery_type = row_data.get("battery_type", "") or ""
-			sample_charging_date = row_data.get("sample_charging_date", "") or ""
-			status = row_data.get("status", "") or ""
-			item_code = row_data.get("item_code", "") or ""
-			error_message = row_data.get("error_message", "") or ""
-			
-			# Insert row
-			frappe.db.sql("""
-				INSERT INTO `tabBattery Key Upload Item`
-				(name, creation, modified, modified_by, owner, docstatus, parent, parentfield, parenttype, idx,
-				 frame_no, key_no, battery_serial_no, battery_brand, battery_type, sample_charging_date, charging_date, status, item_code, error_message)
-				VALUES
-				(%s, NOW(), NOW(), %s, %s, 0, %s, 'upload_items', 'Battery Key Upload', %s,
-				 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-			""", (
-				child_name,
-				frappe.session.user,
-				frappe.session.user,
-				parent_name,
-				idx,
-				frame_no,
-				key_no,
-				battery_serial_no,
-				battery_brand,
-				battery_type,
-				sample_charging_date,
-				charging_date,
-				status,
-				item_code,
-				error_message
-			))
-		
-		# Commit after all inserts
-		frappe.db.commit()
-		
-	except Exception as sql_err:
-		# Log detailed error
-		error_msg = f"Error inserting child table rows via SQL: {str(sql_err)}\nParent: {parent_name}\nRows to insert: {len(child_table_data)}\nTraceback: {frappe.get_traceback()}"
-		frappe.log_error(
-			message=error_msg,
-			title="Battery Key Upload Child Table SQL Error"
-		)
-		raise
 

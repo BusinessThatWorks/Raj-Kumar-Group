@@ -5,19 +5,73 @@
  "creation": "2026-01-07 16:21:07.337401",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "section_break_qtbc",
-  "amended_from",
+  "field_order": [
+  "battery_details_section",
+  "battery_serial_no",
+  "column_break_basic",
   "battery_brand",
   "battery_type",
-  "battery_serial_no",
+  "status",
+  "charging_info_section",
+  "charging_date",
+  "column_break_charging",
   "sample_charging_date",
-  "charging_date"
+  "amended_from"
  ],
  "fields": [
   {
-   "fieldname": "section_break_qtbc",
-   "fieldtype": "Section Break"
+   "fieldname": "battery_details_section",
+   "fieldtype": "Section Break",
+   "label": "Battery Details"
+  },
+  {
+   "fieldname": "battery_serial_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Battery Serial No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_basic",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "battery_brand",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Battery Brand"
+  },
+  {
+   "fieldname": "battery_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Battery Type"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Active\nDiscarded"
+  },
+  {
+   "fieldname": "charging_info_section",
+   "fieldtype": "Section Break",
+   "label": "Charging Information"
+  },
+  {
+   "fieldname": "charging_date",
+   "fieldtype": "Date",
+   "label": "Charging Date"
+  },
+  {
+   "fieldname": "column_break_charging",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sample_charging_date",
+   "fieldtype": "Data",
+   "label": "Battery Charging Date"
   },
   {
    "fieldname": "amended_from",
@@ -28,31 +82,6 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "battery_brand",
-   "fieldtype": "Data",
-   "label": "Battery Brand"
-  },
-  {
-   "fieldname": "battery_type",
-   "fieldtype": "Data",
-   "label": "Battery Type"
-  },
-  {
-   "fieldname": "battery_serial_no",
-   "fieldtype": "Data",
-   "label": "Battery Serial No"
-  },
-  {
-   "fieldname": "sample_charging_date",
-   "fieldtype": "Data",
-   "label": "Sample Battery Charging Date"
-  },
-  {
-   "fieldname": "charging_date",
-   "fieldtype": "Date",
-   "label": "Charging Date"
   }
  ],
  "grid_page_length": 50,

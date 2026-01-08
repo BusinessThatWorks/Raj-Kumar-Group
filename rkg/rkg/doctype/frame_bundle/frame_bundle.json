@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{frame_no}",
+ "creation": "2026-01-07 16:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_main",
+  "item_code",
+  "frame_no",
+  "column_break_main",
+  "key_number",
+  "battery_serial_no",
+  "section_break_battery",
+  "battery_aging_days",
+  "column_break_battery",
+  "is_battery_expired",
+  "section_break_discarded_history",
+  "discarded_date",
+  "column_break_discarded",
+  "discarded_by",
+  "discarded_battery_serial_no",
+  "section_break_swap_history",
+  "swap_history"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_main",
+   "fieldtype": "Section Break",
+   "label": "Frame Details"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "frame_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Frame No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "key_number",
+   "fieldtype": "Data",
+   "label": "Key Number"
+  },
+  {
+   "fieldname": "battery_serial_no",
+   "fieldtype": "Link",
+   "label": "Battery Serial No",
+   "options": "Battery Information"
+  },
+  {
+   "fieldname": "section_break_battery",
+   "fieldtype": "Section Break",
+   "label": "Battery Information"
+  },
+  {
+   "fieldname": "battery_aging_days",
+   "fieldtype": "Int",
+   "label": "Battery Aging Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_battery",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_battery_expired",
+   "fieldtype": "Check",
+   "label": "Is Discarded"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_discarded_history",
+   "fieldtype": "Section Break",
+   "label": "Discarded History"
+  },
+  {
+   "fieldname": "discarded_date",
+   "fieldtype": "Datetime",
+   "label": "Discarded Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_discarded",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "discarded_by",
+   "fieldtype": "Link",
+   "label": "Discarded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discarded_battery_serial_no",
+   "fieldtype": "Link",
+   "label": "Discarded Battery Serial No",
+   "options": "Battery Information",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_swap_history",
+   "fieldtype": "Section Break",
+   "label": "Swap History"
+  },
+  {
+   "fieldname": "swap_history",
+   "fieldtype": "Table",
+   "label": "Swap History",
+   "options": "Frame Bundle Swap History"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-08 14:38:01.034039",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Frame Bundle",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

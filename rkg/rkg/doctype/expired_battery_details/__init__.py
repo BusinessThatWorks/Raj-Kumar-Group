@@ -1,2 +1,0 @@
-# Expired Battery Details DocType
-
