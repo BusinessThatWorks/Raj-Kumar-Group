@@ -125,6 +125,31 @@ class FrameBundle(Document):
 					"Discarded",
 					update_modified=False
 				)
+	
+	def on_cancel(self):
+		"""Clear swapped_with_frame links in swap_history when document is cancelled to allow deletion."""
+		if self.swap_history:
+			# Get all linked Frame Bundles from swap history
+			linked_frames = []
+			for item in self.swap_history:
+				if item.swapped_with_frame:
+					linked_frames.append(item.swapped_with_frame)
+					# Clear the link in this document's swap history
+					frappe.db.set_value("Frame Bundle Swap History", item.name, "swapped_with_frame", None, update_modified=False)
+			
+			# Clear reciprocal links in the linked Frame Bundles' swap history
+			for linked_frame in linked_frames:
+				if frappe.db.exists("Frame Bundle", linked_frame):
+					# Find swap history rows in the linked frame that reference this frame
+					swap_history_rows = frappe.db.get_all(
+						"Frame Bundle Swap History",
+						filters={"parent": linked_frame, "swapped_with_frame": self.name},
+						fields=["name"]
+					)
+					for row in swap_history_rows:
+						frappe.db.set_value("Frame Bundle Swap History", row.name, "swapped_with_frame", None, update_modified=False)
+			
+			frappe.db.commit()
 
 
 @frappe.whitelist()

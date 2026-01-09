@@ -210,6 +210,15 @@ class BatteryandKeyUpload(Document):
             )
             frappe.throw(_("Error processing file: {0}").format(str(e)))
 
+    def on_cancel(self):
+        """Clear frame_no links in child table when document is cancelled to allow Serial No deletion."""
+        if self.upload_items:
+            # Clear frame_no links in child table items using database update
+            for item in self.upload_items:
+                if item.frame_no:
+                    frappe.db.set_value("Battery Key Upload Item", item.name, "frame_no", None, update_modified=False)
+            frappe.db.commit()
+
     def process_excel_file(self):
         """Read Excel/CSV and update Battery Information and Frame Bundle records."""
         file_path = self.get_file_path()

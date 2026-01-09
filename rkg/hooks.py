@@ -224,6 +224,7 @@ doc_events = {
 # -----------------------------------------------------------
 
 # ignore_links_on_delete = ["Communication", "ToDo"]
+ignore_links_on_delete = ["Battery Key Upload Item", "Frame Bundle Swap History"]
 
 # Request Events
 # ----------------
