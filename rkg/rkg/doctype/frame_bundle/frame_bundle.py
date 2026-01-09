@@ -48,7 +48,11 @@ class FrameBundle(Document):
 		if getattr(frappe.flags, 'allow_swap_history_modification', False):
 			return
 		
-		if not self.name:
+		# Check if document is new (not yet saved to database)
+		# For new documents, autoname may set self.name, but document doesn't exist yet
+		is_new = self.is_new() or not frappe.db.exists("Frame Bundle", self.name)
+		
+		if is_new:
 			# New document - allow swap_history to be empty only
 			if self.swap_history:
 				frappe.throw(
