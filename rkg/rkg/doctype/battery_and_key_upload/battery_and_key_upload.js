@@ -59,7 +59,7 @@ frappe.ui.form.on("Battery and Key Upload", {
 			frm.reload_doc().then(() => {
 				// Show success message
 				frappe.show_alert({
-					message: __("File processed successfully."),
+					message: __("Upload completed successfully."),
 					indicator: "green"
 				}, 5);
 				
@@ -142,17 +142,11 @@ frappe.ui.form.on("Battery and Key Upload", {
 							frm.save().then(function() {
 								// Show success message after save
 								frappe.show_alert({
-									message: __("Successfully imported {0} rows from file. {1} ready.", [
-										child_table_data.length,
-										result.total_updated || 0
+									message: __("Successfully imported {0} rows from file.", [
+										child_table_data.length
 									]),
 									indicator: "green"
 								}, 8);
-								
-								// Validate all frames after file is processed
-								if (frm.doc.date) {
-									validate_all_frames(frm);
-								}
 							}).catch(function(err) {
 								console.error("Error saving document:", err);
 								frappe.show_alert({
@@ -212,141 +206,15 @@ frappe.ui.form.on("Battery Key Upload Item", {
 			return;
 		}
 		
-		// Check frame age
-		frappe.call({
-			method: "rkg.rkg.doctype.battery_and_key_upload.battery_and_key_upload.check_frame_age",
-			args: {
-				frame_no: row.frame_no,
-				date: frm.doc.date
-			},
-			callback: function(r) {
-				if (r.message && r.message.error) {
-					// Frame not found or other error - allow to continue
-					return;
-				}
-				
-				const time_diff = r.message.time_difference_hours || 0;
-				const default_time = r.message.default_time_hours || 0;
-				
-				// If time difference is equal to or greater than default time, show confirmation
-				if (time_diff >= default_time && default_time > 0) {
-					frappe.confirm(
-						__("This frame is older than the configured Battery Entry Default Time ({0} hours). Do you still want to proceed?", [default_time]),
-						function() {
-							// User clicked Yes
-							frappe.show_alert({
-								message: __("To allow this permanently, please update the Battery Entry Default Time in RKG Settings."),
-								indicator: "blue"
-							}, 5);
-							frm._frame_validation_blocked = false;
-						},
-						function() {
-							// User clicked No - clear the frame_no and block save/submit
-							row.frame_no = "";
-							frm.refresh_field("upload_items");
-							frm._frame_validation_blocked = true;
-							frappe.show_alert({
-								message: __("Frame No cleared. Please select a different frame."),
-								indicator: "orange"
-							}, 3);
-						}
-					);
-				}
-			}
-		});
+		// No popup confirmation - just allow the frame to be added
+		// Email notification will be sent on submit if needed
 	}
 });
 
 // Function to validate all frames in the child table
 function validate_all_frames(frm) {
-	if (!frm.doc.date) {
-		return;
-	}
-	
-	if (!frm.doc.upload_items || frm.doc.upload_items.length === 0) {
-		return;
-	}
-	
-	// Collect all frame_no entries that need validation
-	const frames_to_validate = [];
-	frm.doc.upload_items.forEach(function(row) {
-		if (row.frame_no) {
-			frames_to_validate.push({
-				row: row,
-				frame_no: row.frame_no
-			});
-		}
-	});
-	
-	if (frames_to_validate.length === 0) {
-		return;
-	}
-	
-	// Validate frames one by one
-	let current_index = 0;
-	
-	function validate_next_frame() {
-		if (current_index >= frames_to_validate.length) {
-			// All frames validated
-			return;
-		}
-		
-		const frame_data = frames_to_validate[current_index];
-		const row = frame_data.row;
-		
-		frappe.call({
-			method: "rkg.rkg.doctype.battery_and_key_upload.battery_and_key_upload.check_frame_age",
-			args: {
-				frame_no: frame_data.frame_no,
-				date: frm.doc.date
-			},
-			callback: function(r) {
-				if (r.message && r.message.error) {
-					// Frame not found or other error - skip and continue
-					current_index++;
-					validate_next_frame();
-					return;
-				}
-				
-				const time_diff = r.message.time_difference_hours || 0;
-				const default_time = r.message.default_time_hours || 0;
-				
-				// If time difference is equal to or greater than default time, show confirmation
-				if (time_diff >= default_time && default_time > 0) {
-					frappe.confirm(
-						__("Frame {0} is older than the configured Battery Entry Default Time ({1} hours). Do you still want to proceed?", [frame_data.frame_no, default_time]),
-						function() {
-							// User clicked Yes
-							frappe.show_alert({
-								message: __("Frame {0} allowed. To allow this permanently, please update the Battery Entry Default Time in RKG Settings.", [frame_data.frame_no]),
-								indicator: "blue"
-							}, 5);
-							current_index++;
-							validate_next_frame();
-						},
-						function() {
-							// User clicked No - clear the frame_no
-							row.frame_no = "";
-							frm.refresh_field("upload_items");
-							frappe.show_alert({
-								message: __("Frame {0} cleared.", [frame_data.frame_no]),
-								indicator: "orange"
-							}, 3);
-							current_index++;
-							validate_next_frame();
-						}
-					);
-				} else {
-					// Frame is within limit, continue to next
-					current_index++;
-					validate_next_frame();
-				}
-			}
-		});
-	}
-	
-	// Start validation
-	validate_next_frame();
+	// Removed - no validation popups needed
+	// Email notification will be handled on server side during submit
 }
 
 // Function to preview file and show what will be processed

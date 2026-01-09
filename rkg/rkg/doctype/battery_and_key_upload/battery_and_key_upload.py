@@ -201,6 +201,8 @@ class BatteryandKeyUpload(Document):
 
         try:
             self.process_excel_file()
+            # Check for exceeded frames and send email notification
+            self.check_and_send_notification()
         except Exception as e:
             frappe.log_error(
                 f"Error processing Battery and Key Upload {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
@@ -529,3 +531,59 @@ class BatteryandKeyUpload(Document):
             if existing:
                 return existing
             return None
+
+    def check_and_send_notification(self):
+        """Send email notification immediately on upload submit."""
+        if not self.upload_items:
+            return
+        
+        # Get notification email from RKG Settings
+        notification_email = frappe.db.get_single_value("RKG Settings", "notification_email")
+        
+        # Fail silently if notification_email is empty
+        if not notification_email:
+            return
+        
+        # Count frames in upload
+        frame_count = 0
+        for item in self.upload_items:
+            if item.frame_no:
+                frame_count += 1
+        
+        # Send email if there are any frames
+        if frame_count > 0:
+            self.send_notification_email(notification_email, frame_count)
+
+    def send_notification_email(self, notification_email, frame_count):
+        """Send immediate email notification about battery and key upload."""
+        try:
+            # Parse comma-separated emails
+            email_list = [email.strip() for email in notification_email.split(',') if email.strip()]
+            
+            if not email_list:
+                return
+            
+            # Email subject
+            subject = "Battery & Key Upload Notification"
+            
+            # Email body
+            message = f"Battery and Key Upload is being done against {frame_count} frames"
+            
+            # Send email immediately
+            frappe.sendmail(
+                recipients=email_list,
+                subject=subject,
+                message=message,
+                now=True
+            )
+            
+            frappe.log_error(
+                f"Email notification sent successfully for {frame_count} frames",
+                "Battery Upload Email Notification"
+            )
+        except Exception as e:
+            # Fail silently - log error but don't throw
+            frappe.log_error(
+                f"Error sending email notification: {str(e)}\nTraceback: {frappe.get_traceback()}",
+                "Battery Upload Email Error"
+            )

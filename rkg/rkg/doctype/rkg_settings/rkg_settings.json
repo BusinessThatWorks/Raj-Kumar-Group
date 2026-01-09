@@ -8,7 +8,8 @@
   "default_hsn_code",
   "default_supplier",
   "default_no_of_days_for_the_expiration_of_the_battery",
-  "battery_entry_default_time"
+  "battery_entry_default_time",
+  "notification_email"
  ],
  "fields": [
   {
@@ -31,6 +32,12 @@
    "fieldname": "battery_entry_default_time",
    "fieldtype": "Int",
    "label": "Battery Entry Default Time"
+  },
+  {
+   "fieldname": "notification_email",
+   "fieldtype": "Data",
+   "label": "Notification Email",
+   "description": "Comma-separated email addresses to receive notifications when battery and key uploads exceed the default time"
   }
  ],
  "grid_page_length": 50,
