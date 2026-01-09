@@ -5,18 +5,12 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "default_hsn_code",
   "default_supplier",
   "default_no_of_days_for_the_expiration_of_the_battery",
   "battery_entry_default_time",
   "notification_email"
  ],
  "fields": [
-  {
-   "fieldname": "default_hsn_code",
-   "fieldtype": "Data",
-   "label": "Default HSN Code"
-  },
   {
    "fieldname": "default_supplier",
    "fieldtype": "Link",

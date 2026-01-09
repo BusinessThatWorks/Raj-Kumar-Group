@@ -770,11 +770,13 @@ class LoadDispatch(Document):
 					elif hasattr(item_doc, "supplier"):
 						item_doc.supplier = rkg_settings.default_supplier
 				
-				# Populate HSN Code from RKG Settings (uses default_hsn_code on the single doctype). Try common field names for HSN Code
+				# Populate HSN Code from Load Dispatch Item. Try common field names for HSN Code
+				if hasattr(item, "hsn_code") and item.hsn_code:
+					hsn_code = item.hsn_code
 					if hasattr(item_doc, "gst_hsn_code"):
-						item_doc.gst_hsn_code = rkg_settings.default_hsn_code
+						item_doc.gst_hsn_code = hsn_code
 					elif hasattr(item_doc, "custom_gst_hsn_code"):
-						item_doc.custom_gst_hsn_code = rkg_settings.default_hsn_code
+						item_doc.custom_gst_hsn_code = hsn_code
 				
 				# Save the Item
 				for child_field, item_field in custom_field_map.items():
@@ -1113,11 +1115,6 @@ def _create_purchase_document_unified(source_name, doctype, target_doc=None, war
 			rkg = frappe.get_single("RKG Settings")
 			if rkg.get("default_supplier"):
 				target.supplier = rkg.default_supplier
-			if rkg.get("default_hsn_code"):
-				if hasattr(target, "gst_hsn_code"):
-					target.gst_hsn_code = rkg.default_hsn_code
-				elif hasattr(target, "custom_gst_hsn_code"):
-					target.custom_gst_hsn_code = rkg.default_hsn_code
 		except:
 			pass
 		
@@ -1172,6 +1169,14 @@ def _create_purchase_document_unified(source_name, doctype, target_doc=None, war
 			ig = frappe.db.get_value("Item", target.item_code, "item_group")
 			if ig and hasattr(target, "item_group"):
 				target.item_group = ig
+		
+		# Populate HSN Code from Load Dispatch Item
+		if hasattr(source, "hsn_code") and source.hsn_code:
+			hsn_code = source.hsn_code
+			if hasattr(target, "gst_hsn_code"):
+				target.gst_hsn_code = hsn_code
+			elif hasattr(target, "custom_gst_hsn_code"):
+				target.custom_gst_hsn_code = hsn_code
 		
 		wh = None
 		if frame_warehouse_map and hasattr(source, "frame_no") and source.frame_no:
@@ -1848,8 +1853,7 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 	try:
 		rkg_settings = frappe.get_single("RKG Settings")
 	except frappe.DoesNotExistError:
-		if source_type == "row_data":
-			frappe.throw(_("RKG Settings not found. Please create RKG Settings and set Default HSN Code."))
+		pass
 	
 	stock_uom = str(unit).strip() if unit else "Pcs"
 	# Prepare print_name value
@@ -1878,15 +1882,22 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 				item_doc.append("supplier_items", {"supplier": rkg_settings.default_supplier, "is_default": 1})
 			elif hasattr(item_doc, "supplier"):
 				item_doc.supplier = rkg_settings.default_supplier
-		
-		hsn_code = rkg_settings.get("default_hsn_code")
-		if hsn_code:
-			if source_type == "row_data" and not hsn_code:
-				frappe.throw(_("Default HSN Code is not set in RKG Settings."))
-			if hasattr(item_doc, "gst_hsn_code"):
-				item_doc.gst_hsn_code = hsn_code
-			elif hasattr(item_doc, "custom_gst_hsn_code"):
-				item_doc.custom_gst_hsn_code = hsn_code
+	
+	# Populate HSN Code from item data (Load Dispatch Item or row data)
+	hsn_code = None
+	if source_type == "dispatch_item":
+		# Get HSN from Load Dispatch Item
+		if hasattr(item_data, "hsn_code") and item_data.hsn_code:
+			hsn_code = item_data.hsn_code
+	elif source_type == "row_data":
+		# Get HSN from row data (CSV/Excel)
+		hsn_code = item_data.get('hsn_code') or item_data.get('HSN Code') or item_data.get('HSN_CODE')
+	
+	if hsn_code:
+		if hasattr(item_doc, "gst_hsn_code"):
+			item_doc.gst_hsn_code = hsn_code
+		elif hasattr(item_doc, "custom_gst_hsn_code"):
+			item_doc.custom_gst_hsn_code = hsn_code
 	
 	if source_type == "dispatch_item":
 		for field in ITEM_CUSTOM_FIELDS:
