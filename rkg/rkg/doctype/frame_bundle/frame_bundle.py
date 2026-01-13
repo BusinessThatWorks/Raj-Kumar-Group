@@ -31,6 +31,7 @@ class FrameBundle(Document):
 			self.battery_installed_on = today()
 
 		self.update_battery_type()
+		self.update_warehouse()
 		self.calculate_battery_aging()
 	
 	def update_battery_type(self):
@@ -41,11 +42,28 @@ class FrameBundle(Document):
 		else:
 			self.battery_type = None
 	
+	def update_warehouse(self):
+		"""Update warehouse from Serial No when frame_no changes"""
+		if self.frame_no:
+			# Find Serial No by frame_no (try by serial_no field first, then by name)
+			serial_no_name = frappe.db.get_value("Serial No", {"serial_no": self.frame_no}, "name")
+			if not serial_no_name and frappe.db.exists("Serial No", self.frame_no):
+				serial_no_name = self.frame_no
+			
+			if serial_no_name:
+				warehouse = frappe.db.get_value("Serial No", serial_no_name, "warehouse")
+				self.warehouse = warehouse or None
+			else:
+				self.warehouse = None
+		else:
+			self.warehouse = None
+	
 	def before_submit(self):
 		if self.battery_serial_no and not self.battery_installed_on:
 			self.battery_installed_on = today()
 
 		self.update_battery_type()
+		self.update_warehouse()
 		self.calculate_battery_aging()
 	
 	def check_duplicate_frame_no(self):

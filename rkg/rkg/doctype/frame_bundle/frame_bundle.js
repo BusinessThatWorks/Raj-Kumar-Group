@@ -79,6 +79,29 @@ frappe.ui.form.on("Frame Bundle", {
 		} else {
 			frm.set_value("battery_type", "");
 		}
+	},
+
+	frame_no(frm) {
+		// Update warehouse when frame_no changes
+		if (frm.doc.frame_no) {
+			// First try to find Serial No by serial_no field
+			frappe.db.get_value("Serial No", {"serial_no": frm.doc.frame_no}, "warehouse", (r) => {
+				if (r && r.warehouse) {
+					frm.set_value("warehouse", r.warehouse);
+				} else {
+					// Try checking if frame_no exists as Serial No name
+					frappe.db.get_value("Serial No", frm.doc.frame_no, "warehouse", (r2) => {
+						if (r2 && r2.warehouse) {
+							frm.set_value("warehouse", r2.warehouse);
+						} else {
+							frm.set_value("warehouse", "");
+						}
+					});
+				}
+			});
+		} else {
+			frm.set_value("warehouse", "");
+		}
 	}
 });
 

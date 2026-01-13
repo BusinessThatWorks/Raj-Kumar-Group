@@ -11,6 +11,7 @@
   "frame_no",
   "column_break_main",
   "key_number",
+  "warehouse",
   "battery_serial_no",
   "battery_type",
   "battery_installed_on",
@@ -53,6 +54,13 @@
    "fieldname": "key_number",
    "fieldtype": "Data",
    "label": "Key Number"
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
   },
   {
    "fieldname": "battery_serial_no",
