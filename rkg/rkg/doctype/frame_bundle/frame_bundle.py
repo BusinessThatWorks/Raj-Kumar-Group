@@ -1,4 +1,3 @@
-# Copyright (c) 2026, beetashoke.chakraborty@clapgrow.com and contributors
 # For license information, please see license.txt
 
 import frappe
@@ -11,15 +10,11 @@ class FrameBundle(Document):
 		"""Validate Frame Bundle before save"""
 		self.check_duplicate_frame_no()
 		self.validate_swap_history()
+		self.validate_discard_history()
 	
 	def before_save(self):
-		"""Calculate battery aging days from creation date and update discarded history"""
+		"""Calculate battery aging days from creation date"""
 		self.calculate_battery_aging()
-		# Update discarded history when battery is marked as discarded
-		if self.is_battery_expired and not self.discarded_date:
-			self.discarded_date = now_datetime()
-			self.discarded_by = frappe.session.user
-			self.discarded_battery_serial_no = self.battery_serial_no
 	
 	def check_duplicate_frame_no(self):
 		"""Prevent duplicate Frame Bundles for the same Frame No"""
@@ -99,6 +94,63 @@ class FrameBundle(Document):
 				title="System-Controlled Field"
 			)
 	
+	def validate_discard_history(self):
+		"""Prevent manual modifications to Discard History child table"""
+		# Allow modifications if coming from mark_battery_expired function
+		if getattr(frappe.flags, 'allow_discard_history_modification', False):
+			return
+		
+		# Check if document is new (not yet saved to database)
+		# For new documents, autoname may set self.name, but document doesn't exist yet
+		is_new = self.is_new() or not frappe.db.exists("Frame Bundle", self.name)
+		
+		if is_new:
+			# New document - allow discard_history to be empty only
+			if self.discard_history:
+				frappe.throw(
+					"Discard History cannot be manually added. It is system-controlled and populated automatically when battery is marked as discarded.",
+					title="System-Controlled Field"
+				)
+			return
+		
+		# For existing documents, check if discard_history is being modified
+		existing_doc = frappe.get_doc("Frame Bundle", self.name)
+		existing_rows = {row.name: row for row in existing_doc.discard_history if row.name}
+		current_rows = {row.name: row for row in self.discard_history if row.name}
+		
+		# Check for deleted rows
+		deleted_row_names = set(existing_rows.keys()) - set(current_rows.keys())
+		if deleted_row_names:
+			frappe.throw(
+				"Discard History rows cannot be manually deleted. It is system-controlled and populated automatically when battery is marked as discarded.",
+				title="System-Controlled Field"
+			)
+		
+		# Check for new rows (manual additions)
+		new_row_names = set(current_rows.keys()) - set(existing_rows.keys())
+		if new_row_names:
+			frappe.throw(
+				"Discard History cannot be manually added. It is system-controlled and populated automatically when battery is marked as discarded.",
+				title="System-Controlled Field"
+			)
+		
+		# Check for modified rows
+		modified_rows = []
+		for row_name in set(existing_rows.keys()) & set(current_rows.keys()):
+			existing_row = existing_rows[row_name]
+			current_row = current_rows[row_name]
+			# Check if any field has been modified
+			for field in ['discarded_date', 'discarded_by', 'discarded_battery_serial_no']:
+				if getattr(existing_row, field, None) != getattr(current_row, field, None):
+					modified_rows.append(row_name)
+					break
+		
+		if modified_rows:
+			frappe.throw(
+				"Discard History rows cannot be manually modified. It is system-controlled and populated automatically when battery is marked as discarded.",
+				title="System-Controlled Field"
+			)
+	
 	def on_update(self):
 		"""Recalculate aging after update and update battery status"""
 		self.calculate_battery_aging()
@@ -150,6 +202,68 @@ class FrameBundle(Document):
 						frappe.db.set_value("Frame Bundle Swap History", row.name, "swapped_with_frame", None, update_modified=False)
 			
 			frappe.db.commit()
+
+
+@frappe.whitelist()
+def mark_battery_expired(frame_name):
+	"""Mark battery as expired. Can be called even when document is submitted.
+	This action can only be performed once per document."""
+	
+	# Validate input
+	if not frappe.db.exists("Frame Bundle", frame_name):
+		frappe.throw(f"Frame Bundle {frame_name} does not exist")
+	
+	# Get document to check current state
+	doc = frappe.get_doc("Frame Bundle", frame_name)
+	
+	# Backend safety: Check if already discarded (check discard_history table)
+	if doc.discard_history and len(doc.discard_history) > 0:
+		frappe.throw("Battery has already been marked as discarded. This action can only be performed once.")
+	
+	# Validate battery exists
+	if not doc.battery_serial_no:
+		frappe.throw("No battery serial number found for this frame bundle")
+	
+	# Set flags to allow discard_history modification
+	frappe.flags.allow_discard_history_modification = True
+	frappe.flags.ignore_permissions = True
+	
+	try:
+		# Update is_battery_expired using db_set to preserve docstatus
+		frappe.db.set_value("Frame Bundle", frame_name, "is_battery_expired", 1, update_modified=False)
+		
+		# Reload document to add discard history
+		doc = frappe.get_doc("Frame Bundle", frame_name)
+		
+		# Add discard history entry
+		now = now_datetime()
+		doc.append("discard_history", {
+			"discarded_date": now,
+			"discarded_by": frappe.session.user,
+			"discarded_battery_serial_no": doc.battery_serial_no
+		})
+		
+		# Save discard history (docstatus remains unchanged)
+		doc.save(ignore_permissions=True)
+		
+		# Update Battery Information status to Discarded
+		if frappe.db.exists("Battery Information", doc.battery_serial_no):
+			frappe.db.set_value(
+				"Battery Information",
+				doc.battery_serial_no,
+				"status",
+				"Discarded",
+				update_modified=False
+			)
+		
+		# Commit transaction
+		frappe.db.commit()
+		
+		return {"success": True, "message": "Battery marked as discarded successfully"}
+	finally:
+		# Clear flags
+		frappe.flags.allow_discard_history_modification = False
+		frappe.flags.ignore_permissions = False
 
 
 @frappe.whitelist()

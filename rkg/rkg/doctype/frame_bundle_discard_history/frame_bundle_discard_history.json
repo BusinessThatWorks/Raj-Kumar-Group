@@ -1,0 +1,59 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-01-13 15:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "discarded_date",
+  "discarded_by",
+  "column_break_discarded",
+  "discarded_battery_serial_no"
+ ],
+ "fields": [
+  {
+   "fieldname": "discarded_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Discarded Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discarded_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Discarded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_discarded",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "discarded_battery_serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Discarded Battery Serial No",
+   "options": "Battery Information",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-01-13 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "rkg",
+ "name": "Frame Bundle Discard History",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "discarded_date",
+ "sort_order": "DESC",
+ "states": []
+}
+

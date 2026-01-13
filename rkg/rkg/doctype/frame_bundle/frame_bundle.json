@@ -17,12 +17,10 @@
   "column_break_battery",
   "is_battery_expired",
   "section_break_discarded_history",
-  "discarded_date",
-  "column_break_discarded",
-  "discarded_by",
-  "discarded_battery_serial_no",
+  "discard_history",
   "section_break_swap_history",
-  "swap_history"
+  "swap_history",
+  "amended_from"
  ],
  "fields": [
   {
@@ -76,10 +74,11 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "default": "0",
    "fieldname": "is_battery_expired",
-   "fieldtype": "Check",
-   "label": "Is Discarded"
+   "fieldtype": "Button",
+   "label": "Discard Battery"
   },
   {
    "collapsible": 1,
@@ -88,28 +87,11 @@
    "label": "Discarded History"
   },
   {
-   "fieldname": "discarded_date",
-   "fieldtype": "Datetime",
-   "label": "Discarded Date",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_discarded",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "discarded_by",
-   "fieldtype": "Link",
-   "label": "Discarded By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "discarded_battery_serial_no",
-   "fieldtype": "Link",
-   "label": "Discarded Battery Serial No",
-   "options": "Battery Information",
-   "read_only": 1
+   "allow_on_submit": 1,
+   "fieldname": "discard_history",
+   "fieldtype": "Table",
+   "label": "Discard History",
+   "options": "Frame Bundle Discard History"
   },
   {
    "collapsible": 1,
@@ -118,17 +100,28 @@
    "label": "Swap History"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "swap_history",
    "fieldtype": "Table",
    "label": "Swap History",
-   "options": "Frame Bundle Swap History",
-   "allow_on_submit": 1
+   "options": "Frame Bundle Swap History"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Frame Bundle",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
+ "is_submittable": 1,
  "links": [],
- "modified": "2026-01-08 14:38:01.034039",
+ "modified": "2026-01-13 10:50:08.059888",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Frame Bundle",
@@ -152,6 +145,5 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "is_submittable": 1,
  "states": []
 }
