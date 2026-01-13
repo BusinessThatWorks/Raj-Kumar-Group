@@ -489,6 +489,8 @@ class BatteryandKeyUpload(Document):
         if not self.upload_items:
             return
         
+        default_time_hours = frappe.db.get_single_value("RKG Settings", "battery_entry_default_time") or 48
+        
         overdue_frames = []
         
         for item in self.upload_items:
@@ -516,7 +518,7 @@ class BatteryandKeyUpload(Document):
             pr_creation = pr_info['pr_creation_date']
             hours_passed = time_diff_in_hours(now_datetime(), pr_creation)
             
-            if hours_passed > 48:
+            if hours_passed > default_time_hours:
                 overdue_frames.append({
                     'frame_no': frame_no,
                     'purchase_receipt': pr_info['purchase_receipt_name'],
@@ -525,21 +527,23 @@ class BatteryandKeyUpload(Document):
                 })
         
         if overdue_frames:
-            self.send_48_hour_limit_exceeded_notification(overdue_frames)
+            self.send_48_hour_limit_exceeded_notification(overdue_frames, default_time_hours)
             
             frame_count = len(overdue_frames)
             if frame_count == 1:
-                error_message = _("Cannot upload battery numbers. Frame {frame_no} exceeds 48-hour limit from Purchase Receipt creation. Email notification sent to supervisor.").format(
-                    frame_no=overdue_frames[0]['frame_no']
+                error_message = _("Cannot upload battery numbers. Frame {frame_no} exceeds {hours}-hour limit from Purchase Receipt creation. Email notification sent to supervisor.").format(
+                    frame_no=overdue_frames[0]['frame_no'],
+                    hours=default_time_hours
                 )
             else:
-                error_message = _("Cannot upload battery numbers. {count} frame(s) exceed the 48-hour limit from Purchase Receipt creation. Email notification sent to supervisor.").format(
-                    count=frame_count
+                error_message = _("Cannot upload battery numbers. {count} frame(s) exceed the {hours}-hour limit from Purchase Receipt creation. Email notification sent to supervisor.").format(
+                    count=frame_count,
+                    hours=default_time_hours
                 )
             
-            frappe.throw(error_message, title=_("48-Hour Upload Limit Exceeded"))
+            frappe.throw(error_message, title=_("Upload Limit Exceeded"))
 
-    def send_48_hour_limit_exceeded_notification(self, overdue_frames):
+    def send_48_hour_limit_exceeded_notification(self, overdue_frames, default_time_hours):
         try:
             notification_email = frappe.db.get_single_value("RKG Settings", "notification_email")
             if not notification_email:
@@ -549,19 +553,44 @@ class BatteryandKeyUpload(Document):
             if not email_list:
                 return
             
-            subject = "Battery & Key Upload Blocked - 48 Hour Limit Exceeded"
-            message = f"Battery and Key Upload was blocked because the following frames exceed the 48-hour limit from Purchase Receipt creation:\n\n"
+            subject = f"Battery & Key Upload Blocked - {default_time_hours} Hour Limit Exceeded"
+            
+            message = f"""
+            <p>Battery and Key Upload was blocked because the following frames exceed the {default_time_hours}-hour limit from Purchase Receipt creation:</p>
+            <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+                <thead>
+                    <tr style="background-color: #f2f2f2;">
+                        <th style="text-align: left; padding: 8px;">S.No</th>
+                        <th style="text-align: left; padding: 8px;">Frame No</th>
+                        <th style="text-align: left; padding: 8px;">Purchase Receipt</th>
+                        <th style="text-align: left; padding: 8px;">PR Created</th>
+                        <th style="text-align: left; padding: 8px;">Hours Passed</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
             
             for idx, frame_info in enumerate(overdue_frames[:20], 1):
-                message += f"{idx}. Frame No: {frame_info['frame_no']}\n"
-                message += f"   Purchase Receipt: {frame_info['purchase_receipt']}\n"
-                message += f"   PR Created: {frame_info['pr_creation_date']}\n"
-                message += f"   Hours Passed: {frame_info['hours_passed']} hours\n\n"
+                pr_date = str(frame_info['pr_creation_date']).split('.')[0] if '.' in str(frame_info['pr_creation_date']) else str(frame_info['pr_creation_date'])
+                message += f"""
+                    <tr>
+                        <td style="padding: 8px;">{idx}</td>
+                        <td style="padding: 8px;">{frame_info['frame_no']}</td>
+                        <td style="padding: 8px;">{frame_info['purchase_receipt']}</td>
+                        <td style="padding: 8px;">{pr_date}</td>
+                        <td style="padding: 8px;">{frame_info['hours_passed']} hours</td>
+                    </tr>
+                """
+            
+            message += """
+                </tbody>
+            </table>
+            """
             
             if len(overdue_frames) > 20:
-                message += f"... and {len(overdue_frames) - 20} more frame(s).\n\n"
+                message += f"<p><strong>... and {len(overdue_frames) - 20} more frame(s).</strong></p>"
             
-            message += "Please review and take appropriate action."
+            message += "<p>Please review and take appropriate action.</p>"
             
             frappe.sendmail(
                 recipients=email_list,
