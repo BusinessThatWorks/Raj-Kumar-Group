@@ -4,7 +4,9 @@
 frappe.ui.form.on("Frame Bundle", {
 	refresh(frm) {
 		// Refresh battery aging for submitted documents to show current value
-		if (frm.doc.name && frm.doc.docstatus === 1 && !frm.doc.is_battery_expired) {
+		// Check discard_history to determine if battery is expired (is_battery_expired is a Button field)
+		const is_expired = frm.doc.discard_history && frm.doc.discard_history.length > 0;
+		if (frm.doc.name && frm.doc.docstatus === 1 && !is_expired) {
 			frappe.call({
 				method: "rkg.rkg.doctype.frame_bundle.frame_bundle.refresh_battery_aging",
 				args: {
@@ -62,6 +64,21 @@ frappe.ui.form.on("Frame Bundle", {
 	discard_history(frm) {
 		// Ensure Discard History remains read-only when rows are added
 		make_discard_history_readonly(frm);
+	},
+
+	battery_serial_no(frm) {
+		// Update battery_type when battery_serial_no changes
+		if (frm.doc.battery_serial_no) {
+			frappe.db.get_value("Battery Information", frm.doc.battery_serial_no, "battery_type", (r) => {
+				if (r && r.battery_type) {
+					frm.set_value("battery_type", r.battery_type);
+				} else {
+					frm.set_value("battery_type", "");
+				}
+			});
+		} else {
+			frm.set_value("battery_type", "");
+		}
 	}
 });
 
@@ -70,8 +87,10 @@ frappe.ui.form.on("Frame Bundle", {
 // based on battery_installed_on field, not document creation date
 
 function update_battery_serial_no_readonly(frm) {
-	// Make battery_serial_no read-only when is_battery_expired is checked
-	if (frm.doc.is_battery_expired) {
+	// Make battery_serial_no read-only when battery is expired
+	// Check discard_history since is_battery_expired is a Button field (doesn't store values)
+	const is_expired = frm.doc.discard_history && frm.doc.discard_history.length > 0;
+	if (is_expired) {
 		frm.set_df_property("battery_serial_no", "read_only", 1);
 	} else {
 		frm.set_df_property("battery_serial_no", "read_only", 0);

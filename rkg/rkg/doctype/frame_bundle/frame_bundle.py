@@ -6,6 +6,13 @@ from frappe.utils import getdate, today, date_diff, now_datetime
 
 
 class FrameBundle(Document):
+	@property
+	def is_battery_expired(self):
+		"""Check if battery is expired based on discard_history.
+		Since is_battery_expired is a Button field (doesn't store values),
+		we determine expiration status from the discard_history table."""
+		return bool(self.discard_history and len(self.discard_history) > 0)
+	
 	def validate(self):
 		"""Validate Frame Bundle before save (DRAFT ONLY)"""
 		if self.docstatus != 0:
@@ -23,12 +30,22 @@ class FrameBundle(Document):
 		if self.battery_serial_no and not self.battery_installed_on:
 			self.battery_installed_on = today()
 
+		self.update_battery_type()
 		self.calculate_battery_aging()
+	
+	def update_battery_type(self):
+		"""Update battery_type from Battery Information when battery_serial_no changes"""
+		if self.battery_serial_no:
+			battery_type = frappe.db.get_value("Battery Information", self.battery_serial_no, "battery_type")
+			self.battery_type = battery_type or None
+		else:
+			self.battery_type = None
 	
 	def before_submit(self):
 		if self.battery_serial_no and not self.battery_installed_on:
 			self.battery_installed_on = today()
 
+		self.update_battery_type()
 		self.calculate_battery_aging()
 	
 	def check_duplicate_frame_no(self):
@@ -277,8 +294,8 @@ def mark_battery_expired(frame_name):
 	frappe.flags.ignore_permissions = True
 	
 	try:
-		# Update is_battery_expired using db_set to preserve docstatus
-		frappe.db.set_value("Frame Bundle", frame_name, "is_battery_expired", 1, update_modified=False)
+		# Note: is_battery_expired is a Button field and doesn't store values.
+		# The expiration status is determined by the discard_history table.
 		
 		# Get current battery serial number
 		battery_serial_no = frappe.db.get_value("Frame Bundle", frame_name, "battery_serial_no")
@@ -396,6 +413,14 @@ def swap_batteries(current_frame, target_frame):
 	if not target_doc.battery_serial_no:
 		frappe.throw(f"Cannot swap - {target_frame} has no battery")
 	
+	# Validate both frames have the same battery_type
+	current_battery_type = current_doc.battery_type
+	target_battery_type = target_doc.battery_type
+	
+	if current_battery_type and target_battery_type:
+		if current_battery_type != target_battery_type:
+			frappe.throw(f"Cannot swap batteries - Battery types do not match. Current frame has '{current_battery_type}' and target frame has '{target_battery_type}'. Battery swap can only be performed between frames with the same battery type.")
+	
 	# Store old values
 	current_old_battery = current_doc.battery_serial_no
 	target_old_battery = target_doc.battery_serial_no
@@ -408,13 +433,19 @@ def swap_batteries(current_frame, target_frame):
 	frappe.flags.allow_swap_history_modification = True
 	frappe.flags.ignore_permissions = True
 	
+	# Get battery_type for both batteries to update after swap
+	current_new_battery_type = frappe.db.get_value("Battery Information", target_old_battery, "battery_type") if target_old_battery else None
+	target_new_battery_type = frappe.db.get_value("Battery Information", current_old_battery, "battery_type") if current_old_battery else None
+	
 	# Swap batteries using db_set (preserves docstatus)
 	# Reset battery_installed_on for both frames when batteries are swapped
 	installed_date = today()
 	frappe.db.set_value("Frame Bundle", current_frame, "battery_serial_no", target_old_battery, update_modified=False)
 	frappe.db.set_value("Frame Bundle", current_frame, "battery_installed_on", installed_date, update_modified=False)
+	frappe.db.set_value("Frame Bundle", current_frame, "battery_type", current_new_battery_type, update_modified=False)
 	frappe.db.set_value("Frame Bundle", target_frame, "battery_serial_no", current_old_battery, update_modified=False)
 	frappe.db.set_value("Frame Bundle", target_frame, "battery_installed_on", installed_date, update_modified=False)
+	frappe.db.set_value("Frame Bundle", target_frame, "battery_type", target_new_battery_type, update_modified=False)
 	
 	# Recalculate battery aging for both frames (aging resets to 0 after swap)
 	frappe.db.set_value("Frame Bundle", current_frame, "battery_aging_days", 0, update_modified=False)

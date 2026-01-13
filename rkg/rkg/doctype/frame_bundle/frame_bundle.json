@@ -12,6 +12,7 @@
   "column_break_main",
   "key_number",
   "battery_serial_no",
+  "battery_type",
   "battery_installed_on",
   "section_break_battery",
   "battery_aging_days",
@@ -58,6 +59,12 @@
    "fieldtype": "Link",
    "label": "Battery Serial No",
    "options": "Battery Information"
+  },
+  {
+   "fieldname": "battery_type",
+   "fieldtype": "Data",
+   "label": "Battery Type",
+   "read_only": 1
   },
   {
    "description": "Date when the CURRENT battery was installed in this frame.",
