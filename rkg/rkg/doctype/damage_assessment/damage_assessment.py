@@ -94,6 +94,10 @@ class DamageAssessment(Document):
 		if self.stock_entry_type:
 			self.create_stock_entries()
 		
+		# Link this Damage Assessment to Load Receipt if load_receipt_number is set
+		if self.load_receipt_number:
+			self.link_to_load_receipt()
+		
 		self.update_load_receipt_frames_counts()
 	
 	def on_cancel(self):
@@ -476,9 +480,42 @@ class DamageAssessment(Document):
 			)
 			raise
 	
+	def link_to_load_receipt(self):
+		"""Link this Damage Assessment to the Load Receipt specified in load_receipt_number."""
+		if not self.load_receipt_number:
+			return
+		
+		if not frappe.db.exists("Load Receipt", self.load_receipt_number):
+			frappe.log_error(
+				f"Load Receipt {self.load_receipt_number} does not exist for Damage Assessment {self.name}",
+				"Damage Assessment Link Error"
+			)
+			return
+		
+		# Check if Load Receipt already has a different Damage Assessment linked
+		existing_da = frappe.db.get_value("Load Receipt", self.load_receipt_number, "damage_assessment")
+		if existing_da and existing_da != self.name:
+			frappe.throw(
+				_("Load Receipt {0} is already linked to Damage Assessment {1}. Please unlink it first or use a different Load Receipt.").format(
+					frappe.utils.get_link_to_form("Load Receipt", self.load_receipt_number),
+					frappe.utils.get_link_to_form("Damage Assessment", existing_da)
+				),
+				title=_("Load Receipt Already Linked")
+			)
+		
+		# Link this Damage Assessment to the Load Receipt
+		frappe.db.set_value("Load Receipt", self.load_receipt_number, "damage_assessment", self.name, update_modified=False)
+		frappe.db.commit()
+	
 	def update_load_receipt_frames_counts(self):
 		"""Update frames OK/Not OK counts in linked Load Receipt."""
+		# First try to find by damage_assessment link
 		load_receipt = frappe.db.get_value("Load Receipt", {"damage_assessment": self.name}, "name")
+		
+		# If not found by link, try using load_receipt_number
+		if not load_receipt and self.load_receipt_number:
+			load_receipt = self.load_receipt_number
+		
 		if not load_receipt:
 			return
 		

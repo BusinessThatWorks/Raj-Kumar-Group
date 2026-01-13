@@ -93,14 +93,6 @@ frappe.ui.form.on("Load Receipt", {
 						if (r.message) {
 							const has_pr = r.message.has_purchase_receipt || false;
 							
-							// Add "Create Damage Assessment" button - only if Purchase Receipt exists and Damage Assessment doesn't exist
-							if (frm.doc.load_reference_no && has_pr && !frm.doc.damage_assessment) {
-								frm.add_custom_button(__("Create Damage Assessment"), function() {
-									create_damage_assessment(frm);
-								}, __("Create"));
-								frm.page.set_inner_btn_group_as_primary(__("Create"));
-							}
-							
 							// Only show Purchase Receipt button if no Purchase Receipt exists
 							if (!has_pr) {
 								frm.add_custom_button(__("Purchase Receipt"), function() {
@@ -158,10 +150,6 @@ frappe.ui.form.on("Load Receipt", {
 		}
 	},
 	
-	damage_assessment(frm) {
-		// Update frames OK/Not OK counts when Damage Assessment is linked
-		update_frames_status_counts(frm);
-	}
 });
 
 // Calculate total receipt quantity by counting rows with frame_no
@@ -489,54 +477,6 @@ function update_frames_status_counts(frm) {
 	});
 }
 
-// Create Damage Assessment from Load Receipt
-function create_damage_assessment(frm) {
-	if (!frm.doc.load_reference_no) {
-		frappe.msgprint({
-			title: __("Error"),
-			message: __("Load Reference No is required to create Damage Assessment."),
-			indicator: "red"
-		});
-		return;
-	}
-	
-	if (!frm.doc.items || frm.doc.items.length === 0) {
-		frappe.msgprint({
-			title: __("Error"),
-			message: __("Please add items with Frame Numbers before creating Damage Assessment."),
-			indicator: "red"
-		});
-		return;
-	}
-	
-	frappe.call({
-		method: "rkg.rkg.doctype.load_receipt.load_receipt.create_damage_assessment",
-		args: {
-			source_name: frm.doc.name
-		},
-		callback: function(r) {
-			if (r.message && r.message.name) {
-				// Set the damage_assessment field
-				frm.set_value("damage_assessment", r.message.name);
-				// Refresh to show the field
-				frm.refresh();
-				// Open the created Damage Assessment
-				frappe.set_route("Form", "Damage Assessment", r.message.name);
-				frappe.show_alert({
-					message: __("Damage Assessment {0} created successfully", [r.message.name]),
-					indicator: "green"
-				}, 5);
-			}
-		},
-		error: function(r) {
-			frappe.msgprint({
-				title: __("Error"),
-				message: r.message || __("An error occurred while creating Damage Assessment."),
-				indicator: "red"
-			});
-		}
-	});
-}
 
 // Recalculate when frame_no changes in child table
 frappe.ui.form.on("Load Receipt Item", {
