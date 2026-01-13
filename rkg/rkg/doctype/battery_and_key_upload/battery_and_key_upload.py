@@ -7,18 +7,16 @@ from frappe.model.document import Document
 import os
 import csv
 import re
-from frappe.utils import get_site_path, getdate, date_diff
+from frappe.utils import get_site_path, getdate, date_diff, now_datetime, time_diff_in_hours
 from datetime import datetime as dt, timedelta
 
 
 @frappe.whitelist()
 def process_excel_file_for_preview(file_url):
-	"""Process Excel/CSV file and return preview data without creating records."""
 	try:
 		if not file_url:
 			return {"error": "No file attached"}
 		
-		# Get file path
 		if file_url.startswith('/files/'):
 			file_path = get_site_path('public', file_url[1:])
 		elif file_url.startswith('/private/files/'):
@@ -29,7 +27,6 @@ def process_excel_file_for_preview(file_url):
 		if not os.path.exists(file_path):
 			return {"error": f"File not found: {file_path}"}
 		
-		# Read file based on extension
 		file_ext = os.path.splitext(file_path)[1].lower()
 		rows = []
 		
@@ -50,7 +47,6 @@ def process_excel_file_for_preview(file_url):
 		if not rows:
 			return {"error": "No data found in the file."}
 		
-		# Create a temporary instance to use helper methods
 		doc = frappe.new_doc("Battery and Key Upload")
 		doc.excel_file = file_url
 		
@@ -84,8 +80,6 @@ def process_excel_file_for_preview(file_url):
 			
 			serial_no = doc.find_serial_no(frame_no)
 			item_code = frappe.db.get_value('Serial No', serial_no, 'item_code') or '' if serial_no else ''
-			
-			# Use serial_no if found, otherwise use frame_no
 			display_frame_no = serial_no if serial_no else frame_no
 			
 			child_table_data.append({
@@ -96,27 +90,11 @@ def process_excel_file_for_preview(file_url):
 		
 		return {"child_table_data": child_table_data}
 	except Exception as e:
-		frappe.log_error(
-			f"Error processing file for preview: {str(e)}\nTraceback: {frappe.get_traceback()}",
-			"Battery and Key Upload Preview Error"
-		)
 		return {"error": f"Error processing file: {str(e)}"}
 
 
 @frappe.whitelist()
 def check_frame_age(frame_no, date):
-	"""Check if frame is older than Battery Entry Default Time.
-	
-	Args:
-		frame_no: Frame number to check
-		date: Date to compare against (usually the upload date)
-	
-	Returns:
-		dict with:
-			- time_difference_hours: Hours between battery charging date and provided date
-			- default_time_hours: Battery Entry Default Time from RKG Settings
-			- error: Error message if frame not found or other error
-	"""
 	try:
 		if not frame_no:
 			return {"error": "Frame No is required"}
@@ -127,7 +105,6 @@ def check_frame_age(frame_no, date):
 		frame_no = str(frame_no).strip()
 		check_date = getdate(date)
 		
-		# Find Frame Bundle by frame_no (could be name or frame_no field)
 		frame_bundle_name = None
 		if frappe.db.exists("Frame Bundle", frame_no):
 			frame_bundle_name = frame_no
@@ -137,96 +114,75 @@ def check_frame_age(frame_no, date):
 		if not frame_bundle_name:
 			return {"error": f"Frame Bundle not found for frame_no: {frame_no}"}
 		
-		# Get Frame Bundle
 		frame_bundle = frappe.get_doc("Frame Bundle", frame_bundle_name)
 		battery_serial_no = frame_bundle.get("battery_serial_no")
 		
 		if not battery_serial_no:
-			# No battery linked, can't calculate age
 			return {
 				"time_difference_hours": 0,
 				"default_time_hours": 0
 			}
 		
-		# Get Battery Information
 		if not frappe.db.exists("Battery Information", battery_serial_no):
 			return {"error": f"Battery Information not found: {battery_serial_no}"}
 		
 		battery_info = frappe.get_doc("Battery Information", battery_serial_no)
 		
-		# Get date to compare - prefer charging_date, fallback to creation
 		if battery_info.get("charging_date"):
 			battery_date = getdate(battery_info.charging_date)
 		else:
 			battery_date = getdate(battery_info.creation)
 		
-		# Calculate time difference in hours
-		# Convert dates to datetime for hour calculation
 		battery_datetime = dt.combine(battery_date, dt.min.time())
 		check_datetime = dt.combine(check_date, dt.min.time())
-		
-		# Calculate difference
 		time_diff = check_datetime - battery_datetime
 		time_diff_hours = abs(time_diff.total_seconds() / 3600)
-		
-		# Get Battery Entry Default Time from RKG Settings
 		default_time_hours = frappe.db.get_single_value("RKG Settings", "battery_entry_default_time") or 0
-		# Convert to hours if stored as days (assuming it's stored as hours based on the field name)
-		# If it's stored as days, multiply by 24
-		# Based on the field being Int and label saying "Time", assume it's already in hours
 		
 		return {
 			"time_difference_hours": time_diff_hours,
 			"default_time_hours": default_time_hours
 		}
 	except Exception as e:
-		frappe.log_error(
-			f"Error checking frame age for frame_no {frame_no}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-			"Frame Age Check Error"
-		)
 		return {"error": f"Error checking frame age: {str(e)}"}
 
 
 class BatteryandKeyUpload(Document):
+    def before_insert(self):
+        if self.upload_items:
+            self.check_48_hour_limit_and_block()
+    
     def validate(self):
-        """Validate the document before save."""
-        # Clear child table when new file is attached
         if self.has_value_changed("excel_file"):
             self.upload_items = []
+        if self.upload_items:
+            self.check_48_hour_limit_and_block()
 
-    def on_submit(self):
-        """Process the file and update Serial No records on submit."""
+    def before_submit(self):
+        if self.upload_items:
+            self.check_48_hour_limit_and_block()
         if not self.excel_file:
             frappe.throw(_("No file attached"))
 
+    def on_submit(self):
         try:
             self.process_excel_file()
-            # Check for exceeded frames and send email notification
             self.check_and_send_notification()
         except Exception as e:
-            frappe.log_error(
-                f"Error processing Battery and Key Upload {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-                "Battery and Key Upload Error"
-            )
             frappe.throw(_("Error processing file: {0}").format(str(e)))
 
     def on_cancel(self):
-        """Clear frame_no links in child table when document is cancelled to allow Serial No deletion."""
         if self.upload_items:
-            # Clear frame_no links in child table items using database update
             for item in self.upload_items:
                 if item.frame_no:
                     frappe.db.set_value("Battery Key Upload Item", item.name, "frame_no", None, update_modified=False)
             frappe.db.commit()
 
     def process_excel_file(self):
-        """Read Excel/CSV and update Battery Information and Frame Bundle records."""
         file_path = self.get_file_path()
-
         if not os.path.exists(file_path):
             frappe.throw(_("File not found: {0}").format(file_path))
 
-        # Read file based on extension
         file_ext = os.path.splitext(file_path)[1].lower()
         rows = []
 
@@ -289,7 +245,6 @@ class BatteryandKeyUpload(Document):
                 continue
 
             try:
-                # Create/Update Battery Information
                 battery_info_name = None
                 if battery_serial_no:
                     battery_info_name = self.create_or_update_battery_information(
@@ -300,8 +255,6 @@ class BatteryandKeyUpload(Document):
                         charging_date=charging_date
                     )
 
-                # Create Frame Bundle
-                # Get actual frame_no and item_code from Serial No
                 actual_frame_no = frappe.db.get_value('Serial No', serial_no, 'serial_no') or serial_no
                 item_code = frappe.db.get_value('Serial No', serial_no, 'item_code') or ''
                 self.create_frame_bundle(
@@ -318,14 +271,12 @@ class BatteryandKeyUpload(Document):
                 })
             except Exception as e:
                 total_errors += 1
-                frappe.log_error(f"Error processing row {frame_no}: {str(e)}", "Battery and Key Upload Error")
                 child_table_data.append({
                     'frame_no': serial_no, 'key_no': key_no or '', 'battery_serial_no': battery_serial_no or '',
                     'battery_brand': battery_brand or '', 'battery_type': battery_type or '',
                     'sample_charging_date': sample_charging_date or '', 'charging_date': charging_date, 'item_code': ''
                 })
 
-        # Populate child table
         self.upload_items = []
         for row_data in child_table_data:
             child_row = self.append("upload_items", {})
@@ -341,7 +292,6 @@ class BatteryandKeyUpload(Document):
         frappe.db.commit()
 
     def get_file_path(self):
-        """Get file path from file_url."""
         file_url = self.excel_file
         if file_url.startswith('/files/'):
             return get_site_path('public', file_url[1:])
@@ -351,7 +301,6 @@ class BatteryandKeyUpload(Document):
             return get_site_path('public', 'files', file_url)
 
     def normalize_columns(self, columns):
-        """Normalize column names for consistent matching."""
         column_map = {}
         for col in columns:
             if not col:
@@ -362,7 +311,6 @@ class BatteryandKeyUpload(Document):
         return column_map
 
     def get_value(self, row, column_map, possible_names):
-        """Get value from row using normalized column names."""
         for name in possible_names:
             normalized = name.lower().strip().replace('.', '').replace('_', ' ').replace('-', ' ')
             normalized = ' '.join(normalized.split())
@@ -380,7 +328,6 @@ class BatteryandKeyUpload(Document):
         return None
 
     def parse_date(self, date_value):
-        """Parse various date formats to date object."""
         if not date_value:
             return None
         if hasattr(date_value, 'strftime'):
@@ -409,7 +356,6 @@ class BatteryandKeyUpload(Document):
         return None
 
     def find_serial_no(self, frame_no):
-        """Find Serial No by frame_no or by Serial No name."""
         if not frame_no:
             return None
         frame_no = str(frame_no).strip()
@@ -422,7 +368,6 @@ class BatteryandKeyUpload(Document):
 
     def create_or_update_battery_information(self, battery_serial_no=None, battery_brand=None, 
                                              battery_type=None, sample_charging_date=None, charging_date=None):
-        """Create or update Battery Information record."""
         if not battery_serial_no or not str(battery_serial_no).strip():
             return None
         battery_serial_no = str(battery_serial_no).strip()
@@ -454,145 +399,175 @@ class BatteryandKeyUpload(Document):
                 frappe.db.commit()
                 return doc.name
             except Exception as e:
-                frappe.log_error(f"Error creating Battery Information for {battery_serial_no}: {str(e)}", "Battery Info Creation Error")
                 return None
 
     def create_frame_bundle(self, frame_no=None, item_code=None, battery_serial_no=None, key_number=None):
-        """Create Frame Bundle."""
         if not frame_no:
             return None
         actual_frame_no = str(frame_no).strip()
         
-        # Check if Frame Bundle exists by name (autoname format: {frame_no})
         if frappe.db.exists("Frame Bundle", actual_frame_no):
             return actual_frame_no
         
-        # Also check by frame_no field in case name is different
         existing_by_field = frappe.db.get_value("Frame Bundle", {"frame_no": actual_frame_no}, "name")
         if existing_by_field:
             return existing_by_field
         
         try:
-            # Create Frame Bundle document
-            # Note: autoname is format:{frame_no}, so name will be set to frame_no value
             doc = frappe.get_doc({
                 "doctype": "Frame Bundle",
-                "frame_no": actual_frame_no,  # This will be used by autoname to set name
+                "frame_no": actual_frame_no,
                 "item_code": str(item_code).strip() if item_code else "",
                 "battery_serial_no": battery_serial_no if (battery_serial_no and frappe.db.exists("Battery Information", battery_serial_no)) else None,
                 "key_number": str(key_number).strip() if key_number else None
             })
             
-            # Insert the document
             doc.insert(ignore_permissions=True)
             
-            # Verify the document was created and has the expected name
             if not doc.name or doc.name != actual_frame_no:
-                frappe.log_error(
-                    f"Frame Bundle created but name mismatch: expected {actual_frame_no}, got {doc.name}",
-                    "Frame Bundle Creation Error"
-                )
-                # Try to find by frame_no field
                 existing = frappe.db.get_value("Frame Bundle", {"frame_no": actual_frame_no}, "name")
                 if existing:
                     return existing
                 return None
             
-            # Submit the document
             doc.submit()
             frappe.db.commit()
             
-            # Verify document exists after commit (by name and by frame_no field)
             if not frappe.db.exists("Frame Bundle", doc.name):
-                # Try to find by frame_no field
                 existing = frappe.db.get_value("Frame Bundle", {"frame_no": actual_frame_no}, "name")
                 if existing:
-                    frappe.log_error(
-                        f"Frame Bundle {doc.name} not found by name, but found by frame_no: {existing}",
-                        "Frame Bundle Creation Error"
-                    )
                     return existing
-                frappe.log_error(
-                    f"Frame Bundle {doc.name} not found after creation for frame_no {actual_frame_no}",
-                    "Frame Bundle Creation Error"
-                )
                 return None
             
             return doc.name
         except frappe.DuplicateEntryError:
-            # Document might have been created by another process
             existing = frappe.db.get_value("Frame Bundle", {"frame_no": actual_frame_no}, "name")
             if existing:
                 return existing
-            frappe.log_error(
-                f"Duplicate entry error for Frame Bundle with frame_no {actual_frame_no}",
-                "Frame Bundle Creation Error"
-            )
             return None
         except Exception as e:
-            error_msg = str(e)
-            frappe.log_error(
-                f"Error creating Frame Bundle for {actual_frame_no}: {error_msg}\nTraceback: {frappe.get_traceback()}",
-                "Frame Bundle Creation Error"
-            )
-            # Try to find if it was created despite the error
             existing = frappe.db.get_value("Frame Bundle", {"frame_no": actual_frame_no}, "name")
             if existing:
                 return existing
             return None
 
     def check_and_send_notification(self):
-        """Send email notification immediately on upload submit."""
         if not self.upload_items:
             return
         
-        # Get notification email from RKG Settings
         notification_email = frappe.db.get_single_value("RKG Settings", "notification_email")
-        
-        # Fail silently if notification_email is empty
         if not notification_email:
             return
         
-        # Count frames in upload
         frame_count = 0
         for item in self.upload_items:
             if item.frame_no:
                 frame_count += 1
         
-        # Send email if there are any frames
         if frame_count > 0:
             self.send_notification_email(notification_email, frame_count)
 
     def send_notification_email(self, notification_email, frame_count):
-        """Send immediate email notification about battery and key upload."""
         try:
-            # Parse comma-separated emails
             email_list = [email.strip() for email in notification_email.split(',') if email.strip()]
-            
             if not email_list:
                 return
             
-            # Email subject
             subject = "Battery & Key Upload Notification"
-            
-            # Email body
             message = f"Battery and Key Upload is being done against {frame_count} frames"
             
-            # Send email immediately
             frappe.sendmail(
                 recipients=email_list,
                 subject=subject,
                 message=message,
                 now=True
             )
+        except Exception as e:
+            pass
+
+    def check_48_hour_limit_and_block(self):
+        if not self.upload_items:
+            return
+        
+        overdue_frames = []
+        
+        for item in self.upload_items:
+            if not item.frame_no:
+                continue
             
-            frappe.log_error(
-                f"Email notification sent successfully for {frame_count} frames",
-                "Battery Upload Email Notification"
+            frame_no = str(item.frame_no).strip()
+            
+            purchase_receipt_info = frappe.db.sql("""
+                SELECT 
+                    pr.name as purchase_receipt_name,
+                    pr.creation as pr_creation_date
+                FROM `tabPurchase Receipt` pr
+                INNER JOIN `tabPurchase Receipt Item` pri ON pr.name = pri.parent
+                WHERE (pri.serial_no = %s OR FIND_IN_SET(%s, pri.serial_no) > 0)
+                    AND pr.docstatus = 1
+                ORDER BY pr.creation DESC
+                LIMIT 1
+            """, (frame_no, frame_no), as_dict=True)
+            
+            if not purchase_receipt_info:
+                continue
+            
+            pr_info = purchase_receipt_info[0]
+            pr_creation = pr_info['pr_creation_date']
+            hours_passed = time_diff_in_hours(now_datetime(), pr_creation)
+            
+            if hours_passed > 48:
+                overdue_frames.append({
+                    'frame_no': frame_no,
+                    'purchase_receipt': pr_info['purchase_receipt_name'],
+                    'hours_passed': round(hours_passed, 2),
+                    'pr_creation_date': pr_creation
+                })
+        
+        if overdue_frames:
+            self.send_48_hour_limit_exceeded_notification(overdue_frames)
+            
+            frame_count = len(overdue_frames)
+            if frame_count == 1:
+                error_message = _("Cannot upload battery numbers. Frame {frame_no} exceeds 48-hour limit from Purchase Receipt creation. Email notification sent to supervisor.").format(
+                    frame_no=overdue_frames[0]['frame_no']
+                )
+            else:
+                error_message = _("Cannot upload battery numbers. {count} frame(s) exceed the 48-hour limit from Purchase Receipt creation. Email notification sent to supervisor.").format(
+                    count=frame_count
+                )
+            
+            frappe.throw(error_message, title=_("48-Hour Upload Limit Exceeded"))
+
+    def send_48_hour_limit_exceeded_notification(self, overdue_frames):
+        try:
+            notification_email = frappe.db.get_single_value("RKG Settings", "notification_email")
+            if not notification_email:
+                return
+            
+            email_list = [email.strip() for email in notification_email.split(',') if email.strip()]
+            if not email_list:
+                return
+            
+            subject = "Battery & Key Upload Blocked - 48 Hour Limit Exceeded"
+            message = f"Battery and Key Upload was blocked because the following frames exceed the 48-hour limit from Purchase Receipt creation:\n\n"
+            
+            for idx, frame_info in enumerate(overdue_frames[:20], 1):
+                message += f"{idx}. Frame No: {frame_info['frame_no']}\n"
+                message += f"   Purchase Receipt: {frame_info['purchase_receipt']}\n"
+                message += f"   PR Created: {frame_info['pr_creation_date']}\n"
+                message += f"   Hours Passed: {frame_info['hours_passed']} hours\n\n"
+            
+            if len(overdue_frames) > 20:
+                message += f"... and {len(overdue_frames) - 20} more frame(s).\n\n"
+            
+            message += "Please review and take appropriate action."
+            
+            frappe.sendmail(
+                recipients=email_list,
+                subject=subject,
+                message=message,
+                now=True
             )
         except Exception as e:
-            # Fail silently - log error but don't throw
-            frappe.log_error(
-                f"Error sending email notification: {str(e)}\nTraceback: {frappe.get_traceback()}",
-                "Battery Upload Email Error"
-            )
+            pass
