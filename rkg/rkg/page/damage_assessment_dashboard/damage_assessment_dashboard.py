@@ -14,7 +14,7 @@ def _status_to_docstatus(status):
 	return status_map.get(status)
 
 
-def _build_where_clause(status=None, from_date=None, to_date=None, load_plan_reference=None):
+def _build_where_clause(status=None, from_date=None, to_date=None, load_receipt_number=None):
 	"""Build WHERE clause for Damage Assessment queries."""
 	conditions = ["da.docstatus < 2"]
 	params = {}
@@ -33,22 +33,22 @@ def _build_where_clause(status=None, from_date=None, to_date=None, load_plan_ref
 		conditions.append("da.date <= %(to_date)s")
 		params["to_date"] = getdate(to_date)
 
-	if load_plan_reference:
-		conditions.append("da.load_plan_reference_no = %(load_plan_reference)s")
-		params["load_plan_reference"] = load_plan_reference
+	if load_receipt_number:
+		conditions.append("da.load_receipt_number = %(load_receipt_number)s")
+		params["load_receipt_number"] = load_receipt_number
 
 	return " AND ".join(conditions), params
 
 
 @frappe.whitelist()
-def get_damaged_frames_data(load_plan_reference=None, warehouse=None, status=None):
+def get_damaged_frames_data(load_receipt_number=None, warehouse=None, status=None):
 	"""Return damaged frames data with their relationships from child table."""
 	conditions = ["da.docstatus < 2"]
 	params = {}
 
-	if load_plan_reference:
-		conditions.append("da.load_plan_reference_no = %(load_plan_reference)s")
-		params["load_plan_reference"] = load_plan_reference
+	if load_receipt_number:
+		conditions.append("da.load_receipt_number = %(load_receipt_number)s")
+		params["load_receipt_number"] = load_receipt_number
 
 	if warehouse:
 		# Filter by to_warehouse or from_warehouse in child table
@@ -67,19 +67,23 @@ def get_damaged_frames_data(load_plan_reference=None, warehouse=None, status=Non
 		f"""
 		SELECT
 			dai.serial_no,
-			dai.load_dispatch,
 			dai.status,
-			dai.type_of_damage,
+			dai.issue_1,
+			dai.issue_2,
+			dai.issue_3,
+			dai.damage_description,
 			dai.estimated_cost,
 			dai.from_warehouse,
 			dai.to_warehouse,
-			da.load_plan_reference_no,
+			da.load_receipt_number,
+			lr.load_reference_no,
 			da.name as assessment_name,
 			da.date as assessment_date,
 			da.total_estimated_cost,
 			sn.warehouse as current_warehouse
 		FROM `tabDamage Assessment Item` dai
 		INNER JOIN `tabDamage Assessment` da ON dai.parent = da.name
+		LEFT JOIN `tabLoad Receipt` lr ON da.load_receipt_number = lr.name
 		LEFT JOIN `tabSerial No` sn ON dai.serial_no = sn.name
 		WHERE {where_clause}
 		ORDER BY da.date DESC, dai.status DESC, dai.serial_no
@@ -109,12 +113,12 @@ def get_damaged_frames_data(load_plan_reference=None, warehouse=None, status=Non
 @frappe.whitelist()
 def get_filter_options():
 	"""Get filter options for Damage Assessment dashboard."""
-	load_plan_references = frappe.db.sql_list(
+	load_receipt_numbers = frappe.db.sql_list(
 		"""
-		SELECT DISTINCT da.load_plan_reference_no
+		SELECT DISTINCT da.load_receipt_number
 		FROM `tabDamage Assessment` da
-		WHERE da.docstatus < 2 AND da.load_plan_reference_no IS NOT NULL AND da.load_plan_reference_no != ''
-		ORDER BY da.load_plan_reference_no
+		WHERE da.docstatus < 2 AND da.load_receipt_number IS NOT NULL AND da.load_receipt_number != ''
+		ORDER BY da.load_receipt_number
 		"""
 	)
 
@@ -139,7 +143,7 @@ def get_filter_options():
 	)
 
 	return {
-		"load_plan_references": load_plan_references,
+		"load_receipt_numbers": load_receipt_numbers,
 		"warehouses": warehouses
 	}
 
@@ -153,37 +157,26 @@ def get_assessment_details(name):
 	# Get Damage Assessment document
 	assessment = frappe.get_doc("Damage Assessment", name)
 	
-	# Get child table items
-	items = frappe.get_all(
-		"Damage Assessment Item",
-		filters={"parent": name},
-		fields=[
-			"serial_no",
-			"load_dispatch",
-			"type_of_damage",
-			"date_of_arrival_of_frame",
-			"damage_description",
-			"estimated_cost",
-			"item_remarks"
-		],
-		order_by="idx"
-	)
+	# Get Load Receipt details if available
+	load_reference_no = None
+	if assessment.load_receipt_number:
+		load_reference_no = frappe.db.get_value("Load Receipt", assessment.load_receipt_number, "load_reference_no")
 	
-	# Get items with all fields including status and warehouses
+	# Get items with all fields including status, warehouses, and issues
 	items = frappe.get_all(
 		"Damage Assessment Item",
 		filters={"parent": name},
 		fields=[
 			"serial_no",
-			"load_dispatch",
 			"status",
-			"type_of_damage",
-			"date_of_arrival_of_frame",
+			"issue_1",
+			"issue_2",
+			"issue_3",
 			"damage_description",
+			"damage_image",
 			"estimated_cost",
 			"from_warehouse",
-			"to_warehouse",
-			"item_remarks"
+			"to_warehouse"
 		],
 		order_by="idx"
 	)
@@ -193,7 +186,8 @@ def get_assessment_details(name):
 		"assessment": {
 			"name": assessment.name,
 			"date": str(assessment.date) if assessment.date else None,
-			"load_plan_reference_no": assessment.load_plan_reference_no,
+			"load_receipt_number": assessment.load_receipt_number,
+			"load_reference_no": load_reference_no,
 			"stock_entry_type": assessment.stock_entry_type,
 			"status": _docstatus_to_status(assessment.docstatus),
 			"total_estimated_cost": flt(assessment.total_estimated_cost) or 0,
