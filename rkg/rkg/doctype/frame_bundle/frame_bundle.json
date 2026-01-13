@@ -12,6 +12,7 @@
   "column_break_main",
   "key_number",
   "battery_serial_no",
+  "battery_installed_on",
   "section_break_battery",
   "battery_aging_days",
   "column_break_battery",
@@ -57,6 +58,13 @@
    "fieldtype": "Link",
    "label": "Battery Serial No",
    "options": "Battery Information"
+  },
+  {
+   "description": "Date when the CURRENT battery was installed in this frame.",
+   "fieldname": "battery_installed_on",
+   "fieldtype": "Date",
+   "label": "Battery Installed On",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_battery",
@@ -121,7 +129,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-13 10:50:08.059888",
+ "modified": "2026-01-13 12:19:35.425954",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Frame Bundle",

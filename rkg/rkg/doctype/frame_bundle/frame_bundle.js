@@ -3,8 +3,25 @@
 
 frappe.ui.form.on("Frame Bundle", {
 	refresh(frm) {
-		// Calculate battery aging days from creation date
-		calculate_battery_aging(frm);
+		// Refresh battery aging for submitted documents to show current value
+		if (frm.doc.name && frm.doc.docstatus === 1 && !frm.doc.is_battery_expired) {
+			frappe.call({
+				method: "rkg.rkg.doctype.frame_bundle.frame_bundle.refresh_battery_aging",
+				args: {
+					frame_name: frm.doc.name
+				},
+				callback: function(r) {
+					if (r.message && r.message.success) {
+						// Update the field value in the form
+						frm.set_value("battery_aging_days", r.message.battery_aging_days);
+					}
+				},
+				error: function() {
+					// Silently fail - aging will show last calculated value
+				}
+			});
+		}
+		
 		// Update battery_serial_no read-only state
 		update_battery_serial_no_readonly(frm);
 		// Show/hide discarded history section
@@ -24,8 +41,7 @@ frappe.ui.form.on("Frame Bundle", {
 	},
 
 	onload(frm) {
-		// Calculate aging when form loads
-		calculate_battery_aging(frm);
+		// Battery aging is calculated by backend - no client-side calculation needed
 		// Update battery_serial_no read-only state
 		update_battery_serial_no_readonly(frm);
 		// Show/hide discarded history section
@@ -49,22 +65,9 @@ frappe.ui.form.on("Frame Bundle", {
 	}
 });
 
-function calculate_battery_aging(frm) {
-	if (frm.doc.creation) {
-		// Extract date part from creation datetime (format: YYYY-MM-DD HH:mm:ss.ssssss)
-		const creation_date = frm.doc.creation.split(' ')[0];
-		const today = frappe.datetime.get_today();
-		
-		// Calculate difference in days using moment.js
-		const diff_days = moment(today).diff(moment(creation_date), 'days');
-		
-		// Update the field (ensure non-negative)
-		frm.set_value("battery_aging_days", diff_days >= 0 ? diff_days : 0);
-	} else if (frm.is_new()) {
-		// For new documents, set to 0
-		frm.set_value("battery_aging_days", 0);
-	}
-}
+// Battery aging calculation removed - backend is now the single source of truth
+// The calculate_battery_aging() function in frame_bundle.py handles all aging calculations
+// based on battery_installed_on field, not document creation date
 
 function update_battery_serial_no_readonly(frm) {
 	// Make battery_serial_no read-only when is_battery_expired is checked
