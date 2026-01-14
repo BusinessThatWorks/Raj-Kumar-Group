@@ -15,10 +15,8 @@
   "invoice_no",
   "section_break_ugzt",
   "total_load_quantity",
+  "column_break_zqlb",
   "total_dispatch_quantity",
-  "column_break_sdhz",
-  "total_received_quantity",
-  "total_billed_quantity",
   "section_break_bhgj",
   "items",
   "status",
@@ -91,10 +89,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_sdhz",
-   "fieldtype": "Column Break"
-  },
-  {
    "bold": 1,
    "fetch_from": "load_reference_no.total_quantity",
    "fieldname": "total_load_quantity",
@@ -115,23 +109,11 @@
    "read_only": 1
   },
   {
-   "allow_on_submit": 1,
-   "fieldname": "total_received_quantity",
-   "fieldtype": "Int",
-   "label": "Total Received Quantity",
-   "no_copy": 1,
-   "read_only": 1
-  },
-  {
-   "allow_on_submit": 1,
-   "fieldname": "total_billed_quantity",
-   "fieldtype": "Int",
-   "label": "Total Billed Quantity",
-   "no_copy": 1,
-   "read_only": 1
-  },
-  {
    "fieldname": "column_break_schd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_zqlb",
    "fieldtype": "Column Break"
   }
  ],
@@ -140,7 +122,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 3,
- "modified": "2025-12-22 17:11:32.825259",
+ "modified": "2026-01-14 10:36:06.412165",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Load Dispatch",

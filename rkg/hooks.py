@@ -148,10 +148,12 @@ doc_events = {
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document"
+            "rkg.rkg.doctype.load_receipt.load_receipt.update_load_receipt_totals_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_status_from_totals"
         ],
         "on_cancel": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document",
+            "rkg.rkg.doctype.load_receipt.load_receipt.update_load_receipt_totals_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_status_from_totals",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_receipt_status_from_document"
         ]
     },
@@ -163,11 +165,13 @@ doc_events = {
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document",
+            "rkg.rkg.doctype.load_receipt.load_receipt.update_load_receipt_totals_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_status_from_totals",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_receipt_status_from_document"
         ],
         "on_cancel": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_totals_from_document",
+            "rkg.rkg.doctype.load_receipt.load_receipt.update_load_receipt_totals_from_document",
+            "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_dispatch_status_from_totals",
             "rkg.rkg.doctype.load_dispatch.load_dispatch.update_load_receipt_status_from_document"
         ],
         "on_trash": [

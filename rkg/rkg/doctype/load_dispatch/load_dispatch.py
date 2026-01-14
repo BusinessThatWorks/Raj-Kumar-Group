@@ -539,9 +539,20 @@ class LoadDispatch(Document):
 	#---------------------------------------------------------
 	
 	def update_status(self):
-		"""Update Load Dispatch status based on received quantity (Received if >= dispatch quantity, otherwise In-Transit)."""
+		"""Update Load Dispatch status based on received quantity from Load Receipt (Received if >= dispatch quantity, otherwise In-Transit)."""
 		total_dispatch = flt(self.total_dispatch_quantity) or 0
-		total_received = flt(self.total_received_quantity) or 0
+		
+		# Get total_receipt_quantity from Load Receipt linked to this Load Dispatch
+		total_received = 0
+		if frappe.db.has_column("Load Receipt", "load_dispatch"):
+			load_receipts = frappe.get_all(
+				"Load Receipt",
+				filters={"load_dispatch": self.name},
+				fields=["name", "total_receipt_quantity"],
+				limit=1
+			)
+			if load_receipts:
+				total_received = flt(load_receipts[0].get("total_receipt_quantity")) or 0
 		
 		if total_dispatch > 0 and total_received >= total_dispatch:
 			new_status = "Received"
@@ -1219,8 +1230,8 @@ def create_purchase_receipt(source_name, target_doc=None, warehouse=None, frame_
 
 
 
-def update_load_dispatch_totals_from_document(doc, method=None):
-	"""Update Load Dispatch totals (total_received_quantity and total_billed_quantity) when Purchase Receipt/Invoice is submitted or cancelled."""
+def update_load_dispatch_status_from_totals(doc, method=None):
+	"""Update Load Dispatch status based on totals from Load Receipts when Purchase Receipt/Invoice is submitted or cancelled."""
 	try:
 		# Get custom_load_dispatch field value from the document
 		load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
@@ -1229,141 +1240,28 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		if not load_dispatch_name:
 			return
 
-		# STEP 1: Verify Load Dispatch document exists with this name/ID
+		# Verify Load Dispatch document exists
 		if not frappe.db.exists("Load Dispatch", load_dispatch_name):
 			return
 
-		# Initialize totals
-		total_received_qty = 0
-		total_billed_qty = 0
+		# Find all Load Receipts linked to this Load Dispatch and get totals from the first one
+		# (All Load Receipts for a Load Dispatch should have the same totals since they're calculated from the same PR/PI)
+		if not frappe.db.has_column("Load Receipt", "load_dispatch"):
+			return
 
-		# Case 1: Purchase Receipt
-		if doc.doctype == "Purchase Receipt":
-			if not frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
-				return
-			
-			# Find all submitted Purchase Receipts (docstatus=1) with this Load Dispatch. This automatically excludes cancelled documents (docstatus=2)
-			pr_list = frappe.get_all(
-				"Purchase Receipt",
-				filters={
-					"docstatus": 1,
-					"custom_load_dispatch": load_dispatch_name
-				},
-				fields=["name", "total_qty"]
-			)
-			
-			# Sum total_qty from all submitted Purchase Receipts
-			for pr in pr_list:
-				try:
-					pr_qty = flt(pr.get("total_qty")) or 0
-					if pr_qty == 0:
-						try:
-							pr_doc = frappe.get_doc("Purchase Receipt", pr.name)
-							if hasattr(pr_doc, "items") and pr_doc.items:
-								pr_qty = sum(flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0) for item in pr_doc.items)
-						except Exception:
-							# If we can't get the document, skip it
-							pass
-					total_received_qty += pr_qty
-				except Exception as e:
-					frappe.log_error(
-						f"Error processing Purchase Receipt {pr.get('name', 'Unknown')}: {str(e)}",
-						"Load Dispatch Totals Update Error"
-					)
-					continue
+		load_receipts = frappe.get_all(
+			"Load Receipt",
+			filters={"load_dispatch": load_dispatch_name},
+			fields=["name", "total_receipt_quantity"],
+			limit=1
+		)
 
-		# Case 2: Purchase Invoice
-		elif doc.doctype == "Purchase Invoice":
-			if not frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
-				return
-			
-			# First, calculate total_received_qty from ALL Purchase Receipts linked to this Load Dispatch
-			pr_list = frappe.get_all(
-				"Purchase Receipt",
-				filters={
-					"docstatus": 1,
-					"custom_load_dispatch": load_dispatch_name
-				},
-				fields=["name", "total_qty"]
-			)
-			
-			for pr in pr_list:
-				try:
-					pr_qty = flt(pr.get("total_qty")) or 0
-					if pr_qty == 0:
-						try:
-							pr_doc = frappe.get_doc("Purchase Receipt", pr.name)
-							if hasattr(pr_doc, "items") and pr_doc.items:
-								pr_qty = sum(flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0) for item in pr_doc.items)
-						except Exception:
-							# If we can't get the document, skip it
-							pass
-					total_received_qty += pr_qty
-				except Exception as e:
-					frappe.log_error(
-						f"Error processing Purchase Receipt {pr.get('name', 'Unknown')}: {str(e)}",
-						"Load Dispatch Totals Update Error"
-					)
-					continue
-			
-			# Check if this Purchase Invoice was created from a Purchase Receipt by checking if any items have purchase_receipt field set
-			linked_purchase_receipts = set()
-			try:
-				if doc.items:
-					linked_purchase_receipts = {item.purchase_receipt for item in doc.items if hasattr(item, "purchase_receipt") and item.purchase_receipt}
-			except Exception as e:
-				frappe.log_error(
-					f"Error getting linked purchase receipts: {str(e)}",
-					"Load Dispatch Totals Update Error"
-				)
-			has_purchase_receipt_link = bool(linked_purchase_receipts)
-			
-			# Calculate total_billed_qty from ALL Purchase Invoices linked to this Load Dispatch
-			pi_list = frappe.get_all(
-				"Purchase Invoice",
-				filters={
-					"docstatus": 1,
-					"custom_load_dispatch": load_dispatch_name
-				},
-				fields=["name", "total_qty"]
-			)
-			
-			for pi in pi_list:
-				try:
-					pi_qty = flt(pi.get("total_qty")) or 0
-					if pi_qty == 0:
-						try:
-							pi_doc = frappe.get_doc("Purchase Invoice", pi.name)
-							if hasattr(pi_doc, "items") and pi_doc.items:
-								pi_qty = sum(flt(item.get("qty") or item.get("stock_qty") or item.get("received_qty") or 0) for item in pi_doc.items)
-						except Exception:
-							# If we can't get the document, skip it
-							pass
-					total_billed_qty += pi_qty
-				except Exception as e:
-					frappe.log_error(
-						f"Error processing Purchase Invoice {pi.get('name', 'Unknown')}: {str(e)}",
-						"Load Dispatch Totals Update Error"
-					)
-					continue
-			
-			# If Purchase Invoice was created from Purchase Receipt(s) that came from Load Dispatch, both total_received_qty and total_billed_qty should show the same value
-			if has_purchase_receipt_link and linked_purchase_receipts:
-				# Check if any of the linked Purchase Receipts are linked to this Load Dispatch
-				pr_from_ld = []
-				for pr_name in linked_purchase_receipts:
-					pr_load_dispatch = None
-					if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
-						pr_load_dispatch = frappe.db.get_value("Purchase Receipt", pr_name, "custom_load_dispatch")
-					
-					# If this Purchase Receipt is linked to the same Load Dispatch
-					if pr_load_dispatch == load_dispatch_name:
-						pr_from_ld.append(pr_name)
-				
-				# If Purchase Invoice is created from Purchase Receipt(s) that came from Load Dispatch
-				if pr_from_ld:
-					# When Invoice is created from Receipt, both should show the same value. Use the Purchase Invoice total_billed_qty for both totals
-					total_received_qty = total_billed_qty
+		if not load_receipts:
+			# No Load Receipt exists yet, status remains as is
+			return
+
+		# Get total_receipt_quantity from Load Receipt
+		total_received_qty = flt(load_receipts[0].get("total_receipt_quantity")) or 0
 
 		# Get total_dispatch_quantity to determine status
 		total_dispatch_qty = frappe.db.get_value("Load Dispatch", load_dispatch_name, "total_dispatch_quantity") or 0
@@ -1374,13 +1272,11 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		else:
 			new_status = "In-Transit"
 		
-		# Update Load Dispatch totals
+		# Update Load Dispatch status only (totals are now stored in Load Receipt)
 		frappe.db.set_value(
 			"Load Dispatch",
 			load_dispatch_name,
 			{
-				"total_received_quantity": total_received_qty,
-				"total_billed_quantity": total_billed_qty,
 				"status": new_status
 			},
 			update_modified=False
@@ -1388,8 +1284,8 @@ def update_load_dispatch_totals_from_document(doc, method=None):
 		frappe.db.commit()
 	except Exception as e:
 		frappe.log_error(
-			f"Error updating Load Dispatch totals from {doc.doctype} {doc.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
-			"Load Dispatch Totals Update Error"
+			f"Error updating Load Dispatch status from {doc.doctype} {doc.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+			"Load Dispatch Status Update Error"
 		)
 		# Don't raise the error to prevent blocking document submission
 		# The error is logged for debugging

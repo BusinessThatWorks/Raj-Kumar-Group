@@ -73,10 +73,8 @@ frappe.ui.form.on("Load Receipt", {
 			}
 		}
 		
-		// Calculate total receipt quantity on refresh
-		calculate_total_receipt_quantity(frm);
-		// Calculate total billed quantity on refresh
-		calculate_total_billed_quantity(frm);
+		// Calculate totals from Purchase Receipts/Invoices on refresh
+		calculate_totals_from_purchase_documents(frm);
 		// Update frames OK/Not OK counts from Damage Assessment
 		update_frames_status_counts(frm);
 		
@@ -152,24 +150,11 @@ frappe.ui.form.on("Load Receipt", {
 	
 });
 
-// Calculate total receipt quantity by counting rows with frame_no
-function calculate_total_receipt_quantity(frm) {
-	let total_receipt_quantity = 0;
-	if (frm.doc.items) {
-		frm.doc.items.forEach(function(item) {
-			// Count rows that have a non-empty frame_no
-			if (item.frame_no && item.frame_no.trim() !== "") {
-				total_receipt_quantity += 1;
-			}
-		});
-	}
-	frm.set_value("total_receipt_quantity", total_receipt_quantity);
-}
-
-// Calculate total billed quantity from Purchase Invoices linked to Load Dispatch
-function calculate_total_billed_quantity(frm) {
+// Calculate totals from Purchase Receipts/Invoices linked to Load Dispatch
+function calculate_totals_from_purchase_documents(frm) {
 	if (!frm.doc.load_dispatch) {
-		// For submitted documents, update directly without set_value to avoid "Not Saved"
+		// Fallback: calculate from items if no load_dispatch
+		calculate_total_receipt_quantity(frm);
 		if (frm.doc.docstatus === 1) {
 			frm.doc.total_billed_quantity = 0;
 			frm.refresh_field("total_billed_quantity");
@@ -183,39 +168,36 @@ function calculate_total_billed_quantity(frm) {
 	const current_docstatus = frm.doc.docstatus;
 	const is_submitted = current_docstatus === 1;
 	
+	// Call server method to calculate totals from Purchase Receipts/Invoices
 	frappe.call({
-		method: "frappe.client.get",
+		method: "rkg.rkg.doctype.load_receipt.load_receipt.get_totals_from_purchase_documents",
 		args: {
-			doctype: "Load Dispatch",
-			name: frm.doc.load_dispatch
+			load_dispatch: frm.doc.load_dispatch
 		},
 		callback: function(r) {
 			if (r.message) {
+				const total_receipt_qty = r.message.total_receipt_quantity || 0;
 				const total_billed_qty = r.message.total_billed_quantity || 0;
 				
 				// For submitted documents, update directly to avoid triggering "Not Saved"
 				if (is_submitted) {
+					frm.doc.total_receipt_quantity = total_receipt_qty;
 					frm.doc.total_billed_quantity = total_billed_qty;
+					frm.refresh_field("total_receipt_quantity");
 					frm.refresh_field("total_billed_quantity");
 					
 					// CRITICAL: Always ensure status is "Submitted" for submitted documents
-					// Update status directly without set_value to prevent "Not Saved" indicator
 					frappe.db.get_value("Load Receipt", frm.doc.name, ["status", "docstatus"], function(status_r) {
 						if (status_r && status_r.message) {
-							// Verify docstatus is still 1
 							if (status_r.message.docstatus === 1) {
-								// Always set status to "Submitted" for submitted documents
-								// Use direct assignment to avoid triggering "Not Saved"
 								if (frm.doc.status !== "Submitted") {
 									frm.doc.status = "Submitted";
 									frm.refresh_field("status");
-									// Clear any "Not Saved" indicator by refreshing the form
 									frm.dirty = false;
 									frm.refresh();
 								}
 							}
 						} else if (is_submitted) {
-							// If submitted but status is missing, set it to Submitted
 							if (frm.doc.status !== "Submitted") {
 								frm.doc.status = "Submitted";
 								frm.refresh_field("status");
@@ -226,26 +208,47 @@ function calculate_total_billed_quantity(frm) {
 					});
 				} else {
 					// For draft documents, use set_value normally
+					frm.set_value("total_receipt_quantity", total_receipt_qty);
 					frm.set_value("total_billed_quantity", total_billed_qty);
 				}
 			} else {
 				if (is_submitted) {
+					frm.doc.total_receipt_quantity = 0;
 					frm.doc.total_billed_quantity = 0;
+					frm.refresh_field("total_receipt_quantity");
 					frm.refresh_field("total_billed_quantity");
 				} else {
+					frm.set_value("total_receipt_quantity", 0);
 					frm.set_value("total_billed_quantity", 0);
 				}
 			}
 		},
 		error: function() {
 			if (is_submitted) {
+				frm.doc.total_receipt_quantity = 0;
 				frm.doc.total_billed_quantity = 0;
+				frm.refresh_field("total_receipt_quantity");
 				frm.refresh_field("total_billed_quantity");
 			} else {
+				frm.set_value("total_receipt_quantity", 0);
 				frm.set_value("total_billed_quantity", 0);
 			}
 		}
 	});
+}
+
+// Calculate total receipt quantity by counting rows with frame_no (fallback method)
+function calculate_total_receipt_quantity(frm) {
+	let total_receipt_quantity = 0;
+	if (frm.doc.items) {
+		frm.doc.items.forEach(function(item) {
+			// Count rows that have a non-empty frame_no
+			if (item.frame_no && item.frame_no.trim() !== "") {
+				total_receipt_quantity += 1;
+			}
+		});
+	}
+	frm.set_value("total_receipt_quantity", total_receipt_quantity);
 }
 
 // Fetch items from Load Dispatch
@@ -298,7 +301,7 @@ function fetch_items_from_load_dispatch(frm, load_dispatch_name) {
 				});
 				
 				frm.refresh_field("items");
-				calculate_total_receipt_quantity(frm);
+				calculate_totals_from_purchase_documents(frm);
 			}
 		}
 	});
@@ -397,7 +400,7 @@ function create_purchase_receipt_from_load_receipt(frm) {
 						callback: function(r) {
 							if (r.message && r.message.name) {
 								frappe.set_route("Form", "Purchase Receipt", r.message.name);
-								calculate_total_billed_quantity(frm);
+								calculate_totals_from_purchase_documents(frm);
 							} else {
 								frappe.msgprint({
 									title: __("Success"),
@@ -405,7 +408,7 @@ function create_purchase_receipt_from_load_receipt(frm) {
 									indicator: "green"
 								});
 								frm.reload_doc();
-								calculate_total_billed_quantity(frm);
+								calculate_totals_from_purchase_documents(frm);
 							}
 						},
 						error: function(r) {
@@ -433,7 +436,7 @@ function create_purchase_receipt_from_load_receipt(frm) {
 		callback: function(r) {
 			if (r.message && r.message.name) {
 				frappe.set_route("Form", "Purchase Receipt", r.message.name);
-				calculate_total_billed_quantity(frm);
+								calculate_totals_from_purchase_documents(frm);
 			} else {
 				frappe.msgprint({
 					title: __("Success"),
@@ -441,7 +444,7 @@ function create_purchase_receipt_from_load_receipt(frm) {
 					indicator: "green"
 				});
 				frm.reload_doc();
-				calculate_total_billed_quantity(frm);
+								calculate_totals_from_purchase_documents(frm);
 			}
 		},
 		error: function(r) {
@@ -478,15 +481,27 @@ function update_frames_status_counts(frm) {
 }
 
 
-// Recalculate when frame_no changes in child table
+// Recalculate when frame_no changes in child table (only if no load_dispatch, otherwise use PR/PI calculation)
 frappe.ui.form.on("Load Receipt Item", {
 	frame_no: function(frm) {
-		calculate_total_receipt_quantity(frm);
+		if (!frm.doc.load_dispatch) {
+			calculate_total_receipt_quantity(frm);
+		} else {
+			calculate_totals_from_purchase_documents(frm);
+		}
 	},
 	items_remove: function(frm) {
-		calculate_total_receipt_quantity(frm);
+		if (!frm.doc.load_dispatch) {
+			calculate_total_receipt_quantity(frm);
+		} else {
+			calculate_totals_from_purchase_documents(frm);
+		}
 	},
 	items_add: function(frm) {
-		calculate_total_receipt_quantity(frm);
+		if (!frm.doc.load_dispatch) {
+			calculate_total_receipt_quantity(frm);
+		} else {
+			calculate_totals_from_purchase_documents(frm);
+		}
 	}
 });

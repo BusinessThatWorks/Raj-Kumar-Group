@@ -9,7 +9,8 @@ frappe.ui.form.on("Battery and Key Upload", {
 			}, __("Actions"));
 			
 			// If file is attached but child table is empty, trigger file processing
-			if ((!frm.doc.upload_items || frm.doc.upload_items.length === 0)) {
+			// Only process if not already processing to avoid duplicate notifications
+			if ((!frm.doc.upload_items || frm.doc.upload_items.length === 0) && !frm._processing_file) {
 				// Trigger the excel_file event to process the file
 				frm.trigger("excel_file");
 			}
@@ -57,13 +58,7 @@ frappe.ui.form.on("Battery and Key Upload", {
 		// After submit completes, reload to show child table
 		setTimeout(() => {
 			frm.reload_doc().then(() => {
-				// Show success message
-				frappe.show_alert({
-					message: __("Upload completed successfully."),
-					indicator: "green"
-				}, 5);
-				
-				// Ensure child table is visible
+				// Ensure child table is visible (no extra notification - Frappe shows submit success)
 				if (frm.doc.upload_items && frm.doc.upload_items.length > 0) {
 					frm.refresh_field("upload_items");
 				}
@@ -80,10 +75,11 @@ frappe.ui.form.on("Battery and Key Upload", {
 	excel_file(frm) {
 		// Event listener for when Excel/CSV file is attached - same pattern as Load Dispatch
 		if (frm.doc.excel_file) {
-			frappe.show_alert({
-				message: __("Processing attached file..."),
-				indicator: "blue"
-			}, 3);
+			// Prevent duplicate processing
+			if (frm._processing_file) {
+				return;
+			}
+			frm._processing_file = true;
 
 			// Call server method to process file and get rows
 			frappe.call({
@@ -95,6 +91,8 @@ frappe.ui.form.on("Battery and Key Upload", {
 				freeze_message: __("Reading and processing file..."),
 				callback: function(r) {
 					try {
+						frm._processing_file = false;
+						
 						if (r && r.message) {
 							const result = r.message;
 							
@@ -139,14 +137,18 @@ frappe.ui.form.on("Battery and Key Upload", {
 							frm.refresh_field("upload_items");
 							
 							// Save the document to persist child table data
+							// Use save with suppress_message flag to reduce notifications
 							frm.save().then(function() {
-								// Show success message after save
-								frappe.show_alert({
-									message: __("Successfully imported {0} rows from file.", [
-										child_table_data.length
-									]),
-									indicator: "green"
-								}, 8);
+								// Only show success message if save was successful
+								// The default "Saved" notification will show, but we'll show a more specific one
+								setTimeout(() => {
+									frappe.show_alert({
+										message: __("Imported {0} rows from file.", [
+											child_table_data.length
+										]),
+										indicator: "green"
+									}, 4);
+								}, 500);
 							}).catch(function(err) {
 								console.error("Error saving document:", err);
 								frappe.show_alert({
@@ -161,6 +163,7 @@ frappe.ui.form.on("Battery and Key Upload", {
 							}, 5);
 						}
 					} catch (error) {
+						frm._processing_file = false;
 						console.error("Error processing file import:", error);
 						frappe.show_alert({
 							message: __("Error processing imported data: {0}", [error.message || "Unknown error"]),
@@ -169,6 +172,7 @@ frappe.ui.form.on("Battery and Key Upload", {
 					}
 				},
 				error: function(err) {
+					frm._processing_file = false;
 					frappe.show_alert({
 						message: __("Error processing file: {0}", [err.message || "Unknown error"]),
 						indicator: "red"
@@ -178,6 +182,7 @@ frappe.ui.form.on("Battery and Key Upload", {
 		} else {
 			// File cleared - reset values
 			frm.clear_table("upload_items");
+			frm._processing_file = false;
 		}
 	},
 	
