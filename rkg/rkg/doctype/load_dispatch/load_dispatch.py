@@ -5,9 +5,6 @@ from frappe.model.document import Document
 from frappe import _
 from frappe.utils import flt
 
-# Canonical list of Item custom fieldnames that must be populated.
-ITEM_CUSTOM_FIELDS = []
-
 
 class LoadDispatch(Document):
 	def has_valid_load_plan(self):
@@ -617,17 +614,9 @@ class LoadDispatch(Document):
 				item.print_name = calculate_print_name(item.model_serial_no, getattr(item, "model_name", None))
 			
 			try:
-				custom_field_map = {field: field for field in ITEM_CUSTOM_FIELDS}
-
 				if frappe.db.exists("Item", item_code):
 					item_doc = frappe.get_doc("Item", item_code)
 					updated = False
-
-					for child_field, item_field in custom_field_map.items():
-						child_value = getattr(item, child_field, None)
-						if child_value is not None and child_value != "" and hasattr(item_doc, item_field):
-							setattr(item_doc, item_field, child_value)
-							updated = True
 					
 					if hasattr(item, "print_name") and item.print_name:
 						if hasattr(item_doc, "print_name"):
@@ -672,13 +661,6 @@ class LoadDispatch(Document):
 						item_doc.gst_hsn_code = hsn_code
 					elif hasattr(item_doc, "custom_gst_hsn_code"):
 						item_doc.custom_gst_hsn_code = hsn_code
-				
-				for child_field, item_field in custom_field_map.items():
-					if hasattr(item, child_field):
-						child_value = getattr(item, child_field)
-						if child_value is not None and child_value != "":
-							if hasattr(item_doc, item_field):
-								setattr(item_doc, item_field, child_value)
 				
 				if hasattr(item, "print_name") and item.print_name:
 					if hasattr(item_doc, "print_name"):
@@ -758,26 +740,18 @@ def calculate_print_name(model_serial_no, model_name=None):
 	if not model_serial_no:
 		return ""
 	
-	# Extract Model Serial Number part up to "-ID" (including "-ID")
-	# Search for "-ID" pattern (case-insensitive)
 	model_serial_upper = model_serial_no.upper()
 	id_index = model_serial_upper.find("-ID")
 	
 	if id_index != -1:
-		# Take everything up to and including "-ID"
-		# Add 3 to include "-ID" (3 characters)
 		serial_part = model_serial_no[:id_index + 3]
 	else:
-		# If "-ID" not found, try to find "ID" (without dash) and take up to it
 		id_index = model_serial_upper.find("ID")
 		if id_index != -1:
-			# Take everything up to "ID" and add "-ID"
 			serial_part = model_serial_no[:id_index] + "-ID"
 		else:
-			# If "ID" not found at all, use the whole model_serial_no
 			serial_part = model_serial_no
 	
-	# Build the result: Model Name + (Serial Part) + (BS-VI)
 	if model_name:
 		model_name = str(model_name).strip()
 		if model_name:
@@ -788,7 +762,6 @@ def calculate_print_name(model_serial_no, model_name=None):
 def update_load_dispatch_status_from_totals(doc, method=None):
 	"""Update Load Dispatch status based on totals from Load Receipts when Purchase Receipt/Invoice is submitted or cancelled."""
 	try:
-		# Get custom_load_dispatch field value from the document
 		load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
 			else (frappe.db.get_value(doc.doctype, doc.name, "custom_load_dispatch") if frappe.db.has_column(doc.doctype, "custom_load_dispatch") else None))
 
@@ -1275,13 +1248,6 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 			item_doc.gst_hsn_code = hsn_code
 		elif hasattr(item_doc, "custom_gst_hsn_code"):
 			item_doc.custom_gst_hsn_code = hsn_code
-	
-	if source_type == "dispatch_item":
-		for field in ITEM_CUSTOM_FIELDS:
-			if hasattr(item_data, field):
-				value = getattr(item_data, field)
-				if value is not None and value != "" and hasattr(item_doc, field):
-					setattr(item_doc, field, value)
 	
 	if print_name_value and hasattr(item_doc, "print_name"):
 		item_doc.print_name = print_name_value
