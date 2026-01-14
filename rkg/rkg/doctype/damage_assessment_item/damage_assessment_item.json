@@ -7,6 +7,7 @@
  "engine": "InnoDB",
   "field_order": [
   "serial_no",
+  "load_reference_no",
   "status",
   "issue_1",
   "issue_2",
@@ -25,6 +26,14 @@
    "label": "Frame No",
    "options": "Serial No",
    "reqd": 1
+  },
+  {
+   "fieldname": "load_reference_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Load Reference Number",
+   "options": "Load Plan",
+   "read_only": 1
   },
   {
    "default": "OK",

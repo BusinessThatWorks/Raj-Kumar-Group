@@ -67,6 +67,7 @@ frappe.ui.form.on("Damage Assessment", {
 							let row = frm.add_child("damage_assessment_item");
 							row.serial_no = frame.serial_no;
 							row.from_warehouse = frame.warehouse || "";  // Set warehouse from frame data
+							row.load_reference_no = frame.load_reference_no || "";  // Set Load Reference Number
 							row.status = "OK";  // Default to OK
 							row.estimated_cost = 0;
 						});
@@ -106,7 +107,7 @@ frappe.ui.form.on("Damage Assessment Item", {
 		let row = locals[cdt][cdn];
 		
 		if (row.serial_no) {
-			// Auto-fetch Warehouse from which this frame originated
+			// Auto-fetch Warehouse and Load Reference Number from which this frame originated
 			frappe.call({
 				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_load_dispatch_from_serial_no",
 				args: {
@@ -123,8 +124,24 @@ frappe.ui.form.on("Damage Assessment Item", {
 					}
 				}
 			});
+			
+			// Fetch Load Reference Number
+			frappe.call({
+				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_load_reference_no_from_serial_no",
+				args: {
+					serial_no: row.serial_no
+				},
+				callback: function(r) {
+					if (r.message) {
+						frappe.model.set_value(cdt, cdn, "load_reference_no", r.message);
+					} else {
+						frappe.model.set_value(cdt, cdn, "load_reference_no", "");
+					}
+				}
+			});
 		} else {
 			frappe.model.set_value(cdt, cdn, "from_warehouse", "");
+			frappe.model.set_value(cdt, cdn, "load_reference_no", "");
 		}
 	},
 	

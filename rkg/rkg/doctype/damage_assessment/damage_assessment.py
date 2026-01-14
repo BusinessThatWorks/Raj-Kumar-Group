@@ -555,6 +555,45 @@ def get_load_dispatch_from_serial_no(serial_no):
 
 
 @frappe.whitelist()
+def get_load_reference_no_from_serial_no(serial_no):
+	"""Get the Load Reference Number (Load Plan) from which a Serial No (frame) originated.
+	The Serial No name is the same as the frame_no in Load Dispatch Item.
+	This function looks up which Load Dispatch Item has this frame_no, gets the parent Load Dispatch,
+	and returns the load_reference_no from that Load Dispatch.
+	
+	Args:
+		serial_no: The Serial No (frame_no) to look up.
+	
+	Returns:
+		str: Load Reference Number (Load Plan name) or None if not found.
+	"""
+	if not serial_no:
+		return None
+	
+	# Find Load Dispatch Item with this frame_no
+	load_dispatch_item = frappe.db.get_value(
+		"Load Dispatch Item",
+		{"frame_no": serial_no},
+		["parent"],
+		as_dict=True
+	)
+	
+	if not load_dispatch_item or not load_dispatch_item.get("parent"):
+		return None
+	
+	load_dispatch_name = load_dispatch_item.parent
+	
+	# Get load_reference_no from Load Dispatch
+	load_reference_no = frappe.db.get_value(
+		"Load Dispatch",
+		load_dispatch_name,
+		"load_reference_no"
+	)
+	
+	return load_reference_no
+
+
+@frappe.whitelist()
 def get_frames_from_load_receipt(load_receipt_number):
 	"""Get all frames (frame_no) from Load Receipt items. Also includes the warehouse where each frame is currently located. Args: load_receipt_number: The Load Receipt Number (Load Receipt name). Returns: list of dicts with frame_no, warehouse, and related information."""
 	if not load_receipt_number:
@@ -580,12 +619,35 @@ def get_frames_from_load_receipt(load_receipt_number):
 	)
 	
 	result = []
+	
+	# Get load_reference_no from Load Dispatch if available
+	load_reference_no = None
+	if load_dispatch:
+		load_reference_no = frappe.db.get_value("Load Dispatch", load_dispatch, "load_reference_no")
+	
 	for frame in frames:
 		if frame.frame_no and str(frame.frame_no).strip():
 			frame_no = str(frame.frame_no).strip()
 			
 			serial_warehouse = frappe.db.get_value("Serial No", frame_no, "warehouse")
 			warehouse = receipt_warehouse or serial_warehouse
+			
+			# Try to get load_reference_no from Load Dispatch Item if not already found
+			frame_load_reference_no = load_reference_no
+			if not frame_load_reference_no:
+				# Fallback: get from Load Dispatch Item directly
+				load_dispatch_item = frappe.db.get_value(
+					"Load Dispatch Item",
+					{"frame_no": frame_no},
+					["parent"],
+					as_dict=True
+				)
+				if load_dispatch_item and load_dispatch_item.get("parent"):
+					frame_load_reference_no = frappe.db.get_value(
+						"Load Dispatch",
+						load_dispatch_item.parent,
+						"load_reference_no"
+					)
 			
 			result.append({
 				"frame_no": frame_no,
@@ -594,6 +656,7 @@ def get_frames_from_load_receipt(load_receipt_number):
 				"model_name": frame.model_name,
 				"model_serial_no": frame.model_serial_no,
 				"load_dispatch": load_dispatch,
+				"load_reference_no": frame_load_reference_no,
 				"warehouse": warehouse
 			})
 	
