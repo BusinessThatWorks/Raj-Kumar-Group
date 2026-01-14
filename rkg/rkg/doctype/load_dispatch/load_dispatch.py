@@ -251,13 +251,8 @@ class LoadDispatch(Document):
 				item.item_code = None
 	
 	def set_fields_value(self):
-		"""Set default values from RKG Settings if not already set."""
+		"""Set default values: calculate print_name and rate from price_unit."""
 		if not self.items:
-			return
-		
-		try:
-			rkg_settings = frappe.get_single("RKG Settings")
-		except frappe.DoesNotExistError:
 			return
 		
 		for item in self.items:
