@@ -59,12 +59,6 @@ frappe.ui.form.on("Load Dispatch", {
 								create_load_receipt_from_dispatch(frm);
 							}, __("Create"));
 							frm.page.set_inner_btn_group_as_primary(__("Create"));
-						} else {
-							// Show message if Load Receipt already exists
-							frappe.show_alert({
-								message: __("Load Receipt already exists for this Load Dispatch."),
-								indicator: "orange"
-							}, 5);
 						}
 					}
 				}
