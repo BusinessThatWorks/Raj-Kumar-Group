@@ -722,4 +722,189 @@ def fix_load_receipt_statuses():
 		raise
 
 
+def preserve_purchase_invoice_serial_no_from_receipt(doc, method=None):
+	"""Preserve serial_no from Purchase Receipt Item when creating Purchase Invoice from Purchase Receipt."""
+	if not doc.items:
+		return
+	
+	purchase_receipts = {item.purchase_receipt for item in doc.items if hasattr(item, "purchase_receipt") and item.purchase_receipt}
+	
+	if not purchase_receipts:
+		return
+	
+	receipt_item_map = {}
+	
+	for pr_name in purchase_receipts:
+		try:
+			purchase_receipt = frappe.get_doc("Purchase Receipt", pr_name)
+			if not purchase_receipt.items:
+				continue
+			
+			for pr_item in purchase_receipt.items:
+				if pr_item.item_code and hasattr(pr_item, "serial_no") and pr_item.serial_no:
+					key = (pr_name, pr_item.item_code, pr_item.idx)
+					receipt_item_map[key] = pr_item.serial_no
+		except frappe.DoesNotExistError:
+			continue
+	
+	if receipt_item_map:
+		for pi_item in doc.items:
+			if pi_item.item_code and hasattr(pi_item, "purchase_receipt") and pi_item.purchase_receipt:
+				pr_name = pi_item.purchase_receipt
+				key = (pr_name, pi_item.item_code, pi_item.idx)
+				if key in receipt_item_map:
+					serial_no_value = receipt_item_map[key]
+				else:
+					serial_no_value = next((v for (pr_key, item_code, idx), v in receipt_item_map.items() if pr_key == pr_name and item_code == pi_item.item_code), None)
+				
+				if serial_no_value:
+					if hasattr(pi_item, "use_serial_batch_fields") and not pi_item.use_serial_batch_fields:
+						pi_item.use_serial_batch_fields = 1
+					if hasattr(pi_item, "serial_no"):
+						pi_item.serial_no = serial_no_value
+	
+	has_purchase_receipt = any(hasattr(item, "purchase_receipt") and item.purchase_receipt for item in (doc.items or []))
+	
+	if not has_purchase_receipt and hasattr(doc, "update_stock") and not doc.update_stock:
+		doc.update_stock = 1
+
+
+def set_purchase_receipt_serial_batch_fields_readonly(doc, method=None):
+	"""Set "Use Serial No / Batch Fields" to checked on child table items for Purchase Receipts created from Load Receipt."""
+	load_receipt_name = (doc.custom_load_receipt if hasattr(doc, "custom_load_receipt") and doc.custom_load_receipt
+		else (frappe.db.get_value("Purchase Receipt", doc.name, "custom_load_receipt") if frappe.db.has_column("Purchase Receipt", "custom_load_receipt") else None))
+	
+	load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
+		else (frappe.db.get_value("Purchase Receipt", doc.name, "custom_load_dispatch") if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch") else None))
+	
+	if (load_receipt_name or load_dispatch_name) and doc.items:
+		for item in doc.items:
+			if hasattr(item, "use_serial_batch_fields"):
+				if not item.use_serial_batch_fields:
+					item.use_serial_batch_fields = 1
+
+
+@frappe.whitelist()
+def preserve_purchase_receipt_uom(doc, method=None):
+	"""Preserve UOM from Load Receipt Item's unit field when Purchase Receipt is validated."""
+	preserve_uom_from_load_receipt(doc, "Purchase Receipt")
+
+@frappe.whitelist()
+def preserve_purchase_invoice_uom(doc, method=None):
+	"""Preserve UOM from Load Receipt Item's unit field when Purchase Invoice is validated."""
+	preserve_uom_from_load_receipt(doc, "Purchase Invoice")
+
+def preserve_uom_from_load_receipt(doc, doctype_name):
+	"""Preserve UOM from Load Receipt Item's unit field for Purchase Receipt and Purchase Invoice."""
+	if not doc.items:
+		return
+	
+	load_receipt_name = (doc.custom_load_receipt if hasattr(doc, "custom_load_receipt") and doc.custom_load_receipt
+		else (frappe.db.get_value(doctype_name, doc.name, "custom_load_receipt") if frappe.db.has_column(doctype_name, "custom_load_receipt") else None))
+	
+	if not load_receipt_name:
+		load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
+			else (frappe.db.get_value(doctype_name, doc.name, "custom_load_dispatch") if frappe.db.has_column(doctype_name, "custom_load_dispatch") else None))
+		
+		if not load_dispatch_name:
+			return
+		
+		try:
+			load_dispatch = frappe.get_doc("Load Dispatch", load_dispatch_name)
+		except frappe.DoesNotExistError:
+			return
+		
+		item_uom_map = {}
+		if load_dispatch.items:
+			for ld_item in load_dispatch.items:
+				if ld_item.item_code and hasattr(ld_item, "unit") and ld_item.unit:
+					item_uom_map[ld_item.item_code] = str(ld_item.unit).strip()
+		
+		if item_uom_map:
+			for doc_item in doc.items:
+				if doc_item.item_code and doc_item.item_code in item_uom_map:
+					uom_value = item_uom_map[doc_item.item_code]
+					if hasattr(doc_item, "uom") and doc_item.uom != uom_value:
+						doc_item.uom = uom_value
+					if hasattr(doc_item, "stock_uom") and doc_item.stock_uom != uom_value:
+						doc_item.stock_uom = uom_value
+		return
+	
+	try:
+		load_receipt = frappe.get_doc("Load Receipt", load_receipt_name)
+	except frappe.DoesNotExistError:
+		return
+	
+	item_uom_map = {}
+	if load_receipt.items:
+		for lr_item in load_receipt.items:
+			if lr_item.item_code and hasattr(lr_item, "unit") and lr_item.unit:
+				item_uom_map[lr_item.item_code] = str(lr_item.unit).strip()
+	
+	if item_uom_map:
+		for doc_item in doc.items:
+			if doc_item.item_code and doc_item.item_code in item_uom_map:
+				uom_value = item_uom_map[doc_item.item_code]
+				if hasattr(doc_item, "uom") and doc_item.uom != uom_value:
+					doc_item.uom = uom_value
+				if hasattr(doc_item, "stock_uom") and doc_item.stock_uom != uom_value:
+					doc_item.stock_uom = uom_value
+
+
+def validate_purchase_invoice_requires_receipt(doc, method=None):
+	"""Validate that Purchase Invoice must be linked to a Purchase Receipt."""
+	if not doc.items:
+		return
+	
+	has_purchase_receipt = any(
+		hasattr(item, "purchase_receipt") and item.purchase_receipt 
+		for item in doc.items
+	)
+	
+	if has_purchase_receipt:
+		return
+	
+	load_receipt_name = (doc.custom_load_receipt if hasattr(doc, "custom_load_receipt") and doc.custom_load_receipt
+		else (frappe.db.get_value("Purchase Invoice", doc.name, "custom_load_receipt") if frappe.db.has_column("Purchase Invoice", "custom_load_receipt") else None))
+	
+	if load_receipt_name:
+		pr_list = frappe.get_all(
+			"Purchase Receipt",
+			filters={
+				"custom_load_receipt": load_receipt_name,
+				"docstatus": 1
+			},
+			fields=["name"],
+			limit=1
+		)
+		
+		if pr_list:
+			pr_name = pr_list[0].name
+			for item in doc.items:
+				if hasattr(item, "purchase_receipt") and not item.purchase_receipt:
+					item.purchase_receipt = pr_name
+			return
+	
+	load_dispatch_name = (doc.custom_load_dispatch if hasattr(doc, "custom_load_dispatch") and doc.custom_load_dispatch
+		else (frappe.db.get_value("Purchase Invoice", doc.name, "custom_load_dispatch") if frappe.db.has_column("Purchase Invoice", "custom_load_dispatch") else None))
+	
+	if load_dispatch_name:
+		pr_list = frappe.get_all(
+			"Purchase Receipt",
+			filters={
+				"custom_load_dispatch": load_dispatch_name,
+				"docstatus": 1
+			},
+			fields=["name"],
+			limit=1
+		)
+		
+		if pr_list:
+			pr_name = pr_list[0].name
+			for item in doc.items:
+				if hasattr(item, "purchase_receipt") and not item.purchase_receipt:
+					item.purchase_receipt = pr_name
+			return
+	
+	frappe.throw(_("Create Purchase Receipt First to create Purchase Invoice"))
 

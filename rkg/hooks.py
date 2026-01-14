@@ -143,8 +143,8 @@ doctype_js = {
 doc_events = {
     "Purchase Receipt": {
         "validate": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_receipt_uom",
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.set_purchase_receipt_serial_batch_fields_readonly"
+            "rkg.rkg.doctype.load_receipt.load_receipt.preserve_purchase_receipt_uom",
+            "rkg.rkg.doctype.load_receipt.load_receipt.set_purchase_receipt_serial_batch_fields_readonly"
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
@@ -159,9 +159,9 @@ doc_events = {
     },
     "Purchase Invoice": {
         "validate": [
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.validate_purchase_invoice_requires_receipt",
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_uom",
-            "rkg.rkg.doctype.load_dispatch.load_dispatch.preserve_purchase_invoice_serial_no_from_receipt"
+            "rkg.rkg.doctype.load_receipt.load_receipt.validate_purchase_invoice_requires_receipt",
+            "rkg.rkg.doctype.load_receipt.load_receipt.preserve_purchase_invoice_uom",
+            "rkg.rkg.doctype.load_receipt.load_receipt.preserve_purchase_invoice_serial_no_from_receipt"
         ],
         "on_submit": [
             "rkg.rkg.doctype.load_plan.load_plan.update_load_plan_status_from_document",
