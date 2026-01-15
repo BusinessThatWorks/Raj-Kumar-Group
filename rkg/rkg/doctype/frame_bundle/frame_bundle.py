@@ -366,14 +366,15 @@ def mark_battery_expired(frame_name):
 
 @frappe.whitelist()
 def get_frame_battery(frame_name):
-	"""Get frame number and battery serial number for a Frame Bundle"""
+	"""Get frame number, battery serial number, and battery type for a Frame Bundle"""
 	if not frappe.db.exists("Frame Bundle", frame_name):
 		return None
 	
 	frame = frappe.get_doc("Frame Bundle", frame_name)
 	return {
 		"frame_no": frame.frame_no,
-		"battery_serial_no": frame.battery_serial_no
+		"battery_serial_no": frame.battery_serial_no,
+		"battery_type": frame.battery_type
 	}
 
 
@@ -392,9 +393,15 @@ def refresh_battery_aging(frame_name):
 
 
 @frappe.whitelist()
-def swap_batteries(current_frame, target_frame):
+def swap_batteries(current_frame, target_frame, force_swap=False):
 	"""Swap batteries between two Frame Bundle documents atomically.
-	Documents remain in submitted state (docstatus = 1) throughout the swap."""
+	Documents remain in submitted state (docstatus = 1) throughout the swap.
+	
+	Args:
+		current_frame: Name of the current Frame Bundle
+		target_frame: Name of the target Frame Bundle
+		force_swap: If True, allows swap even when battery types don't match (default: False)
+	"""
 	
 	# Validate inputs
 	if current_frame == target_frame:
@@ -431,11 +438,11 @@ def swap_batteries(current_frame, target_frame):
 	if not target_doc.battery_serial_no:
 		frappe.throw(f"Cannot swap - {target_frame} has no battery")
 	
-	# Validate both frames have the same battery_type
+	# Validate both frames have the same battery_type (unless force_swap is True)
 	current_battery_type = current_doc.battery_type
 	target_battery_type = target_doc.battery_type
 	
-	if current_battery_type and target_battery_type:
+	if not force_swap and current_battery_type and target_battery_type:
 		if current_battery_type != target_battery_type:
 			frappe.throw(f"Cannot swap batteries - Battery types do not match. Current frame has '{current_battery_type}' and target frame has '{target_battery_type}'. Battery swap can only be performed between frames with the same battery type.")
 	

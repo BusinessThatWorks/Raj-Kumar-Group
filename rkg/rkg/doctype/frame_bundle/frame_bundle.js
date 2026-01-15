@@ -276,6 +276,13 @@ function show_swap_battery_dialog(frm) {
 				read_only: 1
 			},
 			{
+				fieldtype: "Data",
+				fieldname: "current_battery_type",
+				label: __("Battery Type"),
+				default: frm.doc.battery_type || __("Not Set"),
+				read_only: 1
+			},
+			{
 				fieldtype: "Section Break",
 				label: __("Target Frame")
 			},
@@ -302,11 +309,18 @@ function show_swap_battery_dialog(frm) {
 							callback: function(r) {
 								if (r.message) {
 									d.set_value("target_battery", r.message.battery_serial_no || "");
+									// Set battery type from response
+									if (r.message.battery_type) {
+										d.set_value("target_battery_type", r.message.battery_type);
+									} else {
+										d.set_value("target_battery_type", __("Not Set"));
+									}
 								}
 							}
 						});
 					} else {
 						d.set_value("target_battery", "");
+						d.set_value("target_battery_type", "");
 					}
 				},
 				reqd: 1
@@ -316,6 +330,12 @@ function show_swap_battery_dialog(frm) {
 				fieldname: "target_battery",
 				label: __("Target Battery Serial No"),
 				options: "Battery Information",
+				read_only: 1
+			},
+			{
+				fieldtype: "Data",
+				fieldname: "target_battery_type",
+				label: __("Battery Type"),
 				read_only: 1
 			}
 		],
@@ -329,25 +349,51 @@ function show_swap_battery_dialog(frm) {
 				frappe.msgprint(__("Cannot swap with the same frame"));
 				return;
 			}
-			frappe.confirm(
-				__("Swap batteries with the selected frame?"),
-				function() {
-					swap_batteries(frm, values.target_frame);
-					d.hide();
-				}
-			);
+			
+			// Check if battery types match
+			let current_type = frm.doc.battery_type || "";
+			let target_type = values.target_battery_type || "";
+			let types_match = current_type && target_type && current_type === target_type;
+			
+			// If types don't match, show confirmation dialog
+			if (!types_match && current_type && target_type) {
+				frappe.confirm(
+					__("Battery types do not match!<br><br>") +
+					__("Current Frame: {0} ({1})<br>", [frm.doc.frame_no || frm.doc.name, current_type]) +
+					__("Target Frame: {0} ({1})<br><br>", [values.target_frame, target_type]) +
+					__("Do you want to proceed with the battery swap?"),
+					function() {
+						// User confirmed - proceed with force_swap
+						swap_batteries(frm, values.target_frame, true);
+						d.hide();
+					},
+					function() {
+						// User cancelled - do nothing
+					}
+				);
+			} else {
+				// Types match or one is empty - proceed normally
+				frappe.confirm(
+					__("Swap batteries with the selected frame?"),
+					function() {
+						swap_batteries(frm, values.target_frame, false);
+						d.hide();
+					}
+				);
+			}
 		}
 	});
 
 	d.show();
 }
 
-function swap_batteries(frm, target_frame) {
+function swap_batteries(frm, target_frame, force_swap = false) {
 	frappe.call({
 		method: "rkg.rkg.doctype.frame_bundle.frame_bundle.swap_batteries",
 		args: {
 			current_frame: frm.doc.name,
-			target_frame: target_frame
+			target_frame: target_frame,
+			force_swap: force_swap || false
 		},
 		freeze: true,
 		freeze_message: __("Swapping batteries..."),
