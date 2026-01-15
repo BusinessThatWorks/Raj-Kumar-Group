@@ -7,13 +7,13 @@
  "doctype": "Workspace",
  "for_user": "",
  "hide_custom": 0,
- "icon": "",
+ "icon": "color-monthly-rank",
  "idx": 0,
  "indicator_color": "",
  "is_hidden": 0,
  "label": "BTW_Dealership",
  "links": [],
- "modified": "2026-01-14 09:44:02.012014",
+ "modified": "2026-01-15 16:52:17.350100",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "BTW_Dealership",
@@ -22,11 +22,7 @@
  "parent_page": "",
  "public": 1,
  "quick_lists": [],
- "roles": [
-  {
-   "role": "System Manager"
-  }
- ],
+ "roles": [],
  "sequence_id": 1.0,
  "shortcuts": [
   {
