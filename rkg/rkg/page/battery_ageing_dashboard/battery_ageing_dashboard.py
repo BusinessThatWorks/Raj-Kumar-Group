@@ -40,11 +40,11 @@ def get_dashboard_data(brand=None, battery_type=None, from_date=None, to_date=No
 
 
 def get_battery_ageing_data(where_clause, params):
-	"""Get Battery Ageing dashboard data."""
+	"""Get Battery Ageing dashboard data with Frame Bundle information."""
 	# Get current date for age calculation
 	today = nowdate()
 	
-	# Build SELECT fields from Battery Information
+	# Build SELECT fields from Battery Information with Frame Bundle join
 	select_fields = [
 		"bd.name",
 		"bd.battery_serial_no",
@@ -54,12 +54,19 @@ def get_battery_ageing_data(where_clause, params):
 		"bd.status",
 		"bd.creation",
 		"bd.modified",
+		"fb.name as frame_bundle_name",
+		"fb.frame_no",
+		"fb.battery_aging_days",
+		"fb.battery_installed_on",
+		"fb.warehouse",
+		"(SELECT COUNT(*) FROM `tabFrame Bundle Discard History` WHERE parent = fb.name) as discard_count",
 	]
 	
 	batteries = frappe.db.sql(
 		f"""
 		SELECT {', '.join(select_fields)}
 		FROM `tabBattery Information` bd
+		LEFT JOIN `tabFrame Bundle` fb ON fb.battery_serial_no = bd.name AND fb.docstatus = 1
 		WHERE {where_clause}
 		ORDER BY bd.charging_date DESC, bd.creation DESC
 		LIMIT 1000
@@ -72,18 +79,18 @@ def get_battery_ageing_data(where_clause, params):
 	
 	# Calculate age for each battery and categorize
 	age_ranges = {
-		"0-30 days": 0,
-		"31-90 days": 0,
-		"91-180 days": 0,
-		"181-365 days": 0,
-		"365+ days": 0,
+		"0-60 days": 0,
+		"60-90 days": 0,
+		"90-120 days": 0,
+		"120+ days": 0,
 	}
 	
 	# Expiry Risk Categories
 	expiry_risk_counts = {
-		"safe": 0,      # 0-180 days (Green)
-		"warning": 0,   # 181-365 days (Orange)
-		"critical": 0,  # 365+ days (Red)
+		"safe": 0,      # 0-60 days (Green)
+		"warning": 0,   # 60-90 days (Orange)
+		"critical": 0,  # 90-120 days (Red)
+		"very_critical": 0,  # 120+ days (Dark Red)
 	}
 	
 	# 60-day count (batteries that are around 60 days old)
@@ -94,9 +101,14 @@ def get_battery_ageing_data(where_clause, params):
 	
 	battery_cards = []
 	for battery in batteries:
-		# Calculate age based on charging_date (more relevant for battery ageing)
-		# Age is ALWAYS calculated from charging_date if available
-		if battery.get("charging_date"):
+		# Calculate age - prefer battery_aging_days from Frame Bundle (most accurate)
+		# If not installed on a frame, use charging_date from Battery Information
+		if battery.get("battery_aging_days") is not None:
+			# Battery is installed on a frame - use Frame Bundle aging days
+			age_days = battery.battery_aging_days
+			charging_date = battery.get("battery_installed_on")
+		elif battery.get("charging_date"):
+			# Battery not on frame - use charging_date from Battery Information
 			charging_date = getdate(battery.charging_date)
 			age_days = date_diff(today, charging_date)
 		else:
@@ -110,32 +122,32 @@ def get_battery_ageing_data(where_clause, params):
 			batteries_60_days += 1
 		
 		# Categorize by age
-		if age_days <= 30:
-			age_ranges["0-30 days"] += 1
-			age_category = "0-30 days"
+		if age_days <= 60:
+			age_ranges["0-60 days"] += 1
+			age_category = "0-60 days"
 		elif age_days <= 90:
-			age_ranges["31-90 days"] += 1
-			age_category = "31-90 days"
-		elif age_days <= 180:
-			age_ranges["91-180 days"] += 1
-			age_category = "91-180 days"
-		elif age_days <= 365:
-			age_ranges["181-365 days"] += 1
-			age_category = "181-365 days"
+			age_ranges["60-90 days"] += 1
+			age_category = "60-90 days"
+		elif age_days <= 120:
+			age_ranges["90-120 days"] += 1
+			age_category = "90-120 days"
 		else:
-			age_ranges["365+ days"] += 1
-			age_category = "365+ days"
+			age_ranges["120+ days"] += 1
+			age_category = "120+ days"
 		
 		# Categorize by expiry risk
-		if age_days <= 180:
+		if age_days <= 60:
 			expiry_risk_counts["safe"] += 1
 			risk_level = "safe"
-		elif age_days <= 365:
+		elif age_days <= 90:
 			expiry_risk_counts["warning"] += 1
 			risk_level = "warning"
-		else:
+		elif age_days <= 120:
 			expiry_risk_counts["critical"] += 1
 			risk_level = "critical"
+		else:
+			expiry_risk_counts["very_critical"] += 1
+			risk_level = "very_critical"
 		
 		# Count by brand
 		brand = battery.get("battery_brand") or "Unknown"
@@ -148,24 +160,34 @@ def get_battery_ageing_data(where_clause, params):
 		# Note: battery_expiry_date field is not available in Battery Information doctype
 		days_until_expiry = None
 		
+		# Get swap history count for this battery
+		swap_count = 0
+		if battery.get("frame_bundle_name"):
+			swap_count = frappe.db.count("Frame Bundle Swap History", {
+				"parent": battery.frame_bundle_name
+			}) or 0
+		
+		is_discarded = (battery.get("discard_count") or 0) > 0
+		
 		battery_cards.append({
 			"name": battery.name,
 			"battery_serial_no": battery.battery_serial_no or "-",
 			"brand": battery.get("battery_brand") or "-",
 			"battery_type": battery.get("battery_type") or "-",
-			"frame_no": None,  # Field not available in Battery Information
-			"charging_code": None,  # Field not available in Battery Information
+			"frame_no": battery.get("frame_no") or None,
+			"frame_bundle_name": battery.get("frame_bundle_name") or None,
+			"warehouse": battery.get("warehouse") or None,
+			"battery_aging_days": battery.get("battery_aging_days"),
+			"battery_installed_on": str(battery.get("battery_installed_on")) if battery.get("battery_installed_on") else None,
 			"charging_date": str(battery.charging_date) if battery.charging_date else None,
-			"battery_expiry_date": None,  # Field not available in Battery Information
-			"days_until_expiry": None,  # Field not available in Battery Information
 			"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 			"age_days": age_days,
 			"age_category": age_category,
 			"risk_level": risk_level,
 			"status": battery.get("status") or "Active",
-			"battery_swapping": 0,  # Field not available in Battery Information
-			"new_frame_number": None,  # Field not available in Battery Information
-			"new_battery_details": None,  # Field not available in Battery Information
+			"is_discarded": 1 if is_discarded else 0,
+			"swap_count": swap_count,
+			"is_installed": 1 if battery.get("frame_bundle_name") else 0,
 			"creation": str(battery.creation) if battery.creation else None,
 			"modified": str(battery.modified) if battery.modified else None,
 		})
@@ -217,9 +239,10 @@ def get_battery_ageing_data(where_clause, params):
 			"safe": round((expiry_risk_counts["safe"] / total_batteries) * 100, 1),
 			"warning": round((expiry_risk_counts["warning"] / total_batteries) * 100, 1),
 			"critical": round((expiry_risk_counts["critical"] / total_batteries) * 100, 1),
+			"very_critical": round((expiry_risk_counts["very_critical"] / total_batteries) * 100, 1),
 		}
 	else:
-		expiry_risk_percentages = {"safe": 0, "warning": 0, "critical": 0}
+		expiry_risk_percentages = {"safe": 0, "warning": 0, "critical": 0, "very_critical": 0}
 	
 	return {
 		"doctype": "Battery Information",
@@ -275,15 +298,55 @@ def get_filter_options():
 
 @frappe.whitelist()
 def get_battery_details(name):
-	"""Get detailed information about a specific Battery Information record."""
+	"""Get detailed information about a specific Battery Information record with Frame Bundle data."""
 	if not frappe.db.exists("Battery Information", name):
 		return {"error": f"Battery Information {name} not found"}
 	
 	battery = frappe.get_doc("Battery Information", name)
 	today = nowdate()
 	
-	# Calculate age based on charging_date (more relevant for battery ageing)
-	if battery.charging_date:
+	# Get Frame Bundle information if battery is installed
+	frame_bundle = frappe.db.get_value(
+		"Frame Bundle",
+		{"battery_serial_no": name, "docstatus": 1},
+		["name", "frame_no", "battery_aging_days", "battery_installed_on", "warehouse"],
+		as_dict=True
+	)
+	
+	# Check if battery is discarded
+	is_discarded = False
+	swap_history = []
+	discard_history = []
+	
+	if frame_bundle:
+		# Check discard history
+		discard_count = frappe.db.count("Frame Bundle Discard History", {
+			"parent": frame_bundle.name
+		}) or 0
+		is_discarded = discard_count > 0
+		
+		# Get swap history
+		swap_history = frappe.get_all(
+			"Frame Bundle Swap History",
+			filters={"parent": frame_bundle.name},
+			fields=["swap_date", "swapped_with_frame", "swapped_by", "old_battery_serial_no", "new_battery_serial_no"],
+			order_by="swap_date desc"
+		)
+		
+		# Get discard history
+		if is_discarded:
+			discard_history = frappe.get_all(
+				"Frame Bundle Discard History",
+				filters={"parent": frame_bundle.name},
+				fields=["discarded_date", "discarded_by", "discarded_battery_serial_no"],
+				order_by="discarded_date desc"
+			)
+	
+	# Calculate age - prefer battery_aging_days from Frame Bundle
+	if frame_bundle and frame_bundle.get("battery_aging_days") is not None:
+		age_days = frame_bundle.battery_aging_days
+		charging_date = frame_bundle.get("battery_installed_on")
+	elif battery.charging_date:
 		charging_date = getdate(battery.charging_date)
 		age_days = date_diff(today, charging_date)
 	else:
@@ -291,25 +354,25 @@ def get_battery_details(name):
 		charging_date = creation_date
 		age_days = date_diff(today, creation_date)
 	
-	# Calculate days until expiry if expiry date exists (not available in Battery Information)
-	days_until_expiry = None
-	
 	result = {
 		"name": battery.name,
 		"battery_serial_no": battery.battery_serial_no or "-",
 		"brand": battery.battery_brand or "-",
 		"battery_type": battery.battery_type or "-",
-		"frame_no": None,  # Field not available in Battery Information
-		"charging_code": None,  # Field not available in Battery Information
+		"frame_no": frame_bundle.frame_no if frame_bundle else None,
+		"frame_bundle_name": frame_bundle.name if frame_bundle else None,
+		"warehouse": frame_bundle.warehouse if frame_bundle else None,
+		"battery_aging_days": frame_bundle.battery_aging_days if frame_bundle else None,
+		"battery_installed_on": str(frame_bundle.battery_installed_on) if frame_bundle and frame_bundle.battery_installed_on else None,
 		"charging_date": str(battery.charging_date) if battery.charging_date else None,
-		"battery_expiry_date": None,  # Field not available in Battery Information
-		"days_until_expiry": days_until_expiry,
 		"creation_date": str(getdate(battery.creation)) if battery.creation else None,
 		"age_days": age_days,
 		"status": battery.status or "Active",
-		"battery_swapping": 0,  # Field not available in Battery Information
-		"new_frame_number": None,  # Field not available in Battery Information
-		"new_battery_details": None,  # Field not available in Battery Information
+		"is_discarded": is_discarded,
+		"is_installed": 1 if frame_bundle else 0,
+		"swap_history": swap_history,
+		"discard_history": discard_history,
+		"swap_count": len(swap_history),
 		"creation": str(battery.creation) if battery.creation else None,
 		"modified": str(battery.modified) if battery.modified else None,
 	}

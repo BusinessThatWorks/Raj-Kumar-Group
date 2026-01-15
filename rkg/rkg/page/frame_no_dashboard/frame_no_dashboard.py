@@ -72,8 +72,16 @@ def get_frame_no_data(where_clause, params):
 			 INNER JOIN `tabPurchase Receipt Item` pri ON pr.name = pri.parent
 			 WHERE (pri.serial_no = sn.name OR FIND_IN_SET(sn.name, pri.serial_no) > 0) 
 			   AND pr.docstatus = 1
-			 LIMIT 1) as purchase_receipt_date
+			 LIMIT 1) as purchase_receipt_date,
+			fb.name as frame_bundle_name,
+			fb.battery_serial_no,
+			fb.battery_type,
+			fb.battery_aging_days,
+			fb.battery_installed_on,
+			(SELECT COUNT(*) FROM `tabFrame Bundle Discard History` WHERE parent = fb.name) as discard_count,
+			(SELECT COUNT(*) FROM `tabFrame Bundle Swap History` WHERE parent = fb.name) as swap_count
 		FROM `tabSerial No` sn
+		LEFT JOIN `tabFrame Bundle` fb ON fb.frame_no = sn.serial_no AND fb.docstatus = 1
 		WHERE {where_clause}
 		ORDER BY sn.creation DESC
 		LIMIT 1000
@@ -101,24 +109,6 @@ def get_frame_no_data(where_clause, params):
 	for frame in frames:
 		item_code = frame.get("item_code") or "Unknown"
 		item_counts[item_code] = item_counts.get(item_code, 0) + 1
-
-	# Status distribution chart
-	status_rows = frappe.db.sql(
-		f"""
-		SELECT sn.status, COUNT(*) as count
-		FROM `tabSerial No` sn
-		WHERE {where_clause}
-		GROUP BY sn.status
-		ORDER BY count DESC
-		""",
-		params,
-		as_dict=True,
-	)
-
-	status_chart = {
-		"labels": [row.status or "Unknown" for row in status_rows],
-		"values": [row.count for row in status_rows],
-	}
 
 	# Warehouse distribution chart
 	warehouse_rows = frappe.db.sql(
@@ -194,6 +184,21 @@ def get_frame_no_data(where_clause, params):
 		else:
 			purchase_date = None
 		
+		# Get battery information
+		battery_serial_no = frame.get("battery_serial_no")
+		battery_type = frame.get("battery_type")
+		battery_aging_days = frame.get("battery_aging_days")
+		battery_installed_on = frame.get("battery_installed_on")
+		is_discarded = (frame.get("discard_count") or 0) > 0
+		swap_count = frame.get("swap_count") or 0
+		
+		# Get battery serial number from Battery Information if available
+		battery_serial_no_display = None
+		if battery_serial_no:
+			battery_info = frappe.db.get_value("Battery Information", battery_serial_no, "battery_serial_no", as_dict=False)
+			if battery_info:
+				battery_serial_no_display = battery_info
+		
 		frame_cards.append({
 			"name": frame.name,
 			"frame_no": frame.serial_no or frame.name,
@@ -207,6 +212,14 @@ def get_frame_no_data(where_clause, params):
 			"custom_engine_number": frame.get("custom_engine_number") or "-",
 			"custom_key_no": frame.get("custom_key_no") or "-",
 			"custom_battery_no": frame.get("custom_battery_no") or "-",
+			"frame_bundle_name": frame.get("frame_bundle_name"),
+			"battery_serial_no": battery_serial_no_display or battery_serial_no,
+			"battery_type": battery_type,
+			"battery_aging_days": battery_aging_days,
+			"battery_installed_on": str(battery_installed_on) if battery_installed_on else None,
+			"is_discarded": 1 if is_discarded else 0,
+			"swap_count": swap_count,
+			"has_battery": 1 if battery_serial_no else 0,
 		})
 
 	return {
@@ -217,7 +230,6 @@ def get_frame_no_data(where_clause, params):
 			"warehouse_counts": warehouse_counts,
 			"item_counts": item_counts,
 		},
-		"status_chart": status_chart,
 		"warehouse_chart": warehouse_chart,
 		"item_chart": item_chart,
 		"date_chart": date_chart,
@@ -267,17 +279,26 @@ def get_filter_options():
 
 @frappe.whitelist()
 def get_frame_no_details(name):
-	"""Get detailed information about a specific Frame No."""
+	"""Get detailed information about a specific Frame No with Frame Bundle and Battery information."""
 	if not frappe.db.exists("Serial No", name):
 		return {"error": f"Frame No {name} not found"}
 	
 	# Get Serial No document (Frame No is stored in Serial No doctype)
 	frame_no = frappe.get_doc("Serial No", name)
+	frame_no_value = frame_no.serial_no or frame_no.name
+	
+	# Get Frame Bundle information
+	frame_bundle = frappe.db.get_value(
+		"Frame Bundle",
+		{"frame_no": frame_no_value, "docstatus": 1},
+		["name", "battery_serial_no", "battery_type", "battery_aging_days", "battery_installed_on"],
+		as_dict=True
+	)
 	
 	# Get all fields
 	result = {
 		"name": frame_no.name,
-		"frame_no": frame_no.serial_no or frame_no.name,
+		"frame_no": frame_no_value,
 		"item_code": frame_no.item_code,
 		"item_name": frame_no.item_name,
 		"warehouse": frame_no.warehouse,
@@ -285,6 +306,47 @@ def get_frame_no_details(name):
 		"creation": str(frame_no.creation) if frame_no.creation else None,
 		"modified": str(frame_no.modified) if frame_no.modified else None,
 	}
+	
+	# Add Frame Bundle and Battery information
+	if frame_bundle:
+		result["frame_bundle_name"] = frame_bundle.name
+		result["battery_serial_no"] = frame_bundle.battery_serial_no
+		result["battery_type"] = frame_bundle.battery_type
+		result["battery_aging_days"] = frame_bundle.battery_aging_days
+		result["battery_installed_on"] = str(frame_bundle.battery_installed_on) if frame_bundle.battery_installed_on else None
+		result["has_battery"] = 1 if frame_bundle.battery_serial_no else 0
+		
+		# Get battery serial number display value
+		if frame_bundle.battery_serial_no:
+			battery_info = frappe.db.get_value("Battery Information", frame_bundle.battery_serial_no, "battery_serial_no", as_dict=False)
+			if battery_info:
+				result["battery_serial_no_display"] = battery_info
+		
+		# Check if battery is discarded
+		discard_count = frappe.db.count("Frame Bundle Discard History", {
+			"parent": frame_bundle.name
+		}) or 0
+		result["is_discarded"] = discard_count > 0
+		
+		# Get swap history
+		swap_history = frappe.get_all(
+			"Frame Bundle Swap History",
+			filters={"parent": frame_bundle.name},
+			fields=["swap_date", "swapped_with_frame", "swapped_by", "old_battery_serial_no", "new_battery_serial_no"],
+			order_by="swap_date desc"
+		)
+		result["swap_history"] = swap_history
+		result["swap_count"] = len(swap_history)
+	else:
+		result["frame_bundle_name"] = None
+		result["battery_serial_no"] = None
+		result["battery_type"] = None
+		result["battery_aging_days"] = None
+		result["battery_installed_on"] = None
+		result["has_battery"] = 0
+		result["is_discarded"] = False
+		result["swap_history"] = []
+		result["swap_count"] = 0
 	
 	# Get Purchase Receipt creation date (Purchase Date) - date only
 	purchase_receipt_date = frappe.db.sql(

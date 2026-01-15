@@ -88,25 +88,25 @@ class BatteryAgeingDashboard {
 						<div class="card-value" id="total-batteries">0</div>
 						<div class="card-label">Total Batteries</div>
 					</div>
-					<div class="summary-card age-0-30">
+					<div class="summary-card age-0-60">
 						<div class="card-icon"><i class="fa fa-check-circle"></i></div>
-						<div class="card-value" id="age-0-30">0</div>
-						<div class="card-label">0-30 Days</div>
+						<div class="card-value" id="age-0-60">0</div>
+						<div class="card-label">0-60 Days</div>
 					</div>
-					<div class="summary-card age-60-days">
-						<div class="card-icon"><i class="fa fa-calendar"></i></div>
-						<div class="card-value" id="age-60-days">0</div>
-						<div class="card-label">~60 Days Old</div>
-					</div>
-					<div class="summary-card age-31-90">
+					<div class="summary-card age-60-90">
 						<div class="card-icon"><i class="fa fa-clock-o"></i></div>
-						<div class="card-value" id="age-31-90">0</div>
-						<div class="card-label">31-90 Days</div>
+						<div class="card-value" id="age-60-90">0</div>
+						<div class="card-label">60-90 Days</div>
 					</div>
-					<div class="summary-card age-365-plus">
+					<div class="summary-card age-90-120">
 						<div class="card-icon"><i class="fa fa-exclamation-triangle"></i></div>
-						<div class="card-value" id="age-365-plus">0</div>
-						<div class="card-label">365+ Days</div>
+						<div class="card-value" id="age-90-120">0</div>
+						<div class="card-label">90-120 Days</div>
+					</div>
+					<div class="summary-card age-120-plus">
+						<div class="card-icon"><i class="fa fa-times-circle"></i></div>
+						<div class="card-value" id="age-120-plus">0</div>
+						<div class="card-label">120+ Days</div>
 					</div>
 				</div>
 
@@ -122,7 +122,7 @@ class BatteryAgeingDashboard {
 							</div>
 							<div class="risk-value" id="risk-safe-count">0</div>
 							<div class="risk-percentage" id="risk-safe-percentage">0%</div>
-							<div class="risk-description">0-180 days</div>
+							<div class="risk-description">0-60 days</div>
 						</div>
 						<div class="risk-card warning" id="risk-warning-card">
 							<div class="risk-card-header">
@@ -131,7 +131,7 @@ class BatteryAgeingDashboard {
 							</div>
 							<div class="risk-value" id="risk-warning-count">0</div>
 							<div class="risk-percentage" id="risk-warning-percentage">0%</div>
-							<div class="risk-description">181-365 days</div>
+							<div class="risk-description">60-90 days</div>
 						</div>
 						<div class="risk-card critical" id="risk-critical-card">
 							<div class="risk-card-header">
@@ -140,7 +140,16 @@ class BatteryAgeingDashboard {
 							</div>
 							<div class="risk-value" id="risk-critical-count">0</div>
 							<div class="risk-percentage" id="risk-critical-percentage">0%</div>
-							<div class="risk-description">365+ days</div>
+							<div class="risk-description">90-120 days</div>
+						</div>
+						<div class="risk-card very-critical" id="risk-very-critical-card">
+							<div class="risk-card-header">
+								<div class="risk-icon"><i class="fa fa-ban"></i></div>
+								<div class="risk-label">Very Critical</div>
+							</div>
+							<div class="risk-value" id="risk-very-critical-count">0</div>
+							<div class="risk-percentage" id="risk-very-critical-percentage">0%</div>
+							<div class="risk-description">120+ days</div>
 						</div>
 					</div>
 				</div>
@@ -325,10 +334,10 @@ class BatteryAgeingDashboard {
 		const batteries_60_days = summary.batteries_60_days || 0;
 		
 		this.wrapper.find("#total-batteries").text(format_number(total, 0));
-		this.wrapper.find("#age-0-30").text(format_number(age_ranges["0-30 days"] || 0, 0));
-		this.wrapper.find("#age-60-days").text(format_number(batteries_60_days, 0));
-		this.wrapper.find("#age-31-90").text(format_number((age_ranges["31-90 days"] || 0) + (age_ranges["91-180 days"] || 0) + (age_ranges["181-365 days"] || 0), 0));
-		this.wrapper.find("#age-365-plus").text(format_number(age_ranges["365+ days"] || 0, 0));
+		this.wrapper.find("#age-0-60").text(format_number(age_ranges["0-60 days"] || 0, 0));
+		this.wrapper.find("#age-60-90").text(format_number(age_ranges["60-90 days"] || 0, 0));
+		this.wrapper.find("#age-90-120").text(format_number(age_ranges["90-120 days"] || 0, 0));
+		this.wrapper.find("#age-120-plus").text(format_number(age_ranges["120+ days"] || 0, 0));
 		
 		// Render Expiry Risk indicators
 		this.render_expiry_risk_indicators(expiry_risk_counts, expiry_risk_percentages);
@@ -338,10 +347,12 @@ class BatteryAgeingDashboard {
 		const safe_count = expiry_risk_counts.safe || 0;
 		const warning_count = expiry_risk_counts.warning || 0;
 		const critical_count = expiry_risk_counts.critical || 0;
+		const very_critical_count = expiry_risk_counts.very_critical || 0;
 		
 		const safe_percentage = expiry_risk_percentages.safe || 0;
 		const warning_percentage = expiry_risk_percentages.warning || 0;
 		const critical_percentage = expiry_risk_percentages.critical || 0;
+		const very_critical_percentage = expiry_risk_percentages.very_critical || 0;
 		
 		this.wrapper.find("#risk-safe-count").text(format_number(safe_count, 0));
 		this.wrapper.find("#risk-safe-percentage").text(format_number(safe_percentage, 1) + "%");
@@ -351,6 +362,9 @@ class BatteryAgeingDashboard {
 		
 		this.wrapper.find("#risk-critical-count").text(format_number(critical_count, 0));
 		this.wrapper.find("#risk-critical-percentage").text(format_number(critical_percentage, 1) + "%");
+		
+		this.wrapper.find("#risk-very-critical-count").text(format_number(very_critical_count, 0));
+		this.wrapper.find("#risk-very-critical-percentage").text(format_number(very_critical_percentage, 1) + "%");
 	}
 
 	render_age_chart(data) {
@@ -492,15 +506,20 @@ class BatteryAgeingDashboard {
 	build_table_view(batteries) {
 		const rows = batteries.map(battery => {
 			const ageDays = battery.age_days || 0;
-			const ageClass = ageDays <= 30 ? "age-new" : ageDays <= 365 ? "age-medium" : "age-old";
+			const ageClass = ageDays <= 60 ? "age-new" : ageDays <= 90 ? "age-warning" : ageDays <= 120 ? "age-medium" : "age-old";
+			const statusBadge = battery.is_discarded ? '<span class="badge badge-danger">Discarded</span>' : 
+				(battery.is_installed ? '<span class="badge badge-success">Installed</span>' : '<span class="badge badge-secondary">Not Installed</span>');
+			const frameInfo = battery.frame_no ? `<div><strong>${battery.frame_no}</strong></div><small class="text-muted">${battery.warehouse || ""}</small>` : "-";
 			return `
 				<tr class="battery-row ${ageClass}" data-name="${battery.name}" style="cursor: pointer;">
 					<td><strong>${battery.battery_serial_no || "-"}</strong></td>
 					<td>${battery.brand || "-"}</td>
 					<td>${battery.battery_type || "-"}</td>
+					<td>${frameInfo}</td>
 					<td><span class="age-badge ${ageClass}">${ageDays} days</span></td>
 					<td>${battery.charging_date ? battery.charging_date.split(' ')[0] : "-"}</td>
-					<td>${battery.status || "Active"}</td>
+					<td>${statusBadge}</td>
+					<td>${battery.swap_count || 0}</td>
 				</tr>
 			`;
 		}).join("");
@@ -513,9 +532,11 @@ class BatteryAgeingDashboard {
 							<th>Battery Serial No</th>
 							<th>Brand</th>
 							<th>Battery Type</th>
+							<th>Frame No / Warehouse</th>
 							<th>Age</th>
 							<th>Charging Date</th>
 							<th>Status</th>
+							<th>Swaps</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -589,7 +610,12 @@ class BatteryAgeingDashboard {
 
 	build_battery_card(battery) {
 		const ageDays = battery.age_days || 0;
-		const ageClass = ageDays <= 30 ? "age-new" : ageDays <= 365 ? "age-medium" : "age-old";
+		const ageClass = ageDays <= 60 ? "age-new" : ageDays <= 90 ? "age-warning" : ageDays <= 120 ? "age-medium" : "age-old";
+		const statusBadge = battery.is_discarded ? '<span class="badge badge-danger">Discarded</span>' : 
+			(battery.is_installed ? '<span class="badge badge-success">Installed</span>' : '<span class="badge badge-secondary">Not Installed</span>');
+		const frameInfo = battery.frame_no ? `<div class="battery-date"><i class="fa fa-cog"></i> Frame: <strong>${battery.frame_no}</strong></div>` : "";
+		const warehouseInfo = battery.warehouse ? `<div class="battery-date"><i class="fa fa-warehouse"></i> ${battery.warehouse}</div>` : "";
+		const swapInfo = battery.swap_count > 0 ? `<div class="battery-date"><i class="fa fa-exchange"></i> Swapped ${battery.swap_count} time(s)</div>` : "";
 		
 		return `
 			<div class="battery-card ${ageClass}" data-doctype="Battery Information" data-name="${battery.name || ''}" style="cursor: pointer;">
@@ -606,8 +632,11 @@ class BatteryAgeingDashboard {
 					<div class="battery-metrics">
 						<div><span class="muted">Brand</span><div class="metric-value">${battery.brand || "-"}</div></div>
 						<div><span class="muted">Type</span><div class="metric-value">${battery.battery_type || "-"}</div></div>
-						<div><span class="muted">Status</span><div class="metric-value">${battery.status || "Active"}</div></div>
+						<div><span class="muted">Status</span><div class="metric-value">${statusBadge}</div></div>
 					</div>
+					${frameInfo}
+					${warehouseInfo}
+					${swapInfo}
 					${battery.charging_date ? `<div class="battery-date"><i class="fa fa-bolt"></i> Charged: ${battery.charging_date.split(' ')[0]}</div>` : ""}
 					<div class="battery-date"><i class="fa fa-calendar"></i> Created: ${battery.creation_date ? battery.creation_date.split(' ')[0] : "-"}</div>
 				</div>
@@ -642,14 +671,99 @@ class BatteryAgeingDashboard {
 		const container = this.wrapper.find("#battery-details");
 		const battery = data.battery || {};
 		const ageDays = battery.age_days || 0;
-		const ageClass = ageDays <= 30 ? "age-new" : ageDays <= 365 ? "age-medium" : "age-old";
+		const ageClass = ageDays <= 60 ? "age-new" : ageDays <= 90 ? "age-warning" : ageDays <= 120 ? "age-medium" : "age-old";
+		const statusBadge = battery.is_discarded ? '<span class="badge badge-danger">Discarded</span>' : 
+			(battery.is_installed ? '<span class="badge badge-success">Installed</span>' : '<span class="badge badge-secondary">Not Installed</span>');
+		
+		// Build swap history HTML
+		let swapHistoryHTML = "";
+		if (battery.swap_history && battery.swap_history.length > 0) {
+			swapHistoryHTML = `
+				<div class="details-section">
+					<h4><i class="fa fa-exchange"></i> Swap History (${battery.swap_count || 0})</h4>
+					<div class="table-container">
+						<table class="table table-bordered">
+							<thead>
+								<tr>
+									<th>Swap Date</th>
+									<th>Swapped With Frame</th>
+									<th>Old Battery</th>
+									<th>New Battery</th>
+									<th>Swapped By</th>
+								</tr>
+							</thead>
+							<tbody>
+								${battery.swap_history.map(swap => `
+									<tr>
+										<td>${swap.swap_date ? frappe.datetime.str_to_user(swap.swap_date) : "-"}</td>
+										<td>${swap.swapped_with_frame || "-"}</td>
+										<td>${swap.old_battery_serial_no || "-"}</td>
+										<td>${swap.new_battery_serial_no || "-"}</td>
+										<td>${swap.swapped_by || "-"}</td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			`;
+		}
+		
+		// Build discard history HTML
+		let discardHistoryHTML = "";
+		if (battery.discard_history && battery.discard_history.length > 0) {
+			discardHistoryHTML = `
+				<div class="details-section">
+					<h4><i class="fa fa-trash"></i> Discard History</h4>
+					<div class="table-container">
+						<table class="table table-bordered">
+							<thead>
+								<tr>
+									<th>Discarded Date</th>
+									<th>Discarded Battery</th>
+									<th>Discarded By</th>
+								</tr>
+							</thead>
+							<tbody>
+								${battery.discard_history.map(discard => `
+									<tr>
+										<td>${discard.discarded_date ? frappe.datetime.str_to_user(discard.discarded_date) : "-"}</td>
+										<td>${discard.discarded_battery_serial_no || "-"}</td>
+										<td>${discard.discarded_by || "-"}</td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			`;
+		}
+		
+		// Build action buttons
+		let actionButtons = "";
+		if (battery.is_installed && battery.frame_bundle_name && !battery.is_discarded) {
+			actionButtons = `
+				<div class="details-actions">
+					<button class="btn btn-primary btn-swap-battery" data-frame="${battery.frame_bundle_name}" data-battery="${battery.name}">
+						<i class="fa fa-exchange"></i> Swap Battery
+					</button>
+					<button class="btn btn-default btn-view-frame" data-frame="${battery.frame_bundle_name}">
+						<i class="fa fa-eye"></i> View Frame Bundle
+					</button>
+				</div>
+			`;
+		}
 
 		container.html(`
 			<div class="battery-details-card">
 				<div class="details-header">
 					<h3>${battery.battery_serial_no || battery.name || "-"}</h3>
-					<span class="age-badge ${ageClass}">${ageDays} days old</span>
+					<div>
+						<span class="age-badge ${ageClass}">${ageDays} days old</span>
+						${statusBadge}
+					</div>
 				</div>
+				${actionButtons}
 				<div class="details-body">
 					<div class="details-row">
 						<div class="detail-item">
@@ -658,7 +772,7 @@ class BatteryAgeingDashboard {
 						</div>
 						<div class="detail-item">
 							<label>Status:</label>
-							<span><strong>${battery.status || "Active"}</strong></span>
+							<span>${statusBadge}</span>
 						</div>
 					</div>
 					<div class="details-row">
@@ -671,6 +785,28 @@ class BatteryAgeingDashboard {
 							<span><strong>${battery.battery_type || "-"}</strong></span>
 						</div>
 					</div>
+					${battery.frame_no ? `
+					<div class="details-row">
+						<div class="detail-item">
+							<label>Frame No:</label>
+							<span><strong>${battery.frame_no}</strong></span>
+						</div>
+						<div class="detail-item">
+							<label>Warehouse:</label>
+							<span>${battery.warehouse || "-"}</span>
+						</div>
+					</div>
+					<div class="details-row">
+						<div class="detail-item">
+							<label>Battery Installed On:</label>
+							<span>${battery.battery_installed_on ? frappe.datetime.str_to_user(battery.battery_installed_on) : "-"}</span>
+						</div>
+						<div class="detail-item">
+							<label>Battery Aging Days:</label>
+							<span><strong>${battery.battery_aging_days !== null && battery.battery_aging_days !== undefined ? battery.battery_aging_days : "-"}</strong></span>
+						</div>
+					</div>
+					` : ""}
 					<div class="details-row">
 						<div class="detail-item">
 							<label>Charging Date:</label>
@@ -692,8 +828,207 @@ class BatteryAgeingDashboard {
 						</div>
 					</div>
 				</div>
+				${swapHistoryHTML}
+				${discardHistoryHTML}
 			</div>
 		`);
+		
+		// Setup action button handlers
+		const self = this;
+		container.find(".btn-swap-battery").on("click", function() {
+			const frameName = $(this).data("frame");
+			const batteryName = $(this).data("battery");
+			self.show_swap_dialog(frameName, batteryName);
+		});
+		
+		container.find(".btn-view-frame").on("click", function() {
+			const frameName = $(this).data("frame");
+			frappe.set_route("Form", "Frame Bundle", frameName);
+		});
+	}
+	
+	show_swap_dialog(currentFrame, currentBattery) {
+		const self = this;
+		
+		// Get current frame details
+		frappe.call({
+			method: "rkg.rkg.doctype.frame_bundle.frame_bundle.get_frame_battery",
+			args: { frame_name: currentFrame },
+			callback: (r) => {
+				if (r.message) {
+					const currentFrameNo = r.message.frame_no || currentFrame;
+					
+					// Swap function
+					function swap_batteries(current_frame, target_frame, force_swap) {
+						frappe.call({
+							method: "rkg.rkg.doctype.frame_bundle.frame_bundle.swap_batteries",
+							args: {
+								current_frame: current_frame,
+								target_frame: target_frame,
+								force_swap: force_swap || false
+							},
+							freeze: true,
+							freeze_message: __("Swapping batteries..."),
+							callback: function(r) {
+								if (r.message && r.message.error) {
+									frappe.msgprint(__("Error: {0}", [r.message.error]));
+								} else {
+									frappe.show_alert({
+										message: __("Batteries swapped successfully"),
+										indicator: "green"
+									}, 3);
+									// Refresh dashboard
+									self.refresh();
+									self.hide_battery_details();
+								}
+							}
+						});
+					}
+					
+					// Create swap dialog
+					let d = new frappe.ui.Dialog({
+						title: __("Swap Battery"),
+						fields: [
+							{
+								fieldtype: "Section Break",
+								label: __("Current Frame")
+							},
+							{
+								fieldtype: "Data",
+								fieldname: "current_frame_no",
+								label: __("Frame No"),
+								default: currentFrameNo,
+								read_only: 1
+							},
+							{
+								fieldtype: "Link",
+								fieldname: "current_battery",
+								label: __("Current Battery"),
+								options: "Battery Information",
+								default: currentBattery,
+								read_only: 1
+							},
+							{
+								fieldtype: "Section Break",
+								label: __("Target Frame")
+							},
+							{
+								fieldtype: "Link",
+								fieldname: "target_frame",
+								label: __("Select Frame"),
+								options: "Frame Bundle",
+								get_query: function() {
+									return {
+										filters: {
+											name: ["!=", currentFrame],
+											docstatus: 1
+										}
+									};
+								},
+								onchange: function() {
+									let target_frame = d.get_value("target_frame");
+									if (target_frame) {
+										frappe.call({
+											method: "rkg.rkg.doctype.frame_bundle.frame_bundle.get_frame_battery",
+											args: { frame_name: target_frame },
+											callback: function(r) {
+												if (r.message) {
+													d.set_value("target_battery", r.message.battery_serial_no || "");
+													d.set_value("target_frame_no", r.message.frame_no || "");
+													// Get battery type
+													if (r.message.battery_serial_no) {
+														frappe.db.get_value("Battery Information", r.message.battery_serial_no, "battery_type", (r2) => {
+															if (r2 && r2.battery_type) {
+																d.set_value("target_battery_type", r2.battery_type);
+															}
+														});
+													}
+												}
+											}
+										});
+									}
+								},
+								reqd: 1
+							},
+							{
+								fieldtype: "Data",
+								fieldname: "target_frame_no",
+								label: __("Target Frame No"),
+								read_only: 1
+							},
+							{
+								fieldtype: "Link",
+								fieldname: "target_battery",
+								label: __("Target Battery"),
+								options: "Battery Information",
+								read_only: 1
+							},
+							{
+								fieldtype: "Data",
+								fieldname: "target_battery_type",
+								label: __("Target Battery Type"),
+								read_only: 1
+							}
+						],
+						primary_action_label: __("Swap"),
+						primary_action(values) {
+							if (!values.target_frame) {
+								frappe.msgprint(__("Please select a target frame"));
+								return;
+							}
+							
+							// Get current battery type
+							frappe.db.get_value("Battery Information", currentBattery, "battery_type", (r) => {
+								const currentType = r && r.battery_type ? r.battery_type : "";
+								const targetType = values.target_battery_type || "";
+								const typesMatch = currentType && targetType && currentType === targetType;
+								
+								if (!typesMatch && currentType && targetType) {
+									// Types don't match - show confirmation
+									frappe.confirm(
+										__("Battery types do not match!<br><br>") +
+										__("Current Battery: {0} ({1})<br>", [currentBattery, currentType]) +
+										__("Target Battery: {0} ({1})<br><br>", [values.target_battery || "-", targetType]) +
+										__("Do you want to proceed with the battery swap?"),
+										function() {
+											// Proceed with swap
+											swap_batteries(currentFrame, values.target_frame, true);
+											d.hide();
+										}
+									);
+								} else {
+									// Types match or one is empty - proceed normally
+									frappe.confirm(
+										__("Swap batteries between these frames?"),
+										function() {
+											swap_batteries(currentFrame, values.target_frame, false);
+											d.hide();
+										}
+									);
+								}
+							});
+						}
+					});
+					
+					// Get current battery type
+					frappe.db.get_value("Battery Information", currentBattery, "battery_type", (r) => {
+						if (r && r.battery_type) {
+							d.set_value("current_battery_type", r.battery_type);
+						}
+					});
+					
+					// Add current battery type field
+					d.fields_list.push({
+						fieldtype: "Data",
+						fieldname: "current_battery_type",
+						label: __("Current Battery Type"),
+						read_only: 1
+					});
+					
+					d.show();
+				}
+			}
+		});
 	}
 }
 
@@ -715,23 +1050,25 @@ function add_styles() {
 		.summary-card .card-value { font-size: 30px; font-weight: 700; color: var(--heading-color); }
 		.summary-card .card-label { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 		.summary-card.total { border-left-color: #5e64ff; }
-		.summary-card.age-0-30 { border-left-color: #00d4aa; }
-		.summary-card.age-60-days { border-left-color: #ff9800; }
-		.summary-card.age-31-90 { border-left-color: #ffa726; }
-		.summary-card.age-365-plus { border-left-color: #ff6b6b; }
+		.summary-card.age-0-60 { border-left-color: #00d4aa; }
+		.summary-card.age-60-90 { border-left-color: #ffa726; }
+		.summary-card.age-90-120 { border-left-color: #ff6b6b; }
+		.summary-card.age-120-plus { border-left-color: #c62828; }
 
 		.expiry-risk-section { background: var(--card-bg); border-radius: 12px; padding: 20px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); margin-bottom: 20px; }
-		.risk-indicator-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 16px; }
+		.risk-indicator-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px; }
 		.risk-card { border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s; border-top: 4px solid; }
 		.risk-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 		.risk-card.safe { border-top-color: #00d4aa; background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); }
 		.risk-card.warning { border-top-color: #ffa726; background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); }
 		.risk-card.critical { border-top-color: #ff6b6b; background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%); }
+		.risk-card.very-critical { border-top-color: #c62828; background: linear-gradient(135deg, #ffcdd2 0%, #ef9a9a 100%); }
 		.risk-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 		.risk-icon { font-size: 24px; }
 		.risk-card.safe .risk-icon { color: #00d4aa; }
 		.risk-card.warning .risk-icon { color: #ffa726; }
 		.risk-card.critical .risk-icon { color: #ff6b6b; }
+		.risk-card.very-critical .risk-icon { color: #c62828; }
 		.risk-label { font-size: 16px; font-weight: 700; color: var(--heading-color); text-transform: uppercase; letter-spacing: 0.5px; }
 		.risk-value { font-size: 36px; font-weight: 700; color: var(--heading-color); margin-bottom: 4px; }
 		.risk-percentage { font-size: 18px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
@@ -765,18 +1102,21 @@ function add_styles() {
 		
 		.age-badge { font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 14px; display: inline-block; }
 		.age-badge.age-new { background: #e0f7f2; color: #0b8c6b; }
+		.age-badge.age-warning { background: #fff3e0; color: #e65100; }
 		.age-badge.age-medium { background: #ffe0b2; color: #e65100; }
 		.age-badge.age-old { background: #ffcdd2; color: #c62828; }
 		.battery-row.age-new { border-left: 3px solid #00d4aa; }
-		.battery-row.age-medium { border-left: 3px solid #ffa726; }
-		.battery-row.age-old { border-left: 3px solid #ff6b6b; }
+		.battery-row.age-warning { border-left: 3px solid #ffa726; }
+		.battery-row.age-medium { border-left: 3px solid #ff6b6b; }
+		.battery-row.age-old { border-left: 3px solid #c62828; }
 		
 		.batteries-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 		.battery-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; background: var(--control-bg); box-shadow: 0 1px 4px rgba(0,0,0,0.04); transition: transform 0.2s, box-shadow 0.2s; }
 		.battery-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 		.battery-card.age-new { border-left: 4px solid #00d4aa; }
-		.battery-card.age-medium { border-left: 4px solid #ffa726; }
-		.battery-card.age-old { border-left: 4px solid #ff6b6b; }
+		.battery-card.age-warning { border-left: 4px solid #ffa726; }
+		.battery-card.age-medium { border-left: 4px solid #ff6b6b; }
+		.battery-card.age-old { border-left: 4px solid #c62828; }
 		.battery-card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 		.battery-code { font-weight: 700; color: var(--heading-color); font-size: 16px; }
 		.battery-name { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
@@ -801,13 +1141,24 @@ function add_styles() {
 
 		.battery-details-section { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
 		.battery-details-card { background: var(--control-bg); border-radius: 10px; padding: 20px; }
-		.details-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--border-color); }
+		.details-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--border-color); flex-wrap: wrap; gap: 10px; }
 		.details-header h3 { margin: 0; color: var(--heading-color); }
+		.details-actions { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
 		.details-body { margin-top: 20px; }
 		.details-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; }
 		.detail-item { display: flex; flex-direction: column; gap: 5px; }
 		.detail-item label { font-weight: 600; color: var(--text-muted); font-size: 12px; text-transform: uppercase; }
 		.detail-item span { color: var(--heading-color); font-size: 14px; }
+		.details-section { margin-top: 30px; padding-top: 20px; border-top: 2px solid var(--border-color); }
+		.details-section h4 { margin-bottom: 15px; color: var(--heading-color); display: flex; align-items: center; gap: 8px; }
+		.badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+		.badge-success { background: #d4edda; color: #155724; }
+		.badge-danger { background: #f8d7da; color: #721c24; }
+		.badge-secondary { background: #e2e3e5; color: #383d41; }
 	</style>`).appendTo("head");
 }
+
+
+
+
 

@@ -99,11 +99,6 @@ class FrameNoDashboard {
 						<div class="card-value" id="active-frames">0</div>
 						<div class="card-label">Active</div>
 					</div>
-					<div class="summary-card delivered">
-						<div class="card-icon"><i class="fa fa-truck"></i></div>
-						<div class="card-value" id="delivered-frames">0</div>
-						<div class="card-label">Delivered</div>
-					</div>
 					<div class="summary-card warehouses">
 						<div class="card-icon"><i class="fa fa-warehouse"></i></div>
 						<div class="card-value" id="total-warehouses">0</div>
@@ -112,12 +107,6 @@ class FrameNoDashboard {
 				</div>
 
 				<div class="charts-section">
-					<div class="chart-container">
-						<div class="chart-title">
-							<i class="fa fa-pie-chart"></i> Status Distribution
-						</div>
-						<div id="status-chart"></div>
-					</div>
 					<div class="chart-container">
 						<div class="chart-title">
 							<i class="fa fa-bar-chart"></i> Warehouse Distribution
@@ -278,14 +267,12 @@ class FrameNoDashboard {
 			callback: (r) => {
 				if (r.message) {
 					this.render_summary(r.message.summary || {});
-					this.render_status_chart(r.message.status_chart || {});
 					this.render_warehouse_chart(r.message.warehouse_chart || {});
 					this.render_item_chart(r.message.item_chart || {});
 					this.render_date_chart(r.message.date_chart || {});
 					this.render_frames_list(r.message.frames || []);
 				} else {
 					this.render_summary({});
-					this.render_status_chart({});
 					this.render_warehouse_chart({});
 					this.render_item_chart({});
 					this.render_date_chart({});
@@ -308,32 +295,11 @@ class FrameNoDashboard {
 		
 		// Count active (status = "Active" or "In Stock")
 		const active = (status_counts["Active"] || 0) + (status_counts["In Stock"] || 0);
-		const delivered = status_counts["Delivered"] || 0;
 		const total_warehouses = Object.keys(warehouse_counts).length;
 
 		this.wrapper.find("#total-frames").text(format_number(total, 0));
 		this.wrapper.find("#active-frames").text(format_number(active, 0));
-		this.wrapper.find("#delivered-frames").text(format_number(delivered, 0));
 		this.wrapper.find("#total-warehouses").text(format_number(total_warehouses, 0));
-	}
-
-	render_status_chart(data) {
-		const container = this.wrapper.find("#status-chart")[0];
-		if (!data || !data.labels || data.labels.length === 0) {
-			$(container).html(no_data("No status data"));
-			return;
-		}
-		// Destroy existing chart if it exists
-		if (this.charts.statusChart && typeof this.charts.statusChart.destroy === "function") {
-			this.charts.statusChart.destroy();
-		}
-		$(container).empty();
-		this.charts.statusChart = new frappe.Chart(container, {
-			data: { labels: data.labels, datasets: [{ name: "Frames", values: data.values }] },
-			type: "pie",
-			height: 260,
-			colors: ["#5e64ff", "#00d4aa", "#ffa726", "#ff6b6b", "#26c6da", "#9ccc65", "#ab47bc"],
-		});
 	}
 
 	render_warehouse_chart(data) {
@@ -421,7 +387,10 @@ class FrameNoDashboard {
 				frame.warehouse || "",
 				frame.status || "",
 				frame.color_code || "",
-				frame.custom_engine_number || ""
+				frame.custom_engine_number || "",
+				frame.battery_serial_no || "",
+				frame.battery_type || "",
+				frame.battery_aging_days?.toString() || ""
 			].join(" ").toLowerCase();
 			return searchable.includes(searchTerm);
 		});
@@ -490,6 +459,14 @@ class FrameNoDashboard {
 	build_table_view(frames) {
 		const rows = frames.map(frame => {
 			const statusClass = (frame.status || "Unknown").toLowerCase().replace(/\s+/g, "-");
+			const batteryAgeDays = frame.battery_aging_days !== null && frame.battery_aging_days !== undefined ? frame.battery_aging_days : null;
+			const ageClass = batteryAgeDays !== null ? 
+				(batteryAgeDays <= 60 ? "age-new" : batteryAgeDays <= 90 ? "age-warning" : batteryAgeDays <= 120 ? "age-medium" : "age-old") : "";
+			const batteryBadge = frame.has_battery ? 
+				(frame.is_discarded ? '<span class="badge badge-danger">Discarded</span>' : 
+				 `<span class="age-badge ${ageClass}">${batteryAgeDays !== null ? batteryAgeDays + ' days' : 'N/A'}</span>`) : 
+				'<span class="badge badge-secondary">No Battery</span>';
+			
 			return `
 				<tr class="frame-row" data-name="${frame.name}" style="cursor: pointer;">
 					<td><strong>${frame.frame_no || frame.name || "-"}</strong></td>
@@ -497,8 +474,11 @@ class FrameNoDashboard {
 					<td>${frame.item_name || "-"}</td>
 					<td>${frame.warehouse || "-"}</td>
 					<td><span class="frame-status ${statusClass}">${frame.status || "Unknown"}</span></td>
+					<td>${frame.battery_serial_no || "-"}</td>
+					<td>${frame.battery_type || "-"}</td>
+					<td>${batteryBadge}</td>
+					<td>${frame.swap_count || 0}</td>
 					<td>${frame.color_code || "-"}</td>
-					<td>${frame.custom_engine_number || "-"}</td>
 					<td>${frame.purchase_date ? frame.purchase_date.split(' ')[0] : "-"}</td>
 				</tr>
 			`;
@@ -514,9 +494,12 @@ class FrameNoDashboard {
 							<th>Item Name</th>
 							<th>Warehouse</th>
 							<th>Status</th>
+							<th>Battery Serial No</th>
+							<th>Battery Type</th>
+							<th>Battery Age</th>
+							<th>Swaps</th>
 							<th>Color</th>
-							<th>Engine No</th>
-					<th>Purchase Date</th>
+							<th>Purchase Date</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -595,6 +578,18 @@ class FrameNoDashboard {
 
 	build_frame_card(frame) {
 		const statusClass = (frame.status || "Unknown").toLowerCase().replace(/\s+/g, "-");
+		const batteryAgeDays = frame.battery_aging_days !== null && frame.battery_aging_days !== undefined ? frame.battery_aging_days : null;
+		const ageClass = batteryAgeDays !== null ? 
+			(batteryAgeDays <= 60 ? "age-new" : batteryAgeDays <= 90 ? "age-warning" : batteryAgeDays <= 120 ? "age-medium" : "age-old") : "";
+		const batteryInfo = frame.has_battery ? 
+			(frame.is_discarded ? '<div class="frame-battery"><span class="badge badge-danger">Battery Discarded</span></div>' : 
+			 `<div class="frame-battery">
+				<div><span class="muted">Battery:</span> <strong>${frame.battery_serial_no || "-"}</strong></div>
+				<div><span class="muted">Type:</span> ${frame.battery_type || "-"}</div>
+				<div><span class="age-badge ${ageClass}">${batteryAgeDays !== null ? batteryAgeDays + ' days' : 'N/A'}</span></div>
+				${frame.swap_count > 0 ? `<div><span class="muted">Swaps:</span> ${frame.swap_count}</div>` : ""}
+			</div>`) : 
+			'<div class="frame-battery"><span class="badge badge-secondary">No Battery</span></div>';
 		
 		return `
 			<div class="frame-card" data-doctype="Serial No" data-name="${frame.name || ''}" style="cursor: pointer;">
@@ -613,6 +608,7 @@ class FrameNoDashboard {
 						<div><span class="muted">Color</span><div class="metric-value">${frame.color_code || "-"}</div></div>
 						<div><span class="muted">Engine No</span><div class="metric-value">${frame.custom_engine_number || "-"}</div></div>
 					</div>
+					${batteryInfo}
 					${frame.purchase_date ? `<div class="frame-date"><i class="fa fa-calendar"></i> Purchase Date: ${frame.purchase_date.split(' ')[0]}</div>` : ""}
 				</div>
 			</div>
@@ -647,13 +643,69 @@ class FrameNoDashboard {
 	render_frame_no_details(data) {
 		const container = this.wrapper.find("#frame-no-details");
 		const frame = data.frame_no || {};
+		const batteryAgeDays = frame.battery_aging_days !== null && frame.battery_aging_days !== undefined ? frame.battery_aging_days : null;
+		const ageClass = batteryAgeDays !== null ? 
+			(batteryAgeDays <= 60 ? "age-new" : batteryAgeDays <= 90 ? "age-warning" : batteryAgeDays <= 120 ? "age-medium" : "age-old") : "";
+		
+		// Build swap history HTML
+		let swapHistoryHTML = "";
+		if (frame.swap_history && frame.swap_history.length > 0) {
+			swapHistoryHTML = `
+				<div class="details-section">
+					<h4><i class="fa fa-exchange"></i> Battery Swap History (${frame.swap_count || 0})</h4>
+					<div class="table-container">
+						<table class="table table-bordered">
+							<thead>
+								<tr>
+									<th>Swap Date</th>
+									<th>Swapped With Frame</th>
+									<th>Old Battery</th>
+									<th>New Battery</th>
+									<th>Swapped By</th>
+								</tr>
+							</thead>
+							<tbody>
+								${frame.swap_history.map(swap => `
+									<tr>
+										<td>${swap.swap_date ? frappe.datetime.str_to_user(swap.swap_date) : "-"}</td>
+										<td>${swap.swapped_with_frame || "-"}</td>
+										<td>${swap.old_battery_serial_no || "-"}</td>
+										<td>${swap.new_battery_serial_no || "-"}</td>
+										<td>${swap.swapped_by || "-"}</td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			`;
+		}
+		
+		// Build action buttons
+		let actionButtons = "";
+		if (frame.frame_bundle_name && frame.has_battery && !frame.is_discarded) {
+			actionButtons = `
+				<div class="details-actions">
+					<button class="btn btn-primary btn-swap-battery" data-frame="${frame.frame_bundle_name}" data-battery="${frame.battery_serial_no}">
+						<i class="fa fa-exchange"></i> Swap Battery
+					</button>
+					<button class="btn btn-default btn-view-frame-bundle" data-frame="${frame.frame_bundle_name}">
+						<i class="fa fa-eye"></i> View Frame Bundle
+					</button>
+				</div>
+			`;
+		}
 
 		container.html(`
 			<div class="frame-no-details-card">
 				<div class="details-header">
 					<h3>${frame.frame_no || frame.name || "-"}</h3>
-					<span class="badge badge-info">${frame.status || "Unknown"}</span>
+					<div>
+						<span class="badge badge-info">${frame.status || "Unknown"}</span>
+						${batteryAgeDays !== null ? `<span class="age-badge ${ageClass}">${batteryAgeDays} days</span>` : ""}
+					</div>
 				</div>
+				${actionButtons}
 				<div class="details-body">
 					<div class="details-row">
 						<div class="detail-item">
@@ -675,30 +727,56 @@ class FrameNoDashboard {
 							<span><strong>${frame.status || "-"}</strong></span>
 						</div>
 					</div>
+					${frame.battery_serial_no ? `
+					<div class="details-row">
+						<div class="detail-item">
+							<label>Battery Serial No:</label>
+							<span><strong>${frame.battery_serial_no_display || frame.battery_serial_no || "-"}</strong></span>
+						</div>
+						<div class="detail-item">
+							<label>Battery Type:</label>
+							<span><strong>${frame.battery_type || "-"}</strong></span>
+						</div>
+					</div>
+					<div class="details-row">
+						<div class="detail-item">
+							<label>Battery Installed On:</label>
+							<span>${frame.battery_installed_on ? frappe.datetime.str_to_user(frame.battery_installed_on) : "-"}</span>
+						</div>
+						<div class="detail-item">
+							<label>Battery Aging Days:</label>
+							<span><strong>${batteryAgeDays !== null ? batteryAgeDays : "-"}</strong></span>
+						</div>
+					</div>
+					<div class="details-row">
+						<div class="detail-item">
+							<label>Battery Status:</label>
+							<span>${frame.is_discarded ? '<span class="badge badge-danger">Discarded</span>' : '<span class="badge badge-success">Active</span>'}</span>
+						</div>
+						<div class="detail-item">
+							<label>Swap Count:</label>
+							<span><strong>${frame.swap_count || 0}</strong></span>
+						</div>
+					</div>
+					` : ""}
 					<div class="details-row">
 						<div class="detail-item">
 							<label>Purchase Date:</label>
 							<span>${frame.purchase_date ? frame.purchase_date.split(' ')[0] : "-"}</span>
 						</div>
-					</div>
-					<div class="details-row">
 						<div class="detail-item">
 							<label>Color Code:</label>
 							<span>${frame.color_code || "-"}</span>
 						</div>
+					</div>
+					<div class="details-row">
 						<div class="detail-item">
 							<label>Engine Number:</label>
 							<span>${frame.custom_engine_number || "-"}</span>
 						</div>
-					</div>
-					<div class="details-row">
 						<div class="detail-item">
 							<label>Key No:</label>
 							<span>${frame.custom_key_no || "-"}</span>
-						</div>
-						<div class="detail-item">
-							<label>Battery No:</label>
-							<span>${frame.custom_battery_no || "-"}</span>
 						</div>
 					</div>
 					<div class="details-row">
@@ -712,8 +790,23 @@ class FrameNoDashboard {
 						</div>
 					</div>
 				</div>
+				${swapHistoryHTML}
 			</div>
 		`);
+		
+		// Setup action button handlers
+		const self = this;
+		container.find(".btn-swap-battery").on("click", function() {
+			const frameName = $(this).data("frame");
+			const batteryName = $(this).data("battery");
+			// Navigate to Frame Bundle and trigger swap
+			frappe.set_route("Form", "Frame Bundle", frameName);
+		});
+		
+		container.find(".btn-view-frame-bundle").on("click", function() {
+			const frameName = $(this).data("frame");
+			frappe.set_route("Form", "Frame Bundle", frameName);
+		});
 	}
 }
 
@@ -736,7 +829,6 @@ function add_styles() {
 		.summary-card .card-label { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 		.summary-card.total { border-left-color: #5e64ff; }
 		.summary-card.active { border-left-color: #00d4aa; }
-		.summary-card.delivered { border-left-color: #ffa726; }
 		.summary-card.warehouses { border-left-color: #26c6da; }
 
 		.charts-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 20px; }
@@ -793,13 +885,27 @@ function add_styles() {
 
 		.frame-no-details-section { background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
 		.frame-no-details-card { background: var(--control-bg); border-radius: 10px; padding: 20px; }
-		.details-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--border-color); }
+		.details-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--border-color); flex-wrap: wrap; gap: 10px; }
 		.details-header h3 { margin: 0; color: var(--heading-color); }
+		.details-actions { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
 		.details-body { margin-top: 20px; }
 		.details-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; }
 		.detail-item { display: flex; flex-direction: column; gap: 5px; }
 		.detail-item label { font-weight: 600; color: var(--text-muted); font-size: 12px; text-transform: uppercase; }
 		.detail-item span { color: var(--heading-color); font-size: 14px; }
+		.details-section { margin-top: 30px; padding-top: 20px; border-top: 2px solid var(--border-color); }
+		.details-section h4 { margin-bottom: 15px; color: var(--heading-color); display: flex; align-items: center; gap: 8px; }
+		.frame-battery { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color); }
+		.age-badge { font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 14px; display: inline-block; }
+		.age-badge.age-new { background: #e0f7f2; color: #0b8c6b; }
+		.age-badge.age-warning { background: #fff3e0; color: #e65100; }
+		.age-badge.age-medium { background: #ffe0b2; color: #e65100; }
+		.age-badge.age-old { background: #ffcdd2; color: #c62828; }
+		.badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+		.badge-success { background: #d4edda; color: #155724; }
+		.badge-danger { background: #f8d7da; color: #721c24; }
+		.badge-secondary { background: #e2e3e5; color: #383d41; }
+		.badge-info { background: #d1ecf1; color: #0c5460; }
 	</style>`).appendTo("head");
 }
 
