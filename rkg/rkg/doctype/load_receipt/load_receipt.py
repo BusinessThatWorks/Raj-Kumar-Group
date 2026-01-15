@@ -17,10 +17,16 @@ class LoadReceipt(Document):
 					self.status = "Submitted"
 					frappe.db.set_value("Load Receipt", self.name, "status", "Submitted", update_modified=False)
 		elif self.docstatus == 0:
+			# If created from Load Dispatch (has skip_warehouse_validation flag), don't set status to Draft
+			# Let it remain empty or "Not Saved" until user saves manually
 			if not self.status:
-				self.status = "Draft"
+				# Only set to Draft if not created from Load Dispatch
+				if not getattr(self.flags, 'skip_warehouse_validation', False):
+					self.status = "Draft"
 			elif self.status not in ["Draft", "Not Saved"]:
-				self.status = "Draft"
+				# Only reset to Draft if not created from Load Dispatch
+				if not getattr(self.flags, 'skip_warehouse_validation', False):
+					self.status = "Draft"
 		
 		if self.load_dispatch:
 			if not frappe.db.exists("Load Dispatch", self.load_dispatch):
@@ -189,7 +195,9 @@ def create_load_receipt(source_name, target_doc=None):
 		target.flags.ignore_permissions = True
 		target.load_dispatch = source_name
 		target.load_reference_no = source.load_reference_no
-		target.status = "Draft"
+		# Don't set status explicitly - let validate method handle it
+		# Set flag to skip warehouse validation during creation
+		target.flags.skip_warehouse_validation = True
 	
 	def update_item(source, target, source_parent):
 		pass
@@ -216,6 +224,9 @@ def create_load_receipt(source_name, target_doc=None):
 	)
 	
 	if doc:
+		# Save with ignore_mandatory flag to skip warehouse validation during creation
+		# Warehouse will be set by user later before creating Purchase Receipt
+		doc.flags.ignore_mandatory = True
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
 		return {"name": doc.name}

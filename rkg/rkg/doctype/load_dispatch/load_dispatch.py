@@ -613,13 +613,51 @@ class LoadDispatch(Document):
 					item_doc = frappe.get_doc("Item", item_code)
 					updated = False
 					
+					# Update print_name if provided
 					if hasattr(item, "print_name") and item.print_name:
 						if hasattr(item_doc, "print_name"):
 							item_doc.print_name = item.print_name
 							updated = True
+					
+					# Update HSN code if provided
+					if hasattr(item, "hsn_code") and item.hsn_code:
+						hsn_code = item.hsn_code
+						if hasattr(item_doc, "gst_hsn_code"):
+							if item_doc.gst_hsn_code != hsn_code:
+								item_doc.gst_hsn_code = hsn_code
+								updated = True
+						elif hasattr(item_doc, "custom_gst_hsn_code"):
+							if item_doc.custom_gst_hsn_code != hsn_code:
+								item_doc.custom_gst_hsn_code = hsn_code
+								updated = True
 
 					if updated:
 						item_doc.save(ignore_permissions=True)
+						frappe.db.commit()
+						
+						# Also update using db.set_value to ensure persistence
+						if hasattr(item, "print_name") and item.print_name and frappe.db.has_column("Item", "print_name"):
+							try:
+								frappe.db.set_value("Item", item_code, "print_name", item.print_name, update_modified=False)
+								frappe.db.commit()
+							except Exception as e:
+								frappe.log_error(f"Failed to update print_name for Item {item_code}: {str(e)}", "Item Print Name Update Failed")
+						
+						if hasattr(item, "hsn_code") and item.hsn_code:
+							hsn_code = item.hsn_code
+							hsn_field = None
+							if frappe.db.has_column("Item", "gst_hsn_code"):
+								hsn_field = "gst_hsn_code"
+							elif frappe.db.has_column("Item", "custom_gst_hsn_code"):
+								hsn_field = "custom_gst_hsn_code"
+							
+							if hsn_field:
+								try:
+									frappe.db.set_value("Item", item_code, hsn_field, hsn_code, update_modified=False)
+									frappe.db.commit()
+								except Exception as e:
+									frappe.log_error(f"Failed to update HSN code for Item {item_code}: {str(e)}", "Item HSN Code Update Failed")
+						
 						updated_items.append(item_code)
 					else:
 						skipped_items.append(item_code)
@@ -630,7 +668,13 @@ class LoadDispatch(Document):
 				
 				stock_uom = str(item.unit).strip() if hasattr(item, "unit") and item.unit else "Pcs"
 				
-				item_doc = frappe.get_doc({
+				# Get HSN code before creating item_doc
+				hsn_code = None
+				if hasattr(item, "hsn_code") and item.hsn_code:
+					hsn_code = item.hsn_code
+				
+				# Build item_dict with HSN code if field exists
+				item_dict = {
 					"doctype": "Item",
 					"item_code": item_code,
 					"item_name": item.model_variant or item_code,
@@ -638,8 +682,20 @@ class LoadDispatch(Document):
 					"stock_uom": stock_uom,
 					"is_stock_item": 1,
 					"has_serial_no": 1,
-
-				})
+				}
+				
+				# Add HSN code to item_dict if field exists
+				if hsn_code:
+					if frappe.db.has_column("Item", "gst_hsn_code"):
+						item_dict["gst_hsn_code"] = hsn_code
+					elif frappe.db.has_column("Item", "custom_gst_hsn_code"):
+						item_dict["custom_gst_hsn_code"] = hsn_code
+				
+				# Add print_name to item_dict if it exists
+				if hasattr(item, "print_name") and item.print_name:
+					item_dict["print_name"] = item.print_name
+				
+				item_doc = frappe.get_doc(item_dict)
 				
 				if rkg_settings and rkg_settings.get("default_supplier"):
 					if hasattr(item_doc, "supplier_items"):
@@ -650,8 +706,8 @@ class LoadDispatch(Document):
 					elif hasattr(item_doc, "supplier"):
 						item_doc.supplier = rkg_settings.default_supplier
 				
-				if hasattr(item, "hsn_code") and item.hsn_code:
-					hsn_code = item.hsn_code
+				# Also set HSN code on item_doc object as backup
+				if hsn_code:
 					if hasattr(item_doc, "gst_hsn_code"):
 						item_doc.gst_hsn_code = hsn_code
 					elif hasattr(item_doc, "custom_gst_hsn_code"):
@@ -662,6 +718,31 @@ class LoadDispatch(Document):
 						item_doc.print_name = item.print_name
 
 				item_doc.insert(ignore_permissions=True)
+				frappe.db.commit()
+				
+				# Save HSN code using db.set_value to ensure it's persisted
+				if hsn_code:
+					hsn_field = None
+					if frappe.db.has_column("Item", "gst_hsn_code"):
+						hsn_field = "gst_hsn_code"
+					elif frappe.db.has_column("Item", "custom_gst_hsn_code"):
+						hsn_field = "custom_gst_hsn_code"
+					
+					if hsn_field:
+						try:
+							frappe.db.set_value("Item", item_code, hsn_field, hsn_code, update_modified=False)
+							frappe.db.commit()
+						except Exception as e:
+							frappe.log_error(f"Failed to set HSN code for Item {item_code}: {str(e)}", "Item HSN Code Update Failed")
+				
+				# Save print_name using db.set_value to ensure it's persisted
+				if hasattr(item, "print_name") and item.print_name and frappe.db.has_column("Item", "print_name"):
+					try:
+						frappe.db.set_value("Item", item_code, "print_name", item.print_name, update_modified=False)
+						frappe.db.commit()
+					except Exception as e:
+						frappe.log_error(f"Failed to set print_name for Item {item_code}: {str(e)}", "Item Print Name Update Failed")
+				
 				created_items.append(item_code)
 				
 			except Exception as e:
@@ -1210,6 +1291,14 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 	if print_name and str(print_name).strip():
 		print_name_value = str(print_name).strip()
 	
+	# Get HSN code before creating item_dict
+	hsn_code = None
+	if source_type == "dispatch_item":
+		if hasattr(item_data, "hsn_code") and item_data.hsn_code:
+			hsn_code = item_data.hsn_code
+	elif source_type == "row_data":
+		hsn_code = item_data.get('hsn_code') or item_data.get('HSN Code') or item_data.get('HSN_CODE')
+	
 	item_dict = {
 		"doctype": "Item",
 		"item_code": item_code,
@@ -1222,6 +1311,14 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 	if print_name_value:
 		item_dict["print_name"] = print_name_value
 	
+	# Add HSN code to item_dict if field exists
+	if hsn_code:
+		# Check which HSN field exists in Item doctype
+		if frappe.db.has_column("Item", "gst_hsn_code"):
+			item_dict["gst_hsn_code"] = hsn_code
+		elif frappe.db.has_column("Item", "custom_gst_hsn_code"):
+			item_dict["custom_gst_hsn_code"] = hsn_code
+	
 	item_doc = frappe.get_doc(item_dict)
 	
 	if rkg_settings:
@@ -1231,13 +1328,7 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 			elif hasattr(item_doc, "supplier"):
 				item_doc.supplier = rkg_settings.default_supplier
 	
-	hsn_code = None
-	if source_type == "dispatch_item":
-		if hasattr(item_data, "hsn_code") and item_data.hsn_code:
-			hsn_code = item_data.hsn_code
-	elif source_type == "row_data":
-		hsn_code = item_data.get('hsn_code') or item_data.get('HSN Code') or item_data.get('HSN_CODE')
-	
+	# Also set HSN code on item_doc object as backup
 	if hsn_code:
 		if hasattr(item_doc, "gst_hsn_code"):
 			item_doc.gst_hsn_code = hsn_code
@@ -1251,12 +1342,28 @@ def _create_item_unified(item_data, item_code, source_type="dispatch_item", prin
 		item_doc.insert(ignore_permissions=True)
 		frappe.db.commit()
 		
+		# Save print_name using db.set_value to ensure it's persisted
 		if print_name_value and frappe.db.has_column("Item", "print_name"):
 			try:
 				frappe.db.set_value("Item", item_code, "print_name", print_name_value, update_modified=False)
 				frappe.db.commit()
 			except Exception as e:
 				frappe.log_error(f"Failed to set print_name for Item {item_code}: {str(e)}", "Item Print Name Update Failed")
+		
+		# Save HSN code using db.set_value to ensure it's persisted
+		if hsn_code:
+			hsn_field = None
+			if frappe.db.has_column("Item", "gst_hsn_code"):
+				hsn_field = "gst_hsn_code"
+			elif frappe.db.has_column("Item", "custom_gst_hsn_code"):
+				hsn_field = "custom_gst_hsn_code"
+			
+			if hsn_field:
+				try:
+					frappe.db.set_value("Item", item_code, hsn_field, hsn_code, update_modified=False)
+					frappe.db.commit()
+				except Exception as e:
+					frappe.log_error(f"Failed to set HSN code for Item {item_code}: {str(e)}", "Item HSN Code Update Failed")
 		frappe.clear_cache(doctype="Item")
 		if not frappe.db.exists("Item", item_code):
 			frappe.db.commit()
