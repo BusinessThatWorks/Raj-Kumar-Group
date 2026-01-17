@@ -400,7 +400,7 @@ def swap_batteries(current_frame, target_frame, force_swap=False):
 	Args:
 		current_frame: Name of the current Frame Bundle
 		target_frame: Name of the target Frame Bundle
-		force_swap: If True, allows swap even when battery types don't match (default: False)
+		force_swap: Deprecated parameter (kept for backward compatibility). Battery type matching is required.
 	"""
 	
 	# Validate inputs
@@ -438,11 +438,11 @@ def swap_batteries(current_frame, target_frame, force_swap=False):
 	if not target_doc.battery_serial_no:
 		frappe.throw(f"Cannot swap - {target_frame} has no battery")
 	
-	# Validate both frames have the same battery_type (unless force_swap is True)
+	# Validate both frames have the same battery_type
 	current_battery_type = current_doc.battery_type
 	target_battery_type = target_doc.battery_type
 	
-	if not force_swap and current_battery_type and target_battery_type:
+	if current_battery_type and target_battery_type:
 		if current_battery_type != target_battery_type:
 			frappe.throw(f"Cannot swap batteries - Battery types do not match. Current frame has '{current_battery_type}' and target frame has '{target_battery_type}'. Battery swap can only be performed between frames with the same battery type.")
 	

@@ -977,35 +977,42 @@ class BatteryAgeingDashboard {
 								return;
 							}
 							
-							// Get current battery type
+							// Get current battery type and validate matching
 							frappe.db.get_value("Battery Information", currentBattery, "battery_type", (r) => {
 								const currentType = r && r.battery_type ? r.battery_type : "";
 								const targetType = values.target_battery_type || "";
-								const typesMatch = currentType && targetType && currentType === targetType;
 								
-								if (!typesMatch && currentType && targetType) {
-									// Types don't match - show confirmation
-									frappe.confirm(
-										__("Battery types do not match!<br><br>") +
-										__("Current Battery: {0} ({1})<br>", [currentBattery, currentType]) +
-										__("Target Battery: {0} ({1})<br><br>", [values.target_battery || "-", targetType]) +
-										__("Do you want to proceed with the battery swap?"),
-										function() {
-											// Proceed with swap
-											swap_batteries(currentFrame, values.target_frame, true);
-											d.hide();
-										}
-									);
-								} else {
-									// Types match or one is empty - proceed normally
-									frappe.confirm(
-										__("Swap batteries between these frames?"),
-										function() {
-											swap_batteries(currentFrame, values.target_frame, false);
-											d.hide();
-										}
-									);
+								// Validate that battery types match (required)
+								if (currentType && targetType) {
+									if (currentType !== targetType) {
+										frappe.msgprint({
+											title: __("Battery Types Do Not Match"),
+											message: __("Battery types must match to perform a swap.<br><br>") +
+													__("Current Battery: {0} ({1})<br>", [currentBattery, currentType]) +
+													__("Target Battery: {0} ({1})<br><br>", [values.target_battery || "-", targetType]) +
+													__("Please select a frame with the same battery type."),
+											indicator: "red"
+										});
+										return;
+									}
+								} else if (!currentType || !targetType) {
+									// If either battery type is missing, warn the user
+									frappe.msgprint({
+										title: __("Battery Type Missing"),
+										message: __("Cannot swap - battery type information is missing for one or both batteries. Please ensure both batteries have valid battery types."),
+										indicator: "red"
+									});
+									return;
 								}
+								
+								// Types match - proceed with swap
+								frappe.confirm(
+									__("Swap batteries between these frames?"),
+									function() {
+										swap_batteries(currentFrame, values.target_frame, false);
+										d.hide();
+									}
+								);
 							});
 						}
 					});
