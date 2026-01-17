@@ -1,24 +1,20 @@
 frappe.listview_settings["Load Plan"] = {
 	get_indicator: function (doc) {
-		// Status options (from doctype):
-		// Submitted, In-Transit, Dispatched, Partial Dispatched
+		// Status options: Dispatched, Not Dispatched, In-Transit
 
 		if (doc.status === "Dispatched") {
-			// Delivered → green
+			// Dispatched → green
 			return [__("Dispatched"), "green", "status,=,Dispatched"];
 		}
 
-		if (doc.status === "Not Dispatched") {
-			// Partial delivered → orange
+		if (doc.status === "Not Dispatched" || doc.status === "Partial Dispatched") {
+			// Not Dispatched → orange (handle both old "Partial Dispatched" and new "Not Dispatched")
 			return [__("Not Dispatched"), "orange", "status,=,Not Dispatched"];
 		}
 
-		if (doc.status === "In-Transit") {
-			// In transit → blue (or any other color you prefer)
+		if (doc.status === "In-Transit" || doc.status === "Submitted" || !doc.status) {
+			// In-Transit → blue (also handle Submitted/empty as In-Transit since nothing dispatched yet)
 			return [__("In-Transit"), "blue", "status,=,In-Transit"];
 		}
-
-		// Default indicator for other statuses (e.g. Submitted)
-		//return [__(doc.status || ""), "gray", "status,=," + (doc.status || "Submitted")];
 	},
 };
