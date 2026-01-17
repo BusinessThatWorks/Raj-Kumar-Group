@@ -11,6 +11,7 @@
   "upload_date",
   "column_break_cdnf",
   "color_sheet",
+  "quater",
   "column_break_gjun"
  ],
  "fields": [
@@ -46,12 +47,19 @@
    "fieldtype": "Date",
    "label": "Upload Date",
    "reqd": 1
+  },
+  {
+   "fieldname": "quater",
+   "fieldtype": "Select",
+   "label": "Quater",
+   "options": "First Half (1\u201315)\nSecond Half (16\u2013End)",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-15 16:54:41.229465",
+ "modified": "2026-01-17 10:50:58.363615",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Vehicle Requirement",

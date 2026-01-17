@@ -11,12 +11,12 @@
  "idx": 0,
  "indicator_color": "",
  "is_hidden": 0,
- "label": "BTW_Dealership",
+ "label": "Dealership",
  "links": [],
- "modified": "2026-01-17 09:42:33.537534",
+ "modified": "2026-01-17 11:16:47.872686",
  "modified_by": "Administrator",
  "module": "rkg",
- "name": "BTW_Dealership",
+ "name": "Dealership",
  "number_cards": [],
  "owner": "Administrator",
  "parent_page": "",
@@ -92,7 +92,7 @@
    "color": "Grey",
    "doc_view": "List",
    "label": "Color Sheet",
-   "link_to": "Color Sheet",
+   "link_to": "Vehicle Requirement",
    "stats_filter": "[]",
    "type": "DocType"
   },
@@ -126,5 +126,5 @@
    "type": "Page"
   }
  ],
- "title": "BTW_Dealership"
+ "title": "Dealership"
 }
