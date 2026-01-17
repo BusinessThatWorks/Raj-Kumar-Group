@@ -6,19 +6,21 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "section_break_main",
+  "section_break_frame_info",
   "item_code",
   "frame_no",
-  "column_break_main",
+  "column_break_frame_info",
   "key_number",
   "warehouse",
+  "section_break_battery_details",
   "battery_serial_no",
   "battery_type",
+  "column_break_battery_details",
   "battery_installed_on",
-  "section_break_battery",
   "battery_aging_days",
-  "column_break_battery",
+  "section_break_battery_actions",
   "is_battery_expired",
+  "column_break_battery_actions",
   "section_break_discarded_history",
   "discard_history",
   "section_break_swap_history",
@@ -27,11 +29,13 @@
  ],
  "fields": [
   {
-   "fieldname": "section_break_main",
+   "collapsible": 0,
+   "fieldname": "section_break_frame_info",
    "fieldtype": "Section Break",
-   "label": "Frame Details"
+   "label": "Frame Information"
   },
   {
+   "description": "The item code associated with this frame",
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -40,6 +44,7 @@
    "reqd": 1
   },
   {
+   "description": "Unique frame number/identifier",
    "fieldname": "frame_no",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -47,20 +52,28 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_main",
+   "fieldname": "column_break_frame_info",
    "fieldtype": "Column Break"
   },
   {
+   "description": "Associated key number for this frame",
    "fieldname": "key_number",
    "fieldtype": "Data",
    "label": "Key Number"
   },
   {
+   "description": "Warehouse location of this frame (auto-updated from Serial No)",
    "fieldname": "warehouse",
    "fieldtype": "Link",
    "label": "Warehouse",
    "options": "Warehouse",
    "read_only": 1
+  },
+  {
+   "collapsible": 0,
+   "fieldname": "section_break_battery_details",
+   "fieldtype": "Section Break",
+   "label": "Battery Details"
   },
   {
    "fieldname": "battery_serial_no",
@@ -75,42 +88,51 @@
    "read_only": 1
   },
   {
-   "description": "Date when the CURRENT battery was installed in this frame.",
+   "fieldname": "column_break_battery_details",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Date when the current battery was installed in this frame",
    "fieldname": "battery_installed_on",
    "fieldtype": "Date",
-   "label": "Battery Installed On",
+   "label": "Installation Date",
    "read_only": 1
   },
   {
-   "fieldname": "section_break_battery",
-   "fieldtype": "Section Break",
-   "label": "Battery Information"
-  },
-  {
+   "description": "Number of days since the battery was installed (auto-calculated)",
    "fieldname": "battery_aging_days",
    "fieldtype": "Int",
-   "label": "Battery Aging Days",
+   "label": "Aging Days",
    "read_only": 1
   },
   {
-   "fieldname": "column_break_battery",
-   "fieldtype": "Column Break"
+   "collapsible": 0,
+   "fieldname": "section_break_battery_actions",
+   "fieldtype": "Section Break",
+   "label": "Battery Actions"
   },
   {
    "allow_on_submit": 1,
    "default": "0",
+   "description": "Mark the current battery as discarded/expired",
    "fieldname": "is_battery_expired",
    "fieldtype": "Button",
    "label": "Discard Battery"
   },
   {
+   "fieldname": "column_break_battery_actions",
+   "fieldtype": "Column Break"
+  },
+  {
    "collapsible": 1,
+   "collapsed": 1,
    "fieldname": "section_break_discarded_history",
    "fieldtype": "Section Break",
-   "label": "Discarded History"
+   "label": "Discard History"
   },
   {
    "allow_on_submit": 1,
+   "description": "History of discarded batteries for this frame (system-controlled)",
    "fieldname": "discard_history",
    "fieldtype": "Table",
    "label": "Discard History",
@@ -118,12 +140,14 @@
   },
   {
    "collapsible": 1,
+   "collapsed": 1,
    "fieldname": "section_break_swap_history",
    "fieldtype": "Section Break",
    "label": "Swap History"
   },
   {
    "allow_on_submit": 1,
+   "description": "History of battery swaps performed for this frame (system-controlled)",
    "fieldname": "swap_history",
    "fieldtype": "Table",
    "label": "Swap History",

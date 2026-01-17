@@ -16,6 +16,8 @@ frappe.ui.form.on("Frame Bundle", {
 					if (r.message && r.message.success) {
 						// Update the field value in the form
 						frm.set_value("battery_aging_days", r.message.battery_aging_days);
+						// Update visual indicators
+						update_battery_aging_indicator(frm);
 					}
 				},
 				error: function() {
@@ -34,12 +36,17 @@ frappe.ui.form.on("Frame Bundle", {
 		make_discard_history_readonly(frm);
 		// Handle is_battery_expired button visibility and action
 		setup_battery_expired_button(frm);
+		// Update battery aging visual indicator
+		update_battery_aging_indicator(frm);
 		// Add Swap Battery button for saved documents
-		if (frm.doc.name) {
+		if (frm.doc.name && !is_expired) {
 			frm.add_custom_button(__("Swap Battery"), function() {
 				show_swap_battery_dialog(frm);
-			});
+			}, __("Actions"));
 		}
+		
+		// Add visual styling to sections
+		add_section_styling(frm);
 	},
 
 	onload(frm) {
@@ -75,10 +82,19 @@ frappe.ui.form.on("Frame Bundle", {
 				} else {
 					frm.set_value("battery_type", "");
 				}
+				// Update visual indicators after battery change
+				setTimeout(() => {
+					update_battery_aging_indicator(frm);
+				}, 500);
 			});
 		} else {
 			frm.set_value("battery_type", "");
 		}
+	},
+	
+	battery_aging_days(frm) {
+		// Update visual indicator when aging days change
+		update_battery_aging_indicator(frm);
 	},
 
 	frame_no(frm) {
@@ -257,15 +273,19 @@ function show_swap_battery_dialog(frm) {
 		title: __("Swap Battery"),
 		fields: [
 			{
-				fieldtype: "Section Break",
-				label: __("Current Frame")
+				fieldtype: "HTML",
+				options: `<div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-left: 4px solid #1ab394; border-radius: 4px;">
+					<h5 style="margin: 0 0 5px 0; color: #1ab394;">Current Frame</h5>
+					<p style="margin: 0; color: #666; font-size: 12px;">Frame and battery information that will be swapped</p>
+				</div>`
 			},
 			{
 				fieldtype: "Data",
 				fieldname: "current_frame_no",
 				label: __("Frame No"),
 				default: frm.doc.frame_no,
-				read_only: 1
+				read_only: 1,
+				description: __("Current frame number")
 			},
 			{
 				fieldtype: "Link",
@@ -273,18 +293,26 @@ function show_swap_battery_dialog(frm) {
 				label: __("Battery Serial No"),
 				options: "Battery Information",
 				default: frm.doc.battery_serial_no,
-				read_only: 1
+				read_only: 1,
+				description: __("Current battery serial number")
 			},
 			{
 				fieldtype: "Data",
 				fieldname: "current_battery_type",
 				label: __("Battery Type"),
 				default: frm.doc.battery_type || __("Not Set"),
-				read_only: 1
+				read_only: 1,
+				description: __("Current battery type")
 			},
 			{
-				fieldtype: "Section Break",
-				label: __("Target Frame")
+				fieldtype: "Column Break"
+			},
+			{
+				fieldtype: "HTML",
+				options: `<div style="margin-bottom: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #f8ac59; border-radius: 4px;">
+					<h5 style="margin: 0 0 5px 0; color: #f8ac59;">Target Frame</h5>
+					<p style="margin: 0; color: #666; font-size: 12px;">Select the frame to swap batteries with</p>
+				</div>`
 			},
 			{
 				fieldtype: "Link",
@@ -294,10 +322,12 @@ function show_swap_battery_dialog(frm) {
 				get_query: function() {
 					return {
 						filters: {
-							name: ["!=", frm.doc.name]
+							name: ["!=", frm.doc.name],
+							docstatus: 1
 						}
 					};
 				},
+				description: __("Select the target frame to swap batteries with"),
 				onchange: function() {
 					let target_frame = d.get_value("target_frame");
 					if (target_frame) {
@@ -315,6 +345,8 @@ function show_swap_battery_dialog(frm) {
 									} else {
 										d.set_value("target_battery_type", __("Not Set"));
 									}
+									// Check if types match and show visual indicator
+									check_battery_types_match(frm, d);
 								}
 							}
 						});
@@ -330,16 +362,23 @@ function show_swap_battery_dialog(frm) {
 				fieldname: "target_battery",
 				label: __("Target Battery Serial No"),
 				options: "Battery Information",
-				read_only: 1
+				read_only: 1,
+				description: __("Target frame's current battery")
 			},
 			{
 				fieldtype: "Data",
 				fieldname: "target_battery_type",
 				label: __("Battery Type"),
-				read_only: 1
+				read_only: 1,
+				description: __("Target frame's battery type")
+			},
+			{
+				fieldtype: "HTML",
+				fieldname: "type_match_indicator",
+				options: `<div id="type-match-indicator" style="margin-top: 10px; padding: 10px; border-radius: 4px; display: none;"></div>`
 			}
 		],
-		primary_action_label: __("Swap"),
+		primary_action_label: __("Swap Batteries"),
 		primary_action(values) {
 			if (!values.target_frame) {
 				frappe.msgprint(__("Please select a frame"));
@@ -389,6 +428,44 @@ function show_swap_battery_dialog(frm) {
 	});
 
 	d.show();
+	
+	// Check types match on dialog open if values are already set
+	setTimeout(() => {
+		check_battery_types_match(frm, d);
+	}, 500);
+}
+
+function check_battery_types_match(frm, dialog) {
+	// Check if battery types match and show visual indicator
+	const current_type = frm.doc.battery_type || "";
+	const target_type = dialog.get_value("target_battery_type") || "";
+	const indicator = dialog.$wrapper.find("#type-match-indicator");
+	
+	if (!current_type || !target_type) {
+		indicator.hide();
+		return;
+	}
+	
+	if (current_type === target_type) {
+		indicator.css({
+			'background': '#d4edda',
+			'border-left': '4px solid #28a745',
+			'color': '#155724'
+		}).html(`
+			<strong>✓ Types Match</strong><br>
+			<small>Both frames have battery type: <strong>${current_type}</strong></small>
+		`).show();
+	} else {
+		indicator.css({
+			'background': '#f8d7da',
+			'border-left': '4px solid #dc3545',
+			'color': '#721c24'
+		}).html(`
+			<strong>✗ Types Do Not Match</strong><br>
+			<small>Current: <strong>${current_type}</strong> | Target: <strong>${target_type}</strong></small><br>
+			<small style="color: #856404;">Swap will be blocked - battery types must match.</small>
+		`).show();
+	}
 }
 
 function swap_batteries(frm, target_frame, force_swap = false) {
@@ -403,11 +480,101 @@ function swap_batteries(frm, target_frame, force_swap = false) {
 		freeze_message: __("Swapping batteries..."),
 		callback: function(r) {
 			if (r.message && r.message.error) {
-				frappe.msgprint(__("Error: {0}", [r.message.error]));
+				frappe.msgprint({
+					title: __("Error"),
+					message: __("Error: {0}", [r.message.error]),
+					indicator: "red"
+				});
 			} else {
-				frappe.msgprint(__("Batteries swapped successfully"));
+				frappe.show_alert({
+					message: __("Batteries swapped successfully"),
+					indicator: "green"
+				}, 3);
 				frm.reload_doc();
 			}
 		}
 	});
+}
+
+function update_battery_aging_indicator(frm) {
+	// Add visual indicator based on battery aging days
+	const aging_days = frm.doc.battery_aging_days || 0;
+	const aging_field = frm.fields_dict.battery_aging_days;
+	
+	if (!aging_field) return;
+	
+	// Remove existing badges/indicators
+	aging_field.$wrapper.find('.battery-aging-badge').remove();
+	
+	// Determine color and status based on aging days
+	let color_class = "default";
+	let status_text = "";
+	let indicator_color = "";
+	
+	if (aging_days <= 60) {
+		color_class = "success";
+		status_text = "Good";
+		indicator_color = "green";
+	} else if (aging_days <= 90) {
+		color_class = "warning";
+		status_text = "Attention";
+		indicator_color = "orange";
+	} else if (aging_days <= 120) {
+		color_class = "danger";
+		status_text = "Critical";
+		indicator_color = "red";
+	} else {
+		color_class = "danger";
+		status_text = "Expired";
+		indicator_color = "red";
+	}
+	
+	// Add visual badge/indicator (only show if not "Good" status)
+	if (aging_days >= 0 && status_text !== "Good") {
+		const badge = $(`
+			<span class="badge badge-${color_class} battery-aging-badge" 
+				  style="margin-left: 8px; font-size: 11px; padding: 4px 8px;">
+				<span class="indicator ${indicator_color}" style="margin-right: 4px;"></span>
+				${status_text}
+			</span>
+		`);
+		aging_field.$wrapper.find('.control-input-wrapper').append(badge);
+	}
+}
+
+function add_section_styling(frm) {
+	// Add custom styling to sections for better visual hierarchy
+	setTimeout(() => {
+		// Style Frame Information section
+		const frameSection = frm.fields_dict.section_break_frame_info;
+		if (frameSection && frameSection.$wrapper) {
+			frameSection.$wrapper.css({
+				'border-left': '3px solid #1ab394',
+				'padding-left': '10px',
+				'margin-bottom': '15px'
+			});
+		}
+		
+		// Style Battery Details section
+		const batterySection = frm.fields_dict.section_break_battery_details;
+		if (batterySection && batterySection.$wrapper) {
+			batterySection.$wrapper.css({
+				'border-left': '3px solid #f8ac59',
+				'padding-left': '10px',
+				'margin-bottom': '15px',
+				'margin-top': '20px'
+			});
+		}
+		
+		// Style Battery Actions section
+		const actionsSection = frm.fields_dict.section_break_battery_actions;
+		if (actionsSection && actionsSection.$wrapper) {
+			actionsSection.$wrapper.css({
+				'border-left': '3px solid #ed5565',
+				'padding-left': '10px',
+				'margin-bottom': '15px',
+				'margin-top': '20px'
+			});
+		}
+	}, 500);
 }
