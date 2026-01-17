@@ -13,10 +13,21 @@
   "column_break_schd",
   "dispatch_no",
   "invoice_no",
+  "section_break_warehouse",
+  "warehouse",
+  "column_break_damage",
+  "damage_assessment",
   "section_break_ugzt",
   "total_load_quantity",
   "column_break_zqlb",
   "total_dispatch_quantity",
+  "column_break_receipt",
+  "total_receipt_quantity",
+  "total_billed_quantity",
+  "section_break_damage_summary",
+  "frames_ok",
+  "column_break_frames_not_ok",
+  "frames_not_ok",
   "section_break_bhgj",
   "items",
   "status",
@@ -57,6 +68,61 @@
    "label": "Invoice No"
   },
   {
+   "fieldname": "section_break_warehouse",
+   "fieldtype": "Section Break",
+   "label": "Warehouse & Damage Assessment"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "description": "Warehouse allocated for frames in this Load Dispatch"
+  },
+  {
+   "fieldname": "column_break_damage",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.damage_assessment",
+   "fieldname": "damage_assessment",
+   "fieldtype": "Link",
+   "label": "Damage Assessment",
+   "options": "Damage Assessment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_damage_summary",
+   "fieldtype": "Section Break",
+   "label": "Damage Summary"
+  },
+  {
+   "bold": 1,
+   "fieldname": "frames_ok",
+   "fieldtype": "Int",
+   "label": "Frames OK",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1,
+   "description": "Frames marked 'OK' in Damage Assessment"
+  },
+  {
+   "fieldname": "column_break_frames_not_ok",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "frames_not_ok",
+   "fieldtype": "Int",
+   "label": "Frames Not OK",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1,
+   "description": "Frames marked 'Not OK' in Damage Assessment"
+  },
+  {
    "fieldname": "section_break_bhgj",
    "fieldtype": "Section Break",
    "label": "Items"
@@ -81,6 +147,16 @@
   },
   {
    "bold": 1,
+   "fetch_from": "load_reference_no.total_quantity",
+   "fieldname": "total_load_quantity",
+   "fieldtype": "Int",
+   "label": "Total Load Quantity",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "bold": 1,
    "fieldname": "total_dispatch_quantity",
    "fieldtype": "Int",
    "label": "Total Dispatch Quantity",
@@ -89,11 +165,23 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_receipt",
+   "fieldtype": "Column Break"
+  },
+  {
    "bold": 1,
-   "fetch_from": "load_reference_no.total_quantity",
-   "fieldname": "total_load_quantity",
+   "fieldname": "total_receipt_quantity",
    "fieldtype": "Int",
-   "label": "Total Load Quantity",
+   "label": "Total Receipt Quantity",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "total_billed_quantity",
+   "fieldtype": "Int",
+   "label": "Total Billed Quantity",
    "no_copy": 1,
    "non_negative": 1,
    "read_only": 1

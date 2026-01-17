@@ -9,7 +9,7 @@
   "basic_info_section",
   "date",
   "column_break_basic",
-  "load_receipt_number",
+  "load_dispatch",
   "warehouse_section",
   "stock_entry_type",
   "damage_items_section",
@@ -37,11 +37,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "load_receipt_number",
+   "fieldname": "load_dispatch",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Load Receipt Number",
-   "options": "Load Receipt",
+   "label": "Load Dispatch",
+   "options": "Load Dispatch",
    "reqd": 1
   },
   {

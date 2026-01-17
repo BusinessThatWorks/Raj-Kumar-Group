@@ -14,7 +14,7 @@ def _status_to_docstatus(status):
 	return status_map.get(status)
 
 
-def _build_where_clause(status=None, from_date=None, to_date=None, load_receipt_number=None):
+def _build_where_clause(status=None, from_date=None, to_date=None, load_dispatch=None):
 	"""Build WHERE clause for Damage Assessment queries."""
 	conditions = ["da.docstatus < 2"]
 	params = {}
@@ -33,22 +33,22 @@ def _build_where_clause(status=None, from_date=None, to_date=None, load_receipt_
 		conditions.append("da.date <= %(to_date)s")
 		params["to_date"] = getdate(to_date)
 
-	if load_receipt_number:
-		conditions.append("da.load_receipt_number = %(load_receipt_number)s")
-		params["load_receipt_number"] = load_receipt_number
+	if load_dispatch:
+		conditions.append("da.load_dispatch = %(load_dispatch)s")
+		params["load_dispatch"] = load_dispatch
 
 	return " AND ".join(conditions), params
 
 
 @frappe.whitelist()
-def get_damaged_frames_data(load_receipt_number=None, warehouse=None, status=None):
+def get_damaged_frames_data(load_dispatch=None, warehouse=None, status=None):
 	"""Return damaged frames data with their relationships from child table."""
 	conditions = ["da.docstatus < 2"]
 	params = {}
 
-	if load_receipt_number:
-		conditions.append("da.load_receipt_number = %(load_receipt_number)s")
-		params["load_receipt_number"] = load_receipt_number
+	if load_dispatch:
+		conditions.append("da.load_dispatch = %(load_dispatch)s")
+		params["load_dispatch"] = load_dispatch
 
 	if warehouse:
 		# Filter by to_warehouse or from_warehouse in child table
@@ -75,15 +75,15 @@ def get_damaged_frames_data(load_receipt_number=None, warehouse=None, status=Non
 			dai.estimated_cost,
 			dai.from_warehouse,
 			dai.to_warehouse,
-			da.load_receipt_number,
-			lr.load_reference_no,
+			da.load_dispatch,
+			ld.load_reference_no,
 			da.name as assessment_name,
 			da.date as assessment_date,
 			da.total_estimated_cost,
 			sn.warehouse as current_warehouse
 		FROM `tabDamage Assessment Item` dai
 		INNER JOIN `tabDamage Assessment` da ON dai.parent = da.name
-		LEFT JOIN `tabLoad Receipt` lr ON da.load_receipt_number = lr.name
+		LEFT JOIN `tabLoad Dispatch` ld ON da.load_dispatch = ld.name
 		LEFT JOIN `tabSerial No` sn ON dai.serial_no = sn.name
 		WHERE {where_clause}
 		ORDER BY da.date DESC, dai.status DESC, dai.serial_no
@@ -113,12 +113,12 @@ def get_damaged_frames_data(load_receipt_number=None, warehouse=None, status=Non
 @frappe.whitelist()
 def get_filter_options():
 	"""Get filter options for Damage Assessment dashboard."""
-	load_receipt_numbers = frappe.db.sql_list(
+	load_dispatch_list = frappe.db.sql_list(
 		"""
-		SELECT DISTINCT da.load_receipt_number
+		SELECT DISTINCT da.load_dispatch
 		FROM `tabDamage Assessment` da
-		WHERE da.docstatus < 2 AND da.load_receipt_number IS NOT NULL AND da.load_receipt_number != ''
-		ORDER BY da.load_receipt_number
+		WHERE da.docstatus < 2 AND da.load_dispatch IS NOT NULL AND da.load_dispatch != ''
+		ORDER BY da.load_dispatch
 		"""
 	)
 
@@ -143,7 +143,7 @@ def get_filter_options():
 	)
 
 	return {
-		"load_receipt_numbers": load_receipt_numbers,
+		"load_dispatch_list": load_dispatch_list,
 		"warehouses": warehouses
 	}
 
@@ -157,10 +157,10 @@ def get_assessment_details(name):
 	# Get Damage Assessment document
 	assessment = frappe.get_doc("Damage Assessment", name)
 	
-	# Get Load Receipt details if available
+	# Get Load Dispatch details if available
 	load_reference_no = None
-	if assessment.load_receipt_number:
-		load_reference_no = frappe.db.get_value("Load Receipt", assessment.load_receipt_number, "load_reference_no")
+	if assessment.load_dispatch:
+		load_reference_no = frappe.db.get_value("Load Dispatch", assessment.load_dispatch, "load_reference_no")
 	
 	# Get items with all fields including status, warehouses, and issues
 	items = frappe.get_all(
@@ -182,12 +182,12 @@ def get_assessment_details(name):
 	)
 	
 	# Return extended format with all details
-	return {
-		"assessment": {
-			"name": assessment.name,
-			"date": str(assessment.date) if assessment.date else None,
-			"load_receipt_number": assessment.load_receipt_number,
-			"load_reference_no": load_reference_no,
+		return {
+			"assessment": {
+				"name": assessment.name,
+				"date": str(assessment.date) if assessment.date else None,
+				"load_dispatch": assessment.load_dispatch,
+				"load_reference_no": load_reference_no,
 			"stock_entry_type": assessment.stock_entry_type,
 			"status": _docstatus_to_status(assessment.docstatus),
 			"total_estimated_cost": flt(assessment.total_estimated_cost) or 0,

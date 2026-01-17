@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class ColorSheet(Document):
+class VehicleRequirement(Document):
 	pass

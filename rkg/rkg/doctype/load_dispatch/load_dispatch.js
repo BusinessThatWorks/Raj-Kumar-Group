@@ -5,6 +5,26 @@ frappe.ui.form.on("Load Dispatch", {
 			frm._original_load_reference_no = frm.doc.load_reference_no;
 		}
 		
+		// If warehouse is empty but Purchase Receipt exists, sync warehouse from PR
+		if (!frm.doc.warehouse && frm.doc.docstatus === 1) {
+			frappe.call({
+				method: "rkg.rkg.doctype.load_dispatch.load_dispatch.sync_warehouse_from_existing_purchase_receipt",
+				args: {
+					load_dispatch_name: frm.doc.name
+				},
+				callback: function(r) {
+					if (r.message && r.message.warehouse) {
+						// Update the field value and refresh, but don't auto-save
+						frm.doc.warehouse = r.message.warehouse;
+						frm.refresh_field("warehouse");
+					}
+				},
+				error: function() {
+					// Silent fail - don't show error if sync fails
+				}
+			});
+		}
+		
 		if (!$('#load-dispatch-custom-styles').length) {
 			$('<style id="load-dispatch-custom-styles">')
 				.text(`
@@ -42,11 +62,12 @@ frappe.ui.form.on("Load Dispatch", {
 				},
 				callback: function(r) {
 					if (r.message) {
-						const has_load_receipt = r.message.has_load_receipt || false;
+						const has_pr = r.message.has_purchase_receipt || false;
 						
-						if (!has_load_receipt) {
-							frm.add_custom_button(__("Load Receipt"), function() {
-								create_load_receipt_from_dispatch(frm);
+						// Only show Purchase Receipt button if no Purchase Receipt exists
+						if (!has_pr) {
+							frm.add_custom_button(__("Purchase Receipt"), function() {
+								create_purchase_receipt_from_load_dispatch(frm);
 							}, __("Create"));
 							frm.page.set_inner_btn_group_as_primary(__("Create"));
 						}
@@ -510,49 +531,103 @@ function calculate_print_name_from_model_serial(model_serial_no, model_name) {
 	return `${serial_part} (BS-VI)`;
 }
 
-function create_load_receipt_from_dispatch(frm) {
-	if (!frm.doc.name) {
-		frappe.msgprint({
-			title: __("Error"),
-			message: __("Load Dispatch name is required."),
-			indicator: "red"
+function create_purchase_receipt_from_load_dispatch(frm) {
+	// If warehouse is not set, prompt user to select warehouse first
+	if (!frm.doc.warehouse) {
+		const dialog = new frappe.ui.Dialog({
+			title: __("Select Warehouse"),
+			fields: [
+				{
+					label: __("Warehouse"),
+					fieldname: "warehouse",
+					fieldtype: "Link",
+					options: "Warehouse",
+					reqd: 1,
+					get_query: function() {
+						return {
+							filters: {}
+						};
+					},
+					description: __("Select warehouse for creating Purchase Receipt")
+				}
+			],
+			primary_action_label: __("Create Purchase Receipt"),
+			primary_action: function(values) {
+				if (!values.warehouse) {
+					frappe.msgprint({
+						title: __("Validation Error"),
+						message: __("Please select a warehouse."),
+						indicator: "orange"
+					});
+					return;
+				}
+				
+				dialog.hide();
+				
+				// Set warehouse in Load Dispatch and save, then create Purchase Receipt
+				frm.set_value("warehouse", values.warehouse);
+				frm.save().then(function() {
+					// Reload the document to ensure warehouse is saved
+					return frm.reload_doc();
+				}).then(function() {
+					// After warehouse is set and saved, create Purchase Receipt
+					// Pass warehouse as parameter to ensure it's available
+					frappe.call({
+						method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_receipt_from_load_dispatch",
+						args: {
+							source_name: frm.doc.name,
+							warehouse: values.warehouse
+						},
+						callback: function(r) {
+							if (r.message && r.message.name) {
+								frappe.set_route("Form", "Purchase Receipt", r.message.name);
+							} else {
+								frappe.msgprint({
+									title: __("Success"),
+									message: __("Purchase Receipt created successfully."),
+									indicator: "green"
+								});
+								frm.reload_doc();
+							}
+						},
+						error: function(r) {
+							frappe.msgprint({
+								title: __("Error"),
+								message: r.message || __("An error occurred while creating Purchase Receipt."),
+								indicator: "red"
+							});
+						}
+					});
+				});
+			}
 		});
+		
+		dialog.show();
 		return;
 	}
 	
-	if (frm.doc.docstatus !== 1) {
-		frappe.msgprint({
-			title: __("Error"),
-			message: __("Please submit Load Dispatch before creating Load Receipt."),
-			indicator: "red"
-		});
-		return;
-	}
-	
+	// Warehouse is already set, proceed with creating Purchase Receipt
 	frappe.call({
-		method: "rkg.rkg.doctype.load_receipt.load_receipt.create_load_receipt",
+		method: "rkg.rkg.doctype.load_dispatch.load_dispatch.create_purchase_receipt_from_load_dispatch",
 		args: {
 			source_name: frm.doc.name
 		},
 		callback: function(r) {
 			if (r.message && r.message.name) {
-				frappe.set_route("Form", "Load Receipt", r.message.name);
-				frappe.show_alert({
-					message: __("Load Receipt {0} created successfully", [r.message.name]),
-					indicator: "green"
-				}, 5);
+				frappe.set_route("Form", "Purchase Receipt", r.message.name);
 			} else {
 				frappe.msgprint({
-					title: __("Error"),
-					message: __("An error occurred while creating Load Receipt."),
-					indicator: "red"
+					title: __("Success"),
+					message: __("Purchase Receipt created successfully."),
+					indicator: "green"
 				});
+				frm.reload_doc();
 			}
 		},
 		error: function(r) {
 			frappe.msgprint({
 				title: __("Error"),
-				message: r.message || __("An error occurred while creating Load Receipt."),
+				message: r.message || __("An error occurred while creating Purchase Receipt."),
 				indicator: "red"
 			});
 		}

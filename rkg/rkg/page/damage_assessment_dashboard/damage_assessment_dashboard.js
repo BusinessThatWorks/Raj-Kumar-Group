@@ -35,9 +35,9 @@ class DamageAssessmentDashboard {
 				<div class="filters-section">
 					<div class="filters-grid">
 						<div class="filter-group">
-							<label>Load Receipt Number</label>
-							<select class="form-control filter-load-receipt">
-								<option value="">All Load Receipts</option>
+							<label>Load Dispatch</label>
+							<select class="form-control filter-load-dispatch">
+								<option value="">All Load Dispatches</option>
 							</select>
 						</div>
 						<div class="filter-group">
@@ -93,7 +93,7 @@ class DamageAssessmentDashboard {
 								<tr>
 									<th>Frame No</th>
 									<th>Status</th>
-									<th>Load Receipt</th>
+									<th>Load Dispatch</th>
 									<th>Load Ref. No</th>
 									<th>From Warehouse</th>
 									<th>To Warehouse</th>
@@ -116,7 +116,7 @@ class DamageAssessmentDashboard {
 	setup_filters() {
 		this.wrapper.find(".btn-refresh").on("click", () => this.refresh());
 		this.wrapper.find(".btn-clear").on("click", () => {
-			this.wrapper.find(".filter-load-receipt").val("");
+			this.wrapper.find(".filter-load-dispatch").val("");
 			this.wrapper.find(".filter-status").val("");
 			this.wrapper.find(".filter-warehouse").val("");
 			this.refresh();
@@ -128,11 +128,11 @@ class DamageAssessmentDashboard {
 			method: "rkg.rkg.page.damage_assessment_dashboard.damage_assessment_dashboard.get_filter_options",
 			callback: (r) => {
 				if (r.message) {
-					// Load receipt numbers
-					if (r.message.load_receipt_numbers) {
-						const select = this.wrapper.find(".filter-load-receipt");
-						select.empty().append(`<option value="">All Load Receipts</option>`);
-						r.message.load_receipt_numbers.forEach((ref) => {
+					// Load dispatch list
+					if (r.message.load_dispatch_list) {
+						const select = this.wrapper.find(".filter-load-dispatch");
+						select.empty().append(`<option value="">All Load Dispatches</option>`);
+						r.message.load_dispatch_list.forEach((ref) => {
 							select.append(`<option value="${ref}">${ref}</option>`);
 						});
 					}
@@ -151,7 +151,7 @@ class DamageAssessmentDashboard {
 
 	refresh() {
 		const filters = {
-			load_receipt_number: this.wrapper.find(".filter-load-receipt").val(),
+			load_dispatch: this.wrapper.find(".filter-load-dispatch").val(),
 			status: this.wrapper.find(".filter-status").val(),
 			warehouse: this.wrapper.find(".filter-warehouse").val(),
 		};
@@ -232,7 +232,7 @@ class DamageAssessmentDashboard {
 						</span>
 					</td>
 					<td>
-						${frame.load_receipt_number ? `<a href="/app/load-receipt/${frame.load_receipt_number}" target="_blank">${frame.load_receipt_number}</a>` : "-"}
+						${frame.load_dispatch ? `<a href="/app/load-dispatch/${frame.load_dispatch}" target="_blank">${frame.load_dispatch}</a>` : "-"}
 					</td>
 					<td>
 						${frame.load_reference_no ? `<a href="/app/load-plan/${frame.load_reference_no}" target="_blank" title="${frame.load_reference_no}">${truncateText(frame.load_reference_no, 15)}</a>` : "-"}
@@ -451,7 +451,7 @@ function add_styles() {
 		/* Column width management - optimized to prevent horizontal scroll */
 		.frames-table th:nth-child(1), .frames-table td:nth-child(1) { width: 11%; min-width: 120px; } /* Frame No */
 		.frames-table th:nth-child(2), .frames-table td:nth-child(2) { width: 7%; min-width: 80px; } /* Status */
-		.frames-table th:nth-child(3), .frames-table td:nth-child(3) { width: 9%; min-width: 100px; } /* Load Receipt */
+		.frames-table th:nth-child(3), .frames-table td:nth-child(3) { width: 9%; min-width: 100px; } /* Load Dispatch */
 		.frames-table th:nth-child(4), .frames-table td:nth-child(4) { width: 11%; min-width: 120px; } /* Load Reference No */
 		.frames-table th:nth-child(5), .frames-table td:nth-child(5) { width: 13%; min-width: 140px; } /* From Warehouse */
 		.frames-table th:nth-child(6), .frames-table td:nth-child(6) { width: 13%; min-width: 140px; } /* To Warehouse */

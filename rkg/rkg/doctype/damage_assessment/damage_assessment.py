@@ -11,20 +11,20 @@ class DamageAssessment(Document):
 		self.calculate_total_estimated_cost()
 	
 	def before_submit(self):
-		"""Remove OK items before submitting and validate Load Receipt is submitted."""
-		# Validate that linked Load Receipt is submitted (parent-child rule)
-		if self.load_receipt_number:
-			if not frappe.db.exists("Load Receipt", self.load_receipt_number):
-				frappe.throw(_("Load Receipt {0} does not exist").format(self.load_receipt_number))
+		"""Remove OK items before submitting and validate Load Dispatch is submitted."""
+		# Validate that linked Load Dispatch is submitted (parent-child rule)
+		if self.load_dispatch:
+			if not frappe.db.exists("Load Dispatch", self.load_dispatch):
+				frappe.throw(_("Load Dispatch {0} does not exist").format(self.load_dispatch))
 			
-			lr_docstatus = frappe.db.get_value("Load Receipt", self.load_receipt_number, "docstatus")
-			if lr_docstatus != 1:
+			ld_docstatus = frappe.db.get_value("Load Dispatch", self.load_dispatch, "docstatus")
+			if ld_docstatus != 1:
 				frappe.throw(
-					_("Cannot submit Damage Assessment {0} because Load Receipt {1} is not submitted. Please submit the Load Receipt first.").format(
+					_("Cannot submit Damage Assessment {0} because Load Dispatch {1} is not submitted. Please submit the Load Dispatch first.").format(
 						frappe.utils.get_link_to_form("Damage Assessment", self.name),
-						frappe.utils.get_link_to_form("Load Receipt", self.load_receipt_number)
+						frappe.utils.get_link_to_form("Load Dispatch", self.load_dispatch)
 					),
-					title=_("Submit Load Receipt First")
+					title=_("Submit Load Dispatch First")
 				)
 		
 		self.remove_ok_items()
@@ -94,29 +94,29 @@ class DamageAssessment(Document):
 		if self.stock_entry_type:
 			self.create_stock_entries()
 		
-		# Link this Damage Assessment to Load Receipt if load_receipt_number is set
-		if self.load_receipt_number:
-			self.link_to_load_receipt()
+		# Link this Damage Assessment to Load Dispatch if load_dispatch is set
+		if self.load_dispatch:
+			self.link_to_load_dispatch()
 		
-		self.update_load_receipt_frames_counts()
+		self.update_load_dispatch_frames_counts()
 	
 	def on_cancel(self):
 		"""Cancel linked Stock Entries when Damage Assessment is cancelled."""
-		# Clear link in Load Receipt if it exists (no checks - parent controls cancellation)
-		if self.load_receipt_number:
+		# Clear link in Load Dispatch if it exists (no checks - parent controls cancellation)
+		if self.load_dispatch:
 			try:
-				if frappe.db.exists("Load Receipt", self.load_receipt_number):
-					current_da = frappe.db.get_value("Load Receipt", self.load_receipt_number, "damage_assessment")
+				if frappe.db.exists("Load Dispatch", self.load_dispatch):
+					current_da = frappe.db.get_value("Load Dispatch", self.load_dispatch, "damage_assessment")
 					if current_da == self.name:
 						# Clear the link and reset frame counts
-						frappe.db.set_value("Load Receipt", self.load_receipt_number, {
+						frappe.db.set_value("Load Dispatch", self.load_dispatch, {
 							"damage_assessment": None,
 							"frames_ok": 0,
 							"frames_not_ok": 0
 						}, update_modified=False)
 			except Exception as e:
 				frappe.log_error(
-					f"Error clearing damage_assessment link in Load Receipt {self.load_receipt_number} when cancelling Damage Assessment {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+					f"Error clearing damage_assessment link in Load Dispatch {self.load_dispatch} when cancelling Damage Assessment {self.name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
 					"Damage Assessment Cancel Error"
 				)
 		
@@ -235,12 +235,12 @@ class DamageAssessment(Document):
 	
 	def before_trash(self):
 		"""Clear damage_assessment link before deletion."""
-		if self.load_receipt_number:
+		if self.load_dispatch:
 			try:
-				if frappe.db.exists("Load Receipt", self.load_receipt_number):
-					current_da = frappe.db.get_value("Load Receipt", self.load_receipt_number, "damage_assessment")
+				if frappe.db.exists("Load Dispatch", self.load_dispatch):
+					current_da = frappe.db.get_value("Load Dispatch", self.load_dispatch, "damage_assessment")
 					if current_da == self.name:
-						frappe.db.set_value("Load Receipt", self.load_receipt_number, {
+						frappe.db.set_value("Load Dispatch", self.load_dispatch, {
 							"damage_assessment": None,
 							"frames_ok": 0,
 							"frames_not_ok": 0
@@ -310,10 +310,10 @@ class DamageAssessment(Document):
 					if stock_ledger:
 						actual_warehouse = stock_ledger[0].warehouse
 				
-				if not actual_warehouse and self.load_receipt_number:
+				if not actual_warehouse and self.load_dispatch:
 					actual_warehouse = frappe.db.get_value(
-						"Load Receipt",
-						self.load_receipt_number,
+						"Load Dispatch",
+						self.load_dispatch,
 						"warehouse"
 					)
 				
@@ -480,52 +480,52 @@ class DamageAssessment(Document):
 			)
 			raise
 	
-	def link_to_load_receipt(self):
-		"""Link this Damage Assessment to the Load Receipt specified in load_receipt_number."""
-		if not self.load_receipt_number:
+	def link_to_load_dispatch(self):
+		"""Link this Damage Assessment to the Load Dispatch specified in load_dispatch."""
+		if not self.load_dispatch:
 			return
 		
-		if not frappe.db.exists("Load Receipt", self.load_receipt_number):
+		if not frappe.db.exists("Load Dispatch", self.load_dispatch):
 			frappe.log_error(
-				f"Load Receipt {self.load_receipt_number} does not exist for Damage Assessment {self.name}",
+				f"Load Dispatch {self.load_dispatch} does not exist for Damage Assessment {self.name}",
 				"Damage Assessment Link Error"
 			)
 			return
 		
-		# Check if Load Receipt already has a different Damage Assessment linked
-		existing_da = frappe.db.get_value("Load Receipt", self.load_receipt_number, "damage_assessment")
+		# Check if Load Dispatch already has a different Damage Assessment linked
+		existing_da = frappe.db.get_value("Load Dispatch", self.load_dispatch, "damage_assessment")
 		if existing_da and existing_da != self.name:
 			frappe.throw(
-				_("Load Receipt {0} is already linked to Damage Assessment {1}. Please unlink it first or use a different Load Receipt.").format(
-					frappe.utils.get_link_to_form("Load Receipt", self.load_receipt_number),
+				_("Load Dispatch {0} is already linked to Damage Assessment {1}. Please unlink it first or use a different Load Dispatch.").format(
+					frappe.utils.get_link_to_form("Load Dispatch", self.load_dispatch),
 					frappe.utils.get_link_to_form("Damage Assessment", existing_da)
 				),
-				title=_("Load Receipt Already Linked")
+				title=_("Load Dispatch Already Linked")
 			)
 		
-		# Link this Damage Assessment to the Load Receipt
-		frappe.db.set_value("Load Receipt", self.load_receipt_number, "damage_assessment", self.name, update_modified=False)
+		# Link this Damage Assessment to the Load Dispatch
+		frappe.db.set_value("Load Dispatch", self.load_dispatch, "damage_assessment", self.name, update_modified=False)
 		frappe.db.commit()
 	
-	def update_load_receipt_frames_counts(self):
-		"""Update frames OK/Not OK counts in linked Load Receipt."""
+	def update_load_dispatch_frames_counts(self):
+		"""Update frames OK/Not OK counts in linked Load Dispatch."""
 		# First try to find by damage_assessment link
-		load_receipt = frappe.db.get_value("Load Receipt", {"damage_assessment": self.name}, "name")
+		load_dispatch = frappe.db.get_value("Load Dispatch", {"damage_assessment": self.name}, "name")
 		
-		# If not found by link, try using load_receipt_number
-		if not load_receipt and self.load_receipt_number:
-			load_receipt = self.load_receipt_number
+		# If not found by link, try using load_dispatch
+		if not load_dispatch and self.load_dispatch:
+			load_dispatch = self.load_dispatch
 		
-		if not load_receipt:
+		if not load_dispatch:
 			return
 		
-		total_frames = frappe.db.get_value("Load Receipt", load_receipt, "total_receipt_quantity") or 0
+		total_frames = frappe.db.get_value("Load Dispatch", load_dispatch, "total_receipt_quantity") or 0
 		
 		not_ok_count = len([item for item in (self.damage_assessment_item or []) if item.status == "Not OK"])
 		
 		ok_count = max(0, total_frames - not_ok_count)
 		
-		frappe.db.set_value("Load Receipt", load_receipt, {
+		frappe.db.set_value("Load Dispatch", load_dispatch, {
 			"frames_ok": ok_count,
 			"frames_not_ok": not_ok_count
 		}, update_modified=False)
@@ -594,24 +594,22 @@ def get_load_reference_no_from_serial_no(serial_no):
 
 
 @frappe.whitelist()
-def get_frames_from_load_receipt(load_receipt_number):
-	"""Get all frames (frame_no) from Load Receipt items. Also includes the warehouse where each frame is currently located. Args: load_receipt_number: The Load Receipt Number (Load Receipt name). Returns: list of dicts with frame_no, warehouse, and related information."""
-	if not load_receipt_number:
+def get_frames_from_load_dispatch(load_dispatch):
+	"""Get all frames (frame_no) from Load Dispatch items. Also includes the warehouse where each frame is currently located. Args: load_dispatch: The Load Dispatch name. Returns: list of dicts with frame_no, warehouse, and related information."""
+	if not load_dispatch:
 		return []
 	
-	if not frappe.db.exists("Load Receipt", load_receipt_number):
+	if not frappe.db.exists("Load Dispatch", load_dispatch):
 		return []
 	
-	load_receipt = frappe.get_doc("Load Receipt", load_receipt_number)
+	load_dispatch_doc = frappe.get_doc("Load Dispatch", load_dispatch)
 	
-	receipt_warehouse = load_receipt.warehouse
-	
-	load_dispatch = load_receipt.load_dispatch or ""
+	dispatch_warehouse = load_dispatch_doc.warehouse
 	
 	frames = frappe.db.get_all(
-		"Load Receipt Item",
+		"Load Dispatch Item",
 		filters={
-			"parent": load_receipt_number,
+			"parent": load_dispatch,
 			"frame_no": ["!=", ""]
 		},
 		fields=["frame_no", "item_code", "model_name", "model_serial_no"],
@@ -620,34 +618,15 @@ def get_frames_from_load_receipt(load_receipt_number):
 	
 	result = []
 	
-	# Get load_reference_no from Load Dispatch if available
-	load_reference_no = None
-	if load_dispatch:
-		load_reference_no = frappe.db.get_value("Load Dispatch", load_dispatch, "load_reference_no")
+	# Get load_reference_no from Load Dispatch
+	load_reference_no = load_dispatch_doc.load_reference_no
 	
 	for frame in frames:
 		if frame.frame_no and str(frame.frame_no).strip():
 			frame_no = str(frame.frame_no).strip()
 			
 			serial_warehouse = frappe.db.get_value("Serial No", frame_no, "warehouse")
-			warehouse = receipt_warehouse or serial_warehouse
-			
-			# Try to get load_reference_no from Load Dispatch Item if not already found
-			frame_load_reference_no = load_reference_no
-			if not frame_load_reference_no:
-				# Fallback: get from Load Dispatch Item directly
-				load_dispatch_item = frappe.db.get_value(
-					"Load Dispatch Item",
-					{"frame_no": frame_no},
-					["parent"],
-					as_dict=True
-				)
-				if load_dispatch_item and load_dispatch_item.get("parent"):
-					frame_load_reference_no = frappe.db.get_value(
-						"Load Dispatch",
-						load_dispatch_item.parent,
-						"load_reference_no"
-					)
+			warehouse = dispatch_warehouse or serial_warehouse
 			
 			result.append({
 				"frame_no": frame_no,
@@ -656,7 +635,7 @@ def get_frames_from_load_receipt(load_receipt_number):
 				"model_name": frame.model_name,
 				"model_serial_no": frame.model_serial_no,
 				"load_dispatch": load_dispatch,
-				"load_reference_no": frame_load_reference_no,
+				"load_reference_no": load_reference_no,
 				"warehouse": warehouse
 			})
 	
@@ -664,28 +643,28 @@ def get_frames_from_load_receipt(load_receipt_number):
 
 
 @frappe.whitelist()
-def break_circular_dependency(damage_assessment_name=None, load_receipt_name=None):
-	"""Utility function to manually break circular dependency between Damage Assessment and Load Receipt.
+def break_circular_dependency(damage_assessment_name=None, load_dispatch_name=None):
+	"""Utility function to manually break circular dependency between Damage Assessment and Load Dispatch.
 	This can be called before deletion if automatic link clearing doesn't work.
 	
 	Args:
 		damage_assessment_name: Name of Damage Assessment document
-		load_receipt_name: Name of Load Receipt document
+		load_dispatch_name: Name of Load Dispatch document
 	"""
 	if damage_assessment_name:
 		try:
 			da = frappe.get_doc("Damage Assessment", damage_assessment_name)
-			if da.load_receipt_number:
-				if frappe.db.exists("Load Receipt", da.load_receipt_number):
-					current_da = frappe.db.get_value("Load Receipt", da.load_receipt_number, "damage_assessment")
+			if da.load_dispatch:
+				if frappe.db.exists("Load Dispatch", da.load_dispatch):
+					current_da = frappe.db.get_value("Load Dispatch", da.load_dispatch, "damage_assessment")
 					if current_da == damage_assessment_name:
-						frappe.db.set_value("Load Receipt", da.load_receipt_number, {
+						frappe.db.set_value("Load Dispatch", da.load_dispatch, {
 							"damage_assessment": None,
 							"frames_ok": 0,
 							"frames_not_ok": 0
 						}, update_modified=False)
 						frappe.db.commit()
-						return {"message": f"Cleared damage_assessment link in Load Receipt {da.load_receipt_number}"}
+						return {"message": f"Cleared damage_assessment link in Load Dispatch {da.load_dispatch}"}
 		except Exception as e:
 			frappe.log_error(
 				f"Error breaking circular dependency for Damage Assessment {damage_assessment_name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
@@ -693,22 +672,22 @@ def break_circular_dependency(damage_assessment_name=None, load_receipt_name=Non
 			)
 			raise
 	
-	if load_receipt_name:
+	if load_dispatch_name:
 		try:
-			lr = frappe.get_doc("Load Receipt", load_receipt_name)
-			if lr.damage_assessment:
-				frappe.db.set_value("Load Receipt", load_receipt_name, {
+			ld = frappe.get_doc("Load Dispatch", load_dispatch_name)
+			if ld.damage_assessment:
+				frappe.db.set_value("Load Dispatch", load_dispatch_name, {
 					"damage_assessment": None,
 					"frames_ok": 0,
 					"frames_not_ok": 0
 				}, update_modified=False)
 				frappe.db.commit()
-				return {"message": f"Cleared damage_assessment link in Load Receipt {load_receipt_name}"}
+				return {"message": f"Cleared damage_assessment link in Load Dispatch {load_dispatch_name}"}
 		except Exception as e:
 			frappe.log_error(
-				f"Error breaking circular dependency for Load Receipt {load_receipt_name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+				f"Error breaking circular dependency for Load Dispatch {load_dispatch_name}: {str(e)}\nTraceback: {frappe.get_traceback()}",
 				"Break Circular Dependency Error"
 			)
 			raise
 	
-	return {"message": "No action taken. Provide either damage_assessment_name or load_receipt_name."}
+	return {"message": "No action taken. Provide either damage_assessment_name or load_dispatch_name."}

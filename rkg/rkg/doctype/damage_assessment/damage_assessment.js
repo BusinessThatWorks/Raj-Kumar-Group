@@ -19,7 +19,7 @@ frappe.ui.form.on("Damage Assessment", {
 	before_save(frm) {
 		// Allow saving as draft without damage details
 		// Validation for damage items will be done on submit (in before_submit hook)
-		// This allows creating Damage Assessment from Load Receipt with items pre-populated but without damage details
+		// This allows creating Damage Assessment from Load Dispatch with items pre-populated but without damage details
 	},
 	
 	refresh(frm) {
@@ -48,14 +48,14 @@ frappe.ui.form.on("Damage Assessment", {
 		}
 	},
 	
-	load_receipt_number(frm) {
-		// Auto-populate all frames when Load Receipt Number is selected
-		if (frm.doc.load_receipt_number) {
-			// Fetch all frames from Load Receipt
+	load_dispatch(frm) {
+		// Auto-populate all frames when Load Dispatch is selected
+		if (frm.doc.load_dispatch) {
+			// Fetch all frames from Load Dispatch
 			frappe.call({
-				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_frames_from_load_receipt",
+				method: "rkg.rkg.doctype.damage_assessment.damage_assessment.get_frames_from_load_dispatch",
 				args: {
-					load_receipt_number: frm.doc.load_receipt_number
+					load_dispatch: frm.doc.load_dispatch
 				},
 				callback: function(r) {
 					if (r.message && r.message.length > 0) {
@@ -76,16 +76,16 @@ frappe.ui.form.on("Damage Assessment", {
 						frm.trigger("calculate_total_estimated_cost");
 						
 						frappe.show_alert({
-							message: __("Auto-populated {0} frames from Load Receipt Number", [r.message.length]),
+							message: __("Auto-populated {0} frames from Load Dispatch", [r.message.length]),
 							indicator: "green"
 						}, 3);
 					} else {
-						frappe.msgprint(__("No frames found for the selected Load Receipt Number"));
+						frappe.msgprint(__("No frames found for the selected Load Dispatch"));
 					}
 				}
 			});
 		} else {
-			// Clear items if Load Receipt Number is cleared
+			// Clear items if Load Dispatch is cleared
 			frm.clear_table("damage_assessment_item");
 			frm.refresh_field("damage_assessment_item");
 		}

@@ -240,8 +240,8 @@ def get_load_dispatch_data(where_clause, params):
 			ld.status,
 			ld.total_dispatch_quantity,
 			ld.total_load_quantity,
-			COALESCE((SELECT lr.total_receipt_quantity FROM `tabLoad Receipt` lr WHERE lr.load_dispatch = ld.name LIMIT 1), 0) as total_received_quantity,
-			COALESCE((SELECT lr.total_billed_quantity FROM `tabLoad Receipt` lr WHERE lr.load_dispatch = ld.name LIMIT 1), 0) as total_billed_quantity,
+			COALESCE(ld.total_receipt_quantity, 0) as total_received_quantity,
+			COALESCE(ld.total_billed_quantity, 0) as total_billed_quantity,
 			ld.modified
 		FROM `tabLoad Dispatch` ld
 		WHERE {where_clause}
@@ -283,8 +283,8 @@ def get_load_dispatch_data(where_clause, params):
 		SELECT 
 			DATE(ld.modified) as date,
 			SUM(ld.total_dispatch_quantity) as dispatch_qty,
-			SUM(COALESCE((SELECT lr.total_receipt_quantity FROM `tabLoad Receipt` lr WHERE lr.load_dispatch = ld.name LIMIT 1), 0)) as received_qty,
-			SUM(COALESCE((SELECT lr.total_billed_quantity FROM `tabLoad Receipt` lr WHERE lr.load_dispatch = ld.name LIMIT 1), 0)) as billed_qty
+			SUM(COALESCE(ld.total_receipt_quantity, 0)) as received_qty,
+			SUM(COALESCE(ld.total_billed_quantity, 0)) as billed_qty
 		FROM `tabLoad Dispatch` ld
 		WHERE {where_clause} AND ld.modified IS NOT NULL
 		GROUP BY DATE(ld.modified)
