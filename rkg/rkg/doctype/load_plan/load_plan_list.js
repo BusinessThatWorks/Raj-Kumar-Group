@@ -8,9 +8,9 @@ frappe.listview_settings["Load Plan"] = {
 			return [__("Dispatched"), "green", "status,=,Dispatched"];
 		}
 
-		if (doc.status === "Partial Dispatched") {
+		if (doc.status === "Not Dispatched") {
 			// Partial delivered → orange
-			return [__("Partial Dispatched"), "orange", "status,=,Partial Dispatched"];
+			return [__("Not Dispatched"), "orange", "status,=,Not Dispatched"];
 		}
 
 		if (doc.status === "In-Transit") {

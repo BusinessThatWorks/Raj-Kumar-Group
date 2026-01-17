@@ -1,0 +1,26 @@
+{
+ "content": null,
+ "creation": "2025-01-15 00:00:00.000000",
+ "description": "Visual dashboard for Frame Aging - Shows age of each frame from Purchase Receipt creation date to today",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "fa fa-calendar",
+ "idx": 0,
+ "modified": "2025-01-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rkg",
+ "name": "frame-aging-dashboard",
+ "owner": "Administrator",
+ "page_name": "frame-aging-dashboard",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Frame Aging Dashboard"
+}
+
