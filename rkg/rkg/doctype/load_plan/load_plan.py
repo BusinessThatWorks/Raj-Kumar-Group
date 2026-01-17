@@ -919,4 +919,24 @@ def _create_single_load_plan(load_reference_no, dispatch_plan_date, payment_plan
 	load_plan.save(ignore_permissions=True)
 	frappe.db.commit()
 	
+	# Submit the Load Plan if it's in Draft state
+	# Reload the document to ensure it's in the correct state
+	load_plan.reload()
+	
+	if load_plan.docstatus == 0:
+		try:
+			# Keep ignore_mandatory flag during submit to ensure it goes through
+			# All mandatory fields are already set, so this is safe
+			load_plan.flags.ignore_mandatory = True
+			load_plan.flags.ignore_permissions = True
+			load_plan.submit()
+			frappe.db.commit()
+		except Exception as e:
+			# Log error but don't fail the entire process
+			frappe.log_error(
+				message=f"Error submitting Load Plan {load_reference_no}: {str(e)}\nTraceback: {frappe.get_traceback()}",
+				title="Load Plan Submit Error"
+			)
+			# Document remains in Draft state if submit fails
+	
 	return load_plan

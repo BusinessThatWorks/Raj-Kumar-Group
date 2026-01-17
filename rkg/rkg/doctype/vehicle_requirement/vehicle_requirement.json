@@ -11,7 +11,8 @@
   "upload_date",
   "column_break_cdnf",
   "color_sheet",
-  "quater",
+  "month",
+  "phase",
   "column_break_gjun"
  ],
  "fields": [
@@ -49,10 +50,17 @@
    "reqd": 1
   },
   {
-   "fieldname": "quater",
+   "fieldname": "month",
    "fieldtype": "Select",
-   "label": "Quater",
-   "options": "First Half (1\u201315)\nSecond Half (16\u2013End)",
+   "label": "Month",
+   "options": "January\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember",
+   "reqd": 1
+  },
+  {
+   "fieldname": "phase",
+   "fieldtype": "Select",
+   "label": "Phase",
+   "options": "1st Half\nSecond Half",
    "reqd": 1
   }
  ],
