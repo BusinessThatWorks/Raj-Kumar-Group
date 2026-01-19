@@ -182,12 +182,12 @@ def get_assessment_details(name):
 	)
 	
 	# Return extended format with all details
-		return {
-			"assessment": {
-				"name": assessment.name,
-				"date": str(assessment.date) if assessment.date else None,
-				"load_dispatch": assessment.load_dispatch,
-				"load_reference_no": load_reference_no,
+	return {
+		"assessment": {
+			"name": assessment.name,
+			"date": str(assessment.date) if assessment.date else None,
+			"load_dispatch": assessment.load_dispatch,
+			"load_reference_no": load_reference_no,
 			"stock_entry_type": assessment.stock_entry_type,
 			"status": _docstatus_to_status(assessment.docstatus),
 			"total_estimated_cost": flt(assessment.total_estimated_cost) or 0,
