@@ -11,9 +11,12 @@
   "upload_date",
   "column_break_cdnf",
   "color_sheet",
-  "month",
+  "column_break_gjun",
   "phase",
-  "column_break_gjun"
+  "section_break_uxrr",
+  "month",
+  "column_break_gnac",
+  "year"
  ],
  "fields": [
   {
@@ -62,12 +65,27 @@
    "label": "Phase",
    "options": "1st Half\nSecond Half",
    "reqd": 1
+  },
+  {
+   "fieldname": "year",
+   "fieldtype": "Link",
+   "label": "Year",
+   "options": "Year",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_uxrr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_gnac",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-17 10:50:58.363615",
+ "modified": "2026-01-19 15:04:20.347915",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Vehicle Requirement",
