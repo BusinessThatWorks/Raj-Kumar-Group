@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\":\"x9zf9YQkDk\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">BTW_Dealership</span>\",\"col\":12}},{\"id\":\"KXeMJltU27\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Vehicle Requirement</b></span>\",\"col\":12}},{\"id\":\"aDM4p0ppZn\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Vehicle Requirement\",\"col\":3}},{\"id\":\"_JMFfOWrLP\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h2\\\"><span class=\\\"h3\\\"><b>Load</b></span><span class=\\\"h3\\\">&nbsp;</span></span>\",\"col\":12}},{\"id\":\"SbAHCrrwsa\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Plan Upload (Bulk)\",\"col\":3}},{\"id\":\"eA0u0eR2aP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Plan\",\"col\":3}},{\"id\":\"lagap8lC_Q\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Dispatch\",\"col\":3}},{\"id\":\"B-RI9PEZ-O\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Damage</b></span>\",\"col\":10}},{\"id\":\"m47gXbdVFI\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Damage Assessment\",\"col\":3}},{\"id\":\"SQ2dYSZFu1\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Battery &amp; Key Mapping</b></span>\",\"col\":12}},{\"id\":\"b4_PcQKE4y\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Battery and Key Upload\",\"col\":3}},{\"id\":\"KsXZboWIYZ\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Battery Information\",\"col\":4}},{\"id\":\"UdNmYqCQSC\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Frames and Battery Swapping</b></span>\",\"col\":12}},{\"id\":\"p8hMlI2q3s\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Frame No List\",\"col\":3}},{\"id\":\"R8QYac-DSP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Frame Bundle\",\"col\":3}},{\"id\":\"ueoji6imJ_\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Dashboards</b></span>\",\"col\":12}},{\"id\":\"F-d5_tY09S\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Plan & Load Dispatch Dashboard\",\"col\":4}},{\"id\":\"KqsMl90asg\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Battery Ageing Dashboard\",\"col\":3}},{\"id\":\"Fo5ERkBQvp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Damage Assessment Dashboard\",\"col\":3}},{\"id\":\"-lup3cSU4g\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Frame No Dashboard\",\"col\":3}}]",
+ "content": "[{\"id\":\"x9zf9YQkDk\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">BTW_Dealership</span>\",\"col\":12}},{\"id\":\"KXeMJltU27\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Vehicle Requirement</b></span>\",\"col\":12}},{\"id\":\"aDM4p0ppZn\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Vehicle Requirement\",\"col\":3}},{\"id\":\"_JMFfOWrLP\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h2\\\"><span class=\\\"h3\\\"><b>Load</b></span><span class=\\\"h3\\\">&nbsp;</span></span>\",\"col\":12}},{\"id\":\"SbAHCrrwsa\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Plan Upload (Bulk)\",\"col\":3}},{\"id\":\"eA0u0eR2aP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Plan\",\"col\":3}},{\"id\":\"lagap8lC_Q\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Dispatch\",\"col\":3}},{\"id\":\"B-RI9PEZ-O\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Damage</b></span>\",\"col\":10}},{\"id\":\"m47gXbdVFI\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Damage Assessment\",\"col\":3}},{\"id\":\"SQ2dYSZFu1\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Battery &amp; Key Mapping</b></span>\",\"col\":12}},{\"id\":\"b4_PcQKE4y\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Battery and Key Upload\",\"col\":3}},{\"id\":\"KsXZboWIYZ\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Battery Information\",\"col\":4}},{\"id\":\"UdNmYqCQSC\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Frames and Battery Swapping</b></span>\",\"col\":12}},{\"id\":\"p8hMlI2q3s\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Frame No List\",\"col\":3}},{\"id\":\"R8QYac-DSP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Frame Bundle\",\"col\":3}},{\"id\":\"ueoji6imJ_\",\"type\":\"paragraph\",\"data\":{\"text\":\"<span class=\\\"h3\\\"><b>Dashboards</b></span>\",\"col\":12}},{\"id\":\"F-d5_tY09S\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Load Plan & Load Dispatch Dashboard\",\"col\":4}},{\"id\":\"KqsMl90asg\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Battery Ageing Dashboard\",\"col\":3}},{\"id\":\"Fo5ERkBQvp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Damage Assessment Dashboard\",\"col\":3}},{\"id\":\"-lup3cSU4g\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Frame No Dashboard\",\"col\":3}},{\"id\":\"MeC-7evIDL\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Frame Aging Dashboard\",\"col\":3}}]",
  "creation": "2025-12-30 09:56:21.629034",
  "custom_blocks": [],
  "docstatus": 0,
@@ -13,7 +13,7 @@
  "is_hidden": 0,
  "label": "Dealership",
  "links": [],
- "modified": "2026-01-17 12:45:13.722033",
+ "modified": "2026-01-19 11:56:48.723565",
  "modified_by": "Administrator",
  "module": "rkg",
  "name": "Dealership",
@@ -55,6 +55,13 @@
    "link_to": "Load Plan Upload",
    "stats_filter": "[]",
    "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Frame Aging Dashboard",
+   "link_to": "frame-aging-dashboard",
+   "type": "Page"
   },
   {
    "color": "Grey",
