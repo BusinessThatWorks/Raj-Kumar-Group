@@ -15,6 +15,7 @@
   "status",
   "column_break_drgo",
   "payment_plan_date",
+  "date",
   "items",
   "table_tezh",
   "section_break_jxkq",
@@ -61,6 +62,12 @@
    "label": "Payment Plan Date",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date"
   },
   {
    "fieldname": "items",
@@ -112,7 +119,7 @@
    "hidden": 1,
    "label": "Status",
    "no_copy": 1,
-   "options": "Submitted\nIn-Transit\nDispatched\nPartial Dispatched",
+   "options": "Submitted\nPlanned\nIn-Transit\nReceived\nDispatched\nPartial Dispatched",
    "read_only": 1
   },
   {

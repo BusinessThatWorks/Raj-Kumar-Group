@@ -29,6 +29,7 @@ class LoadPlan(Document):
 		
 		self.clean_child_table_fields()
 		self.calculate_total_quantity()
+		self.update_status()
 	
 	def clean_child_table_fields(self):
 		"""Remove invalid fields from child table rows that don't exist in the doctype."""
@@ -83,6 +84,25 @@ class LoadPlan(Document):
 			for item in self.table_tezh:
 				total_quantity += flt(item.quantity) or 0
 		self.total_quantity = total_quantity
+	
+	def update_status(self):
+		"""Update status based on dates, Load Dispatch, and Purchase Receipt."""
+		if self.flags.get("from_file_upload") or self.flags.get("ignore_mandatory"):
+			return
+		
+		# Skip if document doesn't have a name yet (new document)
+		if not self.name:
+			return
+		
+		try:
+			new_status = get_load_plan_status(self.name)
+			if new_status and self.status != new_status:
+				self.status = new_status
+		except Exception as e:
+			frappe.log_error(
+				message=f"Error updating status for Load Plan {self.name}: {str(e)}",
+				title="Load Plan Status Update Error"
+			)
 	
 	def get_dashboard_data(self):
 		"""Return dashboard connections to show related Load Dispatch documents with their IDs."""
@@ -940,3 +960,146 @@ def _create_single_load_plan(load_reference_no, dispatch_plan_date, payment_plan
 			# Document remains in Draft state if submit fails
 	
 	return load_plan
+
+
+@frappe.whitelist()
+def get_load_plan_status(load_plan_name):
+	"""Get the status of a Load Plan based on dates, Load Dispatch, and Purchase Receipt.
+	
+	Logic:
+	1. If Purchase Receipt exists for Load Dispatches linked to this Load Plan: Status = "Received"
+	2. If Load Dispatch exists for this Load Plan: Status = "In-Transit"
+	3. If dispatch_plan_date exists (any date): Status = "Planned"
+	4. Otherwise: Default to "Planned"
+	
+	Args:
+		load_plan_name: Name of the Load Plan document
+		
+	Returns:
+		str: Status of the Load Plan
+	"""
+	from frappe.utils import getdate, today
+	
+	if not load_plan_name:
+		return "Planned"
+	
+	# Get Load Plan document
+	if not frappe.db.exists("Load Plan", load_plan_name):
+		return "Planned"
+	
+	load_plan = frappe.get_doc("Load Plan", load_plan_name)
+	
+	# Priority 1: Check if Purchase Receipt exists for Load Dispatches linked to this Load Plan
+	# First, get all Load Dispatches for this Load Plan
+	load_dispatches = frappe.get_all(
+		'Load Dispatch',
+		filters={'load_reference_no': load_plan_name},
+		fields=['name'],
+		limit_page_length=1000
+	)
+	
+	# Check if any Purchase Receipt exists for these Load Dispatches
+	# Purchase Receipt can link to Load Plan via custom_load_reference_no, load_reference_to, or load_reference_no
+	# Or it might link to Load Dispatch directly - need to check both
+	
+	# Check PR linked to Load Plan
+	pr_filters = {"docstatus": 1}
+	pr_found = False
+	
+	# Check custom_load_reference_no
+	if frappe.db.has_column("Purchase Receipt", "custom_load_reference_no"):
+		prs = frappe.get_all(
+			"Purchase Receipt",
+			filters={**pr_filters, "custom_load_reference_no": load_plan_name},
+			limit=1
+		)
+		if prs:
+			pr_found = True
+	
+	# Check load_reference_to
+	if not pr_found and frappe.db.has_column("Purchase Receipt", "load_reference_to"):
+		prs = frappe.get_all(
+			"Purchase Receipt",
+			filters={**pr_filters, "load_reference_to": load_plan_name},
+			limit=1
+		)
+		if prs:
+			pr_found = True
+	
+	# Check load_reference_no
+	if not pr_found and frappe.db.has_column("Purchase Receipt", "load_reference_no"):
+		prs = frappe.get_all(
+			"Purchase Receipt",
+			filters={**pr_filters, "load_reference_no": load_plan_name},
+			limit=1
+		)
+		if prs:
+			pr_found = True
+	
+	# Check if PR links to Load Dispatch directly
+	if not pr_found and load_dispatches:
+		ld_names = [ld.name for ld in load_dispatches]
+		for field_name in ["custom_load_dispatch", "load_dispatch", "load_dispatch_no"]:
+			if frappe.db.has_column("Purchase Receipt", field_name):
+				prs = frappe.get_all(
+					"Purchase Receipt",
+					filters={**pr_filters, field_name: ["in", ld_names]},
+					limit=1
+				)
+				if prs:
+					pr_found = True
+					break
+	
+	if pr_found:
+		return "Received"
+	
+	# Priority 2: If Load Dispatch exists but no PR - return "In-Transit"
+	if load_dispatches:
+		return "In-Transit"
+	
+	# Priority 3: If dispatch_plan_date exists, return "Planned"
+	dispatch_plan_date = load_plan.get("dispatch_plan_date")
+	if dispatch_plan_date:
+		return "Planned"
+	
+	# Default: Planned
+	return "Planned"
+
+
+@frappe.whitelist()
+def batch_update_load_plan_status(load_plan_names):
+	"""Batch update status for multiple Load Plans.
+	
+	Args:
+		load_plan_names: List of Load Plan names
+		
+	Returns:
+		dict: Summary of updates with 'updated' count
+	"""
+	if not load_plan_names:
+		return {"updated": 0}
+	
+	updated_count = 0
+	
+	for load_plan_name in load_plan_names:
+		try:
+			# Get calculated status
+			new_status = get_load_plan_status(load_plan_name)
+			
+			# Update the status field if it's different
+			current_status = frappe.db.get_value("Load Plan", load_plan_name, "status")
+			
+			if current_status != new_status:
+				frappe.db.set_value("Load Plan", load_plan_name, "status", new_status)
+				updated_count += 1
+		except Exception as e:
+			frappe.log_error(
+				message=f"Error updating status for Load Plan {load_plan_name}: {str(e)}",
+				title="Batch Update Load Plan Status Error"
+			)
+			continue
+	
+	if updated_count > 0:
+		frappe.db.commit()
+	
+	return {"updated": updated_count}
