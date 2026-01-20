@@ -27,11 +27,8 @@ frappe.listview_settings["Load Plan"] = {
 			}
 		}
 
-		if (doc.status === "Submit") {
-			return [__("Submit"), "", "status,=,Submit"];
-		}
-
-		// Default fallback
+		// Any other status (including Submit/Submitted) should show as Planned
+		return [__("Planned"), "yellow", "status,=,Planned"];
 	},
 
 	onload: function (listview) {
