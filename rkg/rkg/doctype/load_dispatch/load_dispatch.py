@@ -994,9 +994,30 @@ def process_tabular_file(file_url, selected_load_reference_no=None):
 		
 		rows = []
 		if file_ext == '.csv':
-			with open(file_path, 'r', encoding='utf-8-sig') as f:
-				reader = csv.DictReader(f)
+			# Try multiple encodings to handle different file formats
+			encodings = ["utf-8-sig", "utf-8", "utf-16-le", "utf-16-be", "latin-1", "cp1252"]
+			csvfile = None
+			for encoding in encodings:
+				try:
+					csvfile = open(file_path, "r", encoding=encoding)
+					sample = csvfile.read(1024)
+					csvfile.seek(0)
+					break
+				except (UnicodeDecodeError, UnicodeError):
+					if csvfile:
+						csvfile.close()
+					csvfile = None
+					continue
+			
+			if not csvfile:
+				frappe.throw(_("Unable to read the file. Please ensure it is saved as CSV with a supported encoding (UTF-8, UTF-16, or Windows-1252)."))
+			
+			try:
+				reader = csv.DictReader(csvfile)
 				rows = list(reader)
+			finally:
+				if csvfile:
+					csvfile.close()
 		elif file_ext in ['.xlsx', '.xls']:
 			try:
 				import pandas as pd

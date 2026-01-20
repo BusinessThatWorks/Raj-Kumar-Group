@@ -146,126 +146,87 @@ class LoadPlan(Document):
 
 
 def update_load_plan_status_from_document(doc, method=None):
-	"""Update Load Plan status based on Purchase Receipt or Purchase Invoice submission. Called from hooks when Purchase Receipt or Purchase Invoice is submitted. Logic: Get load_reference_no from the submitted document (custom_load_reference_no or load_reference_to), find all submitted Purchase Receipt/Invoice documents with that load_reference_no, sum total_quantity from those documents, compare with Load Plan's total_quantity: If total_quantity >= Load Plan total_quantity: 'Dispatched', If total_quantity < Load Plan total_quantity and > 0: 'Partial Dispatched', Otherwise: 'In-Transit'. Args: doc: Purchase Receipt or Purchase Invoice document, method: Hook method name (optional)."""
-	# Get load_reference_no from the document
-	load_reference_no = None
+	"""
+	Update Load Plan status based on Purchase Receipt or Purchase Invoice submission.
+	Called from hooks when Purchase Receipt or Purchase Invoice is submitted/cancelled.
 	
-	# Check for different possible field names
-	if hasattr(doc, 'custom_load_reference_no') and doc.custom_load_reference_no:
-		load_reference_no = doc.custom_load_reference_no
-	elif hasattr(doc, 'load_reference_to') and doc.load_reference_to:
-		load_reference_no = doc.load_reference_to
-	elif hasattr(doc, 'load_reference_no') and doc.load_reference_no:
-		load_reference_no = doc.load_reference_no
+	Purchase Receipt/Invoice -> Load Dispatch (via custom_load_dispatch) -> Load Plan (via load_reference_no)
+	OR
+	Purchase Receipt/Invoice -> Load Plan (via custom_load_reference_no, load_reference_to, or load_reference_no)
 	
-	if not load_reference_no:
-		# No load reference found, skip status update
-		return
-	
+	Args:
+		doc: Purchase Receipt or Purchase Invoice document
+		method: Hook method name (optional)
+	"""
 	# For Purchase Invoice, only update status if update_stock is enabled
 	if doc.doctype == "Purchase Invoice":
 		update_stock = flt(doc.get("update_stock")) or 0
 		if update_stock != 1:
-			# Purchase Invoice with update_stock disabled, skip status update
 			return
 	
-	# Check if Load Plan exists
-	if not frappe.db.exists("Load Plan", load_reference_no):
+	load_reference_no = None
+	
+	# Method 1: Get Load Plan via Load Dispatch (PR/PI -> LD -> LP)
+	load_dispatch_name = None
+	
+	# Check custom_load_dispatch field (primary link from PR/PI to Load Dispatch)
+	if hasattr(doc, 'custom_load_dispatch') and doc.custom_load_dispatch:
+		load_dispatch_name = doc.custom_load_dispatch
+	elif frappe.db.has_column(doc.doctype, "custom_load_dispatch"):
+		load_dispatch_name = frappe.db.get_value(doc.doctype, doc.name, "custom_load_dispatch")
+	
+	if load_dispatch_name and frappe.db.exists("Load Dispatch", load_dispatch_name):
+		# Get Load Plan from Load Dispatch
+		load_dispatch = frappe.get_doc("Load Dispatch", load_dispatch_name)
+		load_reference_no = load_dispatch.get("load_reference_no")
+	
+	# Method 2: Fallback - Try direct link to Load Plan (if PR/PI has direct link)
+	if not load_reference_no:
+		if hasattr(doc, 'custom_load_reference_no') and doc.custom_load_reference_no:
+			load_reference_no = doc.custom_load_reference_no
+		elif hasattr(doc, 'load_reference_to') and doc.load_reference_to:
+			load_reference_no = doc.load_reference_to
+		elif hasattr(doc, 'load_reference_no') and doc.load_reference_no:
+			load_reference_no = doc.load_reference_no
+		elif frappe.db.has_column(doc.doctype, "custom_load_reference_no"):
+			load_reference_no = frappe.db.get_value(doc.doctype, doc.name, "custom_load_reference_no")
+	
+	if not load_reference_no:
+		# No Load Plan link found, skip status update
+		# Log for debugging
+		frappe.logger().warning(
+			f"Load Plan status update skipped: No Load Plan link found for {doc.doctype} {doc.name}. "
+			f"LD: {load_dispatch_name or 'N/A'}"
+		)
 		return
 	
-	# Get Load Plan total_quantity
-	load_plan = frappe.get_doc("Load Plan", load_reference_no)
-	total_load_quantity = flt(load_plan.total_quantity) or 0
-	
-	if total_load_quantity == 0:
-		# No quantity in Load Plan, skip update
-		return
-	
-	# Get doctype name
-	doctype = doc.doctype
-	
-	# Calculate total quantity from all submitted Purchase Receipt/Invoice documents
-	# with the same load_reference_no
-	total_quantity = 0
-	
-	# Check both Purchase Receipt and Purchase Invoice
-	for doc_type in ["Purchase Receipt", "Purchase Invoice"]:
-		# Get all submitted documents matching the load_reference_no
-		# Try different possible field names
-		all_doc_names = set()
-		
-		# Build base filters
-		base_filters = {"docstatus": 1}
-		
-		# For Purchase Invoice, only include documents with update_stock = 1
-		if doc_type == "Purchase Invoice":
-			base_filters["update_stock"] = 1
-		
-		# Check custom_load_reference_no
-		if frappe.db.has_column(doc_type, "custom_load_reference_no"):
-			filters = base_filters.copy()
-			filters["custom_load_reference_no"] = load_reference_no
-			docs1 = frappe.get_all(
-				doc_type,
-				filters=filters,
-				fields=["name"]
+	# Update Load Plan status using centralized get_load_plan_status function
+	if frappe.db.exists("Load Plan", load_reference_no):
+		try:
+			new_status = get_load_plan_status(load_reference_no)
+			if new_status:
+				current_status = frappe.db.get_value("Load Plan", load_reference_no, "status")
+				if current_status != new_status:
+					frappe.db.set_value("Load Plan", load_reference_no, "status", new_status)
+					frappe.db.commit()
+					# Log status change for debugging
+					frappe.logger().info(
+						f"Load Plan {load_reference_no} status updated: {current_status} -> {new_status} "
+						f"(triggered by {doc.doctype} {doc.name}, LD: {load_dispatch_name or 'N/A'})"
+					)
+			else:
+				# Log if status calculation returned None
+				frappe.logger().warning(
+					f"Load Plan {load_reference_no} status calculation returned None "
+					f"(triggered by {doc.doctype} {doc.name}, LD: {load_dispatch_name or 'N/A'})"
+				)
+		except Exception as e:
+			frappe.log_error(
+				f"Error updating Load Plan status for {load_reference_no}: {str(e)}\n"
+				f"PR/PI: {doc.doctype} {doc.name}, LD: {load_dispatch_name or 'N/A'}\n"
+				f"Traceback: {frappe.get_traceback()}",
+				"Load Plan Status Update Error"
 			)
-			all_doc_names.update([d.name for d in docs1])
-		
-		# Check load_reference_to
-		if frappe.db.has_column(doc_type, "load_reference_to"):
-			filters = base_filters.copy()
-			filters["load_reference_to"] = load_reference_no
-			docs2 = frappe.get_all(
-				doc_type,
-				filters=filters,
-				fields=["name"]
-			)
-			all_doc_names.update([d.name for d in docs2])
-		
-		# Check load_reference_no
-		if frappe.db.has_column(doc_type, "load_reference_no"):
-			filters = base_filters.copy()
-			filters["load_reference_no"] = load_reference_no
-			docs3 = frappe.get_all(
-				doc_type,
-				filters=filters,
-				fields=["name"]
-			)
-			all_doc_names.update([d.name for d in docs3])
-		
-		# Get quantities from all matching documents
-		for doc_name in all_doc_names:
-			doc_obj = frappe.get_doc(doc_type, doc_name)
-			
-			# For Purchase Invoice, double-check update_stock (in case it was changed after submission)
-			if doc_type == "Purchase Invoice":
-				update_stock = flt(doc_obj.get("update_stock")) or 0
-				if update_stock != 1:
-					continue
-			
-			# Try to get total_qty from the document
-			doc_qty = flt(doc_obj.get("total_qty")) or 0
-			
-			# If total_qty is not available or zero, sum from items
-			if doc_qty == 0 and hasattr(doc_obj, "items"):
-				doc_qty = sum(flt(item.get("qty") or item.get("stock_qty") or 0) for item in doc_obj.items)
-			
-			total_quantity += doc_qty
-	
-	# Determine status based on comparison
-	if total_quantity >= total_load_quantity:
-		new_status = "Dispatched"
-	elif total_quantity > 0:
-		new_status = "Partial Dispatched"
-	else:
-		new_status = "In-Transit"
-	
-	# Update Load Plan status
-	if load_plan.status != new_status:
-		load_plan.status = new_status
-		load_plan.save(ignore_permissions=True)
-		frappe.db.commit()
 
 
 @frappe.whitelist()
@@ -1036,19 +997,36 @@ def get_load_plan_status(load_plan_name):
 		if prs:
 			pr_found = True
 	
-	# Check if PR links to Load Dispatch directly
+	# Check if PR links to Load Dispatch directly via custom_load_dispatch
 	if not pr_found and load_dispatches:
 		ld_names = [ld.name for ld in load_dispatches]
-		for field_name in ["custom_load_dispatch", "load_dispatch", "load_dispatch_no"]:
-			if frappe.db.has_column("Purchase Receipt", field_name):
+		
+		# Check custom_load_dispatch field (primary link from PR to Load Dispatch)
+		# Use exact match for each Load Dispatch name
+		for ld_name in ld_names:
+			if frappe.db.has_column("Purchase Receipt", "custom_load_dispatch"):
 				prs = frappe.get_all(
 					"Purchase Receipt",
-					filters={**pr_filters, field_name: ["in", ld_names]},
+					filters={**pr_filters, "custom_load_dispatch": ld_name},
 					limit=1
 				)
 				if prs:
 					pr_found = True
 					break
+		
+		# Also check Purchase Invoice with update_stock
+		if not pr_found:
+			for ld_name in ld_names:
+				if frappe.db.has_column("Purchase Invoice", "custom_load_dispatch"):
+					pi_filters = {**pr_filters, "update_stock": 1}
+					pis = frappe.get_all(
+						"Purchase Invoice",
+						filters={**pi_filters, "custom_load_dispatch": ld_name},
+						limit=1
+					)
+					if pis:
+						pr_found = True
+						break
 	
 	if pr_found:
 		return "Received"
