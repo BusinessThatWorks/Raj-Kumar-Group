@@ -33,29 +33,6 @@ frappe.listview_settings["Load Plan"] = {
 
 	onload: function (listview) {
 
-		// Manual refresh button
-		listview.page.add_inner_button(__("Refresh Status"), function () {
-			const load_plan_names = (listview.data || [])
-				.map(row => row.name)
-				.filter(Boolean);
-
-			if (!load_plan_names.length) return;
-
-			frappe.call({
-				method: "rkg.rkg.doctype.load_plan.load_plan.batch_update_load_plan_status",
-				args: { load_plan_names },
-				callback: function (r) {
-					if (r.message?.updated) {
-						frappe.show_alert(
-							__("Status updated for {0} Load Plans", [r.message.updated]),
-							3
-						);
-						listview.refresh();
-					}
-				}
-			});
-		});
-
 		// Auto-fix legacy statuses silently
 		const legacy_rows = (listview.data || []).filter(row =>
 			["Dispatched", "Partial Dispatched"].includes(row.status)
