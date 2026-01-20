@@ -12,6 +12,7 @@
   "battery_brand",
   "battery_type",
   "status",
+  "spare_item",
   "charging_info_section",
   "charging_date",
   "column_break_charging",
@@ -53,6 +54,13 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "Active\nDiscarded"
+  },
+  {
+   "default": 0,
+   "fieldname": "spare_item",
+   "fieldtype": "Check",
+   "label": "Spare Item",
+   "in_list_view": 1
   },
   {
    "fieldname": "charging_info_section",
